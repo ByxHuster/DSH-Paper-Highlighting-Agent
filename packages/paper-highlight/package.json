@@ -1,0 +1,35 @@
+{
+  "name": "paper-highlight",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paper multi-color highlight agent: MinerU parsing, highlight JSON store, and browser rendering plugin for DeepSeek Harness.",
+  "type": "commonjs",
+  "main": "host/plugin.js",
+  "exports": {
+    ".": "./host/plugin.js",
+    "./tools-plugin": "./host/tools-plugin.mjs",
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host",
+    "client",
+    "skills",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
+    "fflate": "^0.8.2"
+  }
+}

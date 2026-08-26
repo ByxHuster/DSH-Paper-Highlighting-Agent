@@ -1,0 +1,14 @@
+# paper-highlight bundle patch — applied after dsh-base + dsh-web-app layers.
+#
+# One row covers both halves of this package:
+#   - host side:  main host/plugin.js — registers the `/paper-hl/read` webserver
+#     route that serves data/<paper_id>/ paper.md + anchors + highlights JSON.
+#   - client side: the `dsh.client` declaration → exports ./client →
+#     client/client.js, which the web-app `modules` row serves at
+#     /plugins/paper-highlight/client.js and mounts in the browser roster.
+#
+# Agent-side tool rows live in the `paper` agent preset (agent.cordis.yml),
+# not in the profile composition.
+- insert:
+    - id: paper-highlight
+      name: 'paper-highlight'

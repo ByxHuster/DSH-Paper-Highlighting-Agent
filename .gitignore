@@ -1,0 +1,17 @@
+# npm / node
+node_modules/
+
+# caches & transient
+.npm-cache/
+.mineru-work/
+.corepack/
+
+# test runtime artifacts
+packages/paper-highlight/test/.tmp/
+
+# source inputs (re-obtainable, copyrighted paper PDF is external input)
+*.pdf
+
+# OS
+Thumbs.db
+.DS_Store
