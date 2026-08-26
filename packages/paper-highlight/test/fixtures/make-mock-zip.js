@@ -10,6 +10,11 @@ const fsp = require('node:fs/promises')
 const path = require('node:path')
 const { zipSync, strToU8 } = require('fflate')
 
+// Fixed mtime makes buildMockZip deterministic: regenerating the committed
+// fixture produces identical bytes, so running run-mock/run-tools no longer
+// dirties git (fflate's default = current time → spurious diffs each run).
+const FIXED_MTIME = new Date('2025-01-01T00:00:00Z')
+
 const PAGE_W = 612
 const PAGE_H = 792
 
@@ -61,10 +66,12 @@ function middleJson() {
 
 async function buildMockZip(zipPath) {
   const middle = middleJson()
+  // fflate zipSync top level is a name → file map; each value may be a
+  // [data, opts] tuple. Pinned mtime → deterministic output.
   const files = {
-    'mock-paper.middle.json': strToU8(JSON.stringify(middle, null, 1)),
-    'mock-paper.md': strToU8('# Mock paper markdown (not used by normalize)\n\nBody.\n'),
-    'images/': strToU8(''),
+    'mock-paper.middle.json': [strToU8(JSON.stringify(middle, null, 1)), { mtime: FIXED_MTIME }],
+    'mock-paper.md': [strToU8('# Mock paper markdown (not used by normalize)\n\nBody.\n'), { mtime: FIXED_MTIME }],
+    'images/': [strToU8(''), { mtime: FIXED_MTIME }],
   }
   const zipped = zipSync(files, { level: 6 })
   await fsp.mkdir(path.dirname(zipPath), { recursive: true })

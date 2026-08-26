@@ -83,6 +83,26 @@ function validateHighlights(h) {
     throw new Error('highlights.plan must be an object with a string summary')
   }
   if (!Array.isArray(h.plan.sections)) throw new Error('highlights.plan.sections must be an array')
+  for (const s of h.plan.sections) {
+    if (typeof s !== 'object' || s === null) throw new Error('plan.sections entry must be an object')
+    if (s.id !== undefined && (typeof s.id !== 'string' || s.id.length === 0)) {
+      throw new Error('plan.sections: id must be a non-empty string when present')
+    }
+    if (s.section !== undefined && typeof s.section !== 'string') throw new Error('plan.sections: section must be a string when present')
+    if (s.expected_colors !== undefined && !Array.isArray(s.expected_colors)) {
+      throw new Error('plan.sections: expected_colors must be an array when present')
+    }
+    if (s.density_hint !== undefined && typeof s.density_hint !== 'string') {
+      throw new Error('plan.sections: density_hint must be a string when present')
+    }
+    if (s.skip !== undefined && typeof s.skip !== 'boolean') throw new Error('plan.sections: skip must be a boolean when present')
+    if (s.status !== undefined && !['pending', 'reviewed'].includes(s.status)) {
+      throw new Error(`plan.sections: invalid status ${JSON.stringify(s.status)}`)
+    }
+    if (s.reviewed_at !== undefined && typeof s.reviewed_at !== 'string') {
+      throw new Error('plan.sections: reviewed_at must be a string when present')
+    }
+  }
   if (!Array.isArray(h.spans)) throw new Error('highlights.spans must be an array')
   if (!Array.isArray(h.duplicates)) throw new Error('highlights.duplicates must be an array')
 
@@ -102,6 +122,7 @@ function validateHighlights(h) {
     }
     if (typeof s.color !== 'string' || s.color.length === 0) throw new Error(`span ${s.id}: color must be a non-empty string`)
     if (typeof s.rationale !== 'string') throw new Error(`span ${s.id}: rationale must be a string`)
+    if (s.note !== undefined && typeof s.note !== 'string') throw new Error(`span ${s.id}: note must be a string when present`)
     if (!SPAN_STATUSES.includes(s.status)) throw new Error(`span ${s.id}: invalid status ${JSON.stringify(s.status)}`)
     if (!Array.isArray(s.decisions)) throw new Error(`span ${s.id}: decisions must be an array`)
   }

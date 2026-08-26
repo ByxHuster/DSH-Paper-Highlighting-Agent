@@ -19,7 +19,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
-const BODY = require('../client/render-body')
+const { BODY } = require('../client/render-body')
 
 function generateBundle() {
   const lines = []

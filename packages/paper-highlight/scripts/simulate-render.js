@@ -196,6 +196,14 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const paras = byType.p || []
   assert(paras.length > 40, 'paragraph count > 40 (got ' + paras.length + ')')
 
+  // Phase 0: the derived section index is served, and the empty "References"
+  // heading (ref_text filtered out by normalize) must NOT be rendered.
+  const live = await fetchShim('/paper-hl/read').then((r) => r.json())
+  assert(live.ok && Array.isArray(live.sections) && live.sections.length === 22, 'live /read serves 22 derived sections')
+  const h2s = byType.h2 || []
+  assert(h2s.length === 20, '20 h2 headings — empty References section skipped (got ' + h2s.length + ')')
+  assert(!h2s.some((h) => textOf(h).trim() === 'References'), 'no "References" heading rendered')
+
   // Data-driven mark count: the bundle must render exactly the spans the live
   // /paper-hl/read endpoint serves (Step 4: agent-written spans, not the old
   // fixed 9-seed demo).

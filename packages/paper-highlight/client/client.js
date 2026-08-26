@@ -24,19 +24,13 @@ window.__ModuleLoader__.load({
 			return res.json();
 		};
 		
-		const COLOR_MAP = {
-		  yellow: '#fff3a0',
-		  red: '#ff9c94',
-		  blue: '#8fd0f7',
-		  green: '#b0e3a8',
-		  purple: '#d9b8f2'
-		}
-		const COLOR_LABELS = {
-		  yellow: '关键定义/方法',
-		  red: '核心洞见/贡献',
-		  blue: '局限/风险',
-		  green: '可借鉴/启发',
-		  purple: '待深挖/存疑'
+		const COLOR_MAP = {"yellow":"#fff3a0","red":"#ff9c94","blue":"#8fd0f7","green":"#b0e3a8","purple":"#d9b8f2"};
+		const COLOR_LABELS = {"yellow":"关键定义/方法","red":"核心洞见/贡献","blue":"局限/风险","green":"可借鉴/启发","purple":"待深挖/存疑"};
+		
+		function clampRange(start, end, len) {
+		  const s = Math.max(0, Math.min(start, len))
+		  const e = Math.max(s, Math.min(end, len))
+		  return [s, e]
 		}
 		
 		function sortAnchorIds(anchors) {
@@ -47,14 +41,20 @@ window.__ModuleLoader__.load({
 		  })
 		}
 		
-		function buildBlocks(anchors, spans) {
+		function buildBlocks(anchors, spans, sections) {
 		  const byAnchor = {}
 		  for (const s of spans || []) {
 		    if (!anchors[s.anchor]) continue
 		    ;(byAnchor[s.anchor] = byAnchor[s.anchor] || []).push(s)
 		  }
+		  const skip = new Set()
+		  if (sections) {
+		    for (const sec of sections) {
+		      if (sec.empty && sec.kind !== 'paper_title') skip.add(sec.anchor_id)
+		    }
+		  }
 		  let firstTitleSeen = false
-		  return sortAnchorIds(anchors).map((id) => {
+		  return sortAnchorIds(anchors).filter((id) => !skip.has(id)).map((id) => {
 		    const a = anchors[id]
 		    const list = (byAnchor[id] || []).slice().sort((x, y) => x.char_start - y.char_start)
 		    const isFirstTitle = !firstTitleSeen && a.type === 'title'
@@ -68,15 +68,16 @@ window.__ModuleLoader__.load({
 		  const out = []
 		  let pos = 0
 		  for (const s of spans) {
-		    if (s.char_start > pos) out.push(text.slice(pos, s.char_start))
-		    if (s.char_end > s.char_start) {
+		    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
+		    if (start > pos) out.push(text.slice(pos, start))
+		    if (end > start) {
 		      out.push(React.createElement('mark', {
 		        key: s.id,
 		        style: { background: COLOR_MAP[s.color] || s.color, padding: '1px 0', borderRadius: 2, cursor: 'help' },
 		        title: (s.rationale || s.color) + (s.status ? ' [' + s.status + ']' : '')
-		      }, text.slice(s.char_start, s.char_end)))
+		      }, text.slice(start, end)))
 		    }
-		    pos = Math.max(pos, s.char_end)
+		    pos = Math.max(pos, end)
 		  }
 		  if (pos < text.length) out.push(text.slice(pos))
 		  return out
@@ -108,7 +109,7 @@ window.__ModuleLoader__.load({
 		  const data = state.data
 		  const highlights = data.highlights || {}
 		  const spans = highlights.spans || []
-		  const blocks = buildBlocks(data.anchors || {}, spans)
+		  const blocks = buildBlocks(data.anchors || {}, spans, data.sections)
 		  const metaTitle = (highlights.paper && highlights.paper.title) || ''
 		  const header = React.createElement('div', { className: 'phl-header' },
 		    React.createElement('div', { className: 'phl-title' }, metaTitle || state.paperId),

@@ -1,0 +1,131 @@
+'use strict'
+
+/**
+ * paper-highlight · review actions unit test (v0.2 Phase 1)
+ *
+ * Pure-logic coverage of host/actions.js WITHOUT the HTTP layer:
+ *   - each action mutates the doc and appends an immutable decision
+ *   - status transitions (accept/reject), recolor/rescope/note
+ *   - manual add allocates the next s-<n> id with status user_added
+ *   - review_section updates an existing plan entry and creates a missing one
+ *   - negative cases throw (unknown span/anchor, bad ranges, bad color,
+ *     unsupported action) and never persist partial mutations
+ *
+ * Run:  node test/run-actions.js
+ */
+
+const { applyAction } = require('../host/actions')
+const { newHighlightsSkeleton, validateHighlights } = require('../host/schema')
+const { assert } = require('./verify')
+
+const SECTIONS = [
+  { id: 's1', title: 'Title', level: 1, anchor_id: 'a-0001-01-01', empty: true, kind: 'paper_title' },
+  { id: 's2', title: 'Abstract', level: 2, anchor_id: 'a-0001-03-01', empty: false, kind: 'section' },
+  { id: 's3', title: 'References', level: 2, anchor_id: 'a-0001-05-01', empty: true, kind: 'section' },
+]
+
+function makeDoc() {
+  const anchors = {
+    'a-0001-01-01': { page: 1, block: 1, par: 1, type: 'title', text: 'Title', md_offset: 2 },
+    'a-0001-02-01': { page: 1, block: 2, par: 1, type: 'text', text: 'Intro text.', md_offset: 9 },
+    'a-0001-03-01': { page: 1, block: 3, par: 1, type: 'title', text: 'Abstract', md_offset: 28 },
+    'a-0001-04-01': { page: 1, block: 4, par: 1, type: 'text', text: 'Abstract body text.', md_offset: 38 },
+    'a-0001-05-01': { page: 1, block: 5, par: 1, type: 'title', text: 'References', md_offset: 62 },
+  }
+  const doc = newHighlightsSkeleton({ id: 'p-test', title: 'Title', sourcePdf: 's.pdf', mineruTask: 'm' })
+  doc.anchors = anchors
+  doc.plan.sections = [{ id: 's2', section: 'Abstract', status: 'pending' }]
+  doc.spans = [
+    { id: 's-001', anchor: 'a-0001-02-01', char_start: 0, char_end: 5, color: 'red', rationale: 'core', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: 't0' }] },
+    { id: 's-002', anchor: 'a-0001-04-01', char_start: 0, char_end: 7, color: 'blue', rationale: 'risk', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: 't0' }] },
+  ]
+  return doc
+}
+
+function main() {
+  // ── accept / reject ────────────────────────────────────────────────────────
+  let doc = makeDoc()
+  let r = applyAction(doc, { action: 'accept', span_id: 's-001' })
+  assert(r.span && r.span.id === 's-001' && r.span.status === 'accepted', 'accept → status accepted')
+  assert(r.span.decisions.length === 2 && r.span.decisions[1].action === 'accepted' && r.span.decisions[1].by === 'user', 'accept appends user decision')
+  r = applyAction(doc, { action: 'reject', span_id: 's-002' })
+  assert(r.span.status === 'rejected', 'reject → status rejected')
+  assert(doc.spans[0].decisions.length === 2 && doc.spans[1].decisions.length === 2, 'decisions are append-only')
+
+  // ── recolor ────────────────────────────────────────────────────────────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'recolor', span_id: 's-001', color: 'green' })
+  assert(r.span.color === 'green', 'recolor updates color')
+  const rec = r.span.decisions[r.span.decisions.length - 1]
+  assert(rec.action === 'recolored' && rec.from === 'red' && rec.to === 'green', 'recolor decision carries from/to')
+
+  // ── rescope ────────────────────────────────────────────────────────────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'rescope', span_id: 's-001', anchor: 'a-0001-04-01', char_start: 2, char_end: 6 })
+  assert(r.span.anchor === 'a-0001-04-01' && r.span.char_start === 2 && r.span.char_end === 6, 'rescope updates anchor+range')
+  const rs = r.span.decisions[r.span.decisions.length - 1]
+  assert(rs.action === 'rescoped' && rs.to.char_start === 2 && rs.to.anchor === 'a-0001-04-01', 'rescope decision carries from/to')
+
+  // ── add (manual highlight) ─────────────────────────────────────────────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'add', anchor: 'a-0001-04-01', char_start: 8, char_end: 14, color: 'yellow', rationale: 'user note' })
+  assert(r.span.id === 's-003', 'add allocates next id s-003')
+  assert(r.span.status === 'user_added', 'add → status user_added')
+  assert(r.span.rationale === 'user note', 'add keeps rationale')
+  assert(doc.spans.length === 3, 'add pushes a span')
+  assert(r.span.decisions.length === 1 && r.span.decisions[0].action === 'added', 'add appends added decision')
+
+  // ── note ───────────────────────────────────────────────────────────────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'note', span_id: 's-002', note: 'check later' })
+  assert(r.span.note === 'check later', 'note sets span.note')
+  const nt = r.span.decisions[r.span.decisions.length - 1]
+  assert(nt.action === 'noted' && nt.note === 'check later', 'note decision carries note')
+
+  // ── review_section: existing plan entry ────────────────────────────────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'review_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.section && r.section.status === 'reviewed', 'review_section marks existing entry reviewed')
+  assert(typeof r.section.reviewed_at === 'string' && r.section.reviewed_at.length > 0, 'reviewed_at timestamp set')
+  assert(doc.plan.sections.length === 1, 'existing entry updated, not duplicated')
+
+  // ── review_section: missing entry is created (with title from sections) ───
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'review_section', section: 's3' }, { sections: SECTIONS })
+  assert(r.section.status === 'reviewed' && r.section.id === 's3' && r.section.section === 'References', 'missing plan entry created with title')
+  assert(doc.plan.sections.length === 2, 'new plan entry appended')
+
+  // ── mutations stay schema-valid (note field + plan status/reviewed_at) ────
+  assert(validateHighlights(doc) === true, 'document remains schema-valid after mutations')
+
+  // ── negative cases ─────────────────────────────────────────────────────────
+  const expectThrow = (fn, re, msg) => {
+    let threw = null
+    try {
+      fn()
+    } catch (err) {
+      threw = err
+    }
+    assert(threw && (!re || re.test(threw.message)), msg + (threw ? ' :: ' + threw.message : ' (did not throw)'))
+  }
+  expectThrow(() => applyAction(makeDoc(), { action: 'accept', span_id: 's-999' }), /unknown span id/, 'unknown span id throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'recolor', span_id: 's-001', color: '' }), /color must be/, 'empty color throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'rescope', span_id: 's-001', anchor: 'a-0001-04-01', char_start: 0, char_end: 999 }), /out of bounds|range/, 'out-of-bounds rescope throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'rescope', span_id: 's-001', anchor: 'a-0009-99-99', char_start: 0, char_end: 2 }), /unknown anchor/, 'unknown rescope anchor throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'add', anchor: 'a-0001-04-01', char_start: -1, char_end: 3, color: 'red' }), /range/, 'negative add range throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'add', anchor: 'a-0001-04-01', char_start: 0, char_end: 3, color: '' }), /color must be/, 'add empty color throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'note', span_id: 's-001', note: 42 }), /note must be/, 'non-string note throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'nuke' }), /unsupported action/, 'unsupported action throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'review_section', section: '' }), /section must be/, 'empty review_section throws')
+  expectThrow(() => applyAction(makeDoc(), null), /action must be an object/, 'null action throws')
+
+  console.log(JSON.stringify({
+    step: 'actions-unit',
+    result: 'PASS',
+    covered: ['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section'],
+    negative: 'unknown span/anchor, bad range, bad color, bad note, unsupported action, empty section',
+    audit: 'decisions append-only, mutations stay schema-valid',
+  }, null, 2))
+}
+
+main()

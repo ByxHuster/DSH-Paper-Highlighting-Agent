@@ -3,9 +3,10 @@
 /**
  * paper-highlight · shared client render body (single source of truth)
  *
- * A self-contained block of plain JavaScript statements that defines the
- * conversation.view occupant for the paper-highlight view. It is embedded
- * verbatim into TWO artifacts so the render logic never drifts:
+ * The pure render helpers (clampRange / sortAnchorIds / buildBlocks /
+ * renderText) are defined ONCE at module level and embedded verbatim into the
+ * shipped artifacts via toString(), so the browser code and the unit tests
+ * always exercise the exact same source:
  *
  *   1. dynamic/client-half.js  — the browser half of the Step-3 dynamic
  *      dual-half plugin; `callData` is backed by `host.call('paper.read', …)`.
@@ -13,29 +14,41 @@
  *      same statements run with `callData` backed by `fetch('/paper-hl/…')`
  *      (the Step-4 host webserver route).
  *
- * Closure contract: the embedding code must provide `React`, `callData`
- * (an async (args) => JSON function answering {ok, paperId, paperMd, anchors,
- * highlights, papers} | {ok:false, error}), and `styles` ({insert(css)}).
- * The statements define `const inject = [...]`, `function apply(ctx)`, plus
- * helpers, and end with nothing exported — wrappers assign exports themselves.
+ * BODY is the embedded statement block. Closure contract: the embedding code
+ * must provide `React`, `callData` (an async (args) => JSON function answering
+ * {ok, paperId, paperMd, anchors, highlights, sections, papers} |
+ * {ok:false, error}), and `styles` ({insert(css)}). The block defines
+ * `const inject = [...]`, `function apply(ctx)`, plus the helpers, and ends
+ * with nothing exported — wrappers assign exports themselves.
  *
- * No backticks / template literals inside (the body rides template strings).
+ * The embedded helpers never use backticks / template literals / `${`, so
+ * interpolating them into BODY stays safe.
  */
 
-const BODY = String.raw`
 const COLOR_MAP = {
   yellow: '#fff3a0',
   red: '#ff9c94',
   blue: '#8fd0f7',
   green: '#b0e3a8',
-  purple: '#d9b8f2'
+  purple: '#d9b8f2',
 }
 const COLOR_LABELS = {
   yellow: '关键定义/方法',
   red: '核心洞见/贡献',
   blue: '局限/风险',
   green: '可借鉴/启发',
-  purple: '待深挖/存疑'
+  purple: '待深挖/存疑',
+}
+
+/**
+ * Clamp a 0-based half-open span range to [0, len]. Tolerates whitespace /
+ * normalization drift between anchors.json and the rendered text (design §10
+ * #4): a slightly out-of-range span still renders instead of throwing mid-slice.
+ */
+function clampRange(start, end, len) {
+  const s = Math.max(0, Math.min(start, len))
+  const e = Math.max(s, Math.min(end, len))
+  return [s, e]
 }
 
 function sortAnchorIds(anchors) {
@@ -46,14 +59,26 @@ function sortAnchorIds(anchors) {
   })
 }
 
-function buildBlocks(anchors, spans) {
+/**
+ * Build the render block list in reading order. Skips heading blocks of EMPTY
+ * sections (e.g. a leftover "## References" whose ref_text was filtered out)
+ * but never the paper-title section. sections is optional (the dynamic half may
+ * not provide it), so the skip is a best-effort refinement, not a contract.
+ */
+function buildBlocks(anchors, spans, sections) {
   const byAnchor = {}
   for (const s of spans || []) {
     if (!anchors[s.anchor]) continue
     ;(byAnchor[s.anchor] = byAnchor[s.anchor] || []).push(s)
   }
+  const skip = new Set()
+  if (sections) {
+    for (const sec of sections) {
+      if (sec.empty && sec.kind !== 'paper_title') skip.add(sec.anchor_id)
+    }
+  }
   let firstTitleSeen = false
-  return sortAnchorIds(anchors).map((id) => {
+  return sortAnchorIds(anchors).filter((id) => !skip.has(id)).map((id) => {
     const a = anchors[id]
     const list = (byAnchor[id] || []).slice().sort((x, y) => x.char_start - y.char_start)
     const isFirstTitle = !firstTitleSeen && a.type === 'title'
@@ -67,19 +92,32 @@ function renderText(text, spans) {
   const out = []
   let pos = 0
   for (const s of spans) {
-    if (s.char_start > pos) out.push(text.slice(pos, s.char_start))
-    if (s.char_end > s.char_start) {
+    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
+    if (start > pos) out.push(text.slice(pos, start))
+    if (end > start) {
       out.push(React.createElement('mark', {
         key: s.id,
         style: { background: COLOR_MAP[s.color] || s.color, padding: '1px 0', borderRadius: 2, cursor: 'help' },
         title: (s.rationale || s.color) + (s.status ? ' [' + s.status + ']' : '')
-      }, text.slice(s.char_start, s.char_end)))
+      }, text.slice(start, end)))
     }
-    pos = Math.max(pos, s.char_end)
+    pos = Math.max(pos, end)
   }
   if (pos < text.length) out.push(text.slice(pos))
   return out
 }
+
+const BODY = String.raw`
+const COLOR_MAP = ${JSON.stringify(COLOR_MAP)};
+const COLOR_LABELS = ${JSON.stringify(COLOR_LABELS)};
+
+${clampRange.toString()}
+
+${sortAnchorIds.toString()}
+
+${buildBlocks.toString()}
+
+${renderText.toString()}
 
 function PaperView() {
   const [state, setState] = React.useState({ phase: 'loading', error: null, data: null, papers: [], paperId: null })
@@ -107,7 +145,7 @@ function PaperView() {
   const data = state.data
   const highlights = data.highlights || {}
   const spans = highlights.spans || []
-  const blocks = buildBlocks(data.anchors || {}, spans)
+  const blocks = buildBlocks(data.anchors || {}, spans, data.sections)
   const metaTitle = (highlights.paper && highlights.paper.title) || ''
   const header = React.createElement('div', { className: 'phl-header' },
     React.createElement('div', { className: 'phl-title' }, metaTitle || state.paperId),
@@ -172,4 +210,4 @@ function apply(ctx) {
 }
 `
 
-module.exports = BODY
+module.exports = { BODY, clampRange, sortAnchorIds, buildBlocks, renderText }
