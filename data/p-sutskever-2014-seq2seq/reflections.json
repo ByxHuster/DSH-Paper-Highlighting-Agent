@@ -1,0 +1,179 @@
+{
+  "paper_id": "p-sutskever-2014-seq2seq",
+  "updated_at": "2026-08-27T05:50:14.474Z",
+  "sections": [
+    {
+      "section_id": "s2",
+      "title": "Abstract",
+      "status": "reviewed",
+      "counts": {
+        "proposed": 2,
+        "accepted": 0,
+        "rejected": 1,
+        "recolored": 1,
+        "rescoped": 0,
+        "noted": 0,
+        "user_added": 0
+      },
+      "accept_rate": 0,
+      "notes": "摘要仅保留框架句 s-1 且被改色 red→blue；DNN 动机句 s-2 被删除；无手动新增"
+    },
+    {
+      "section_id": "s3",
+      "title": "1 Introduction",
+      "status": "reviewed",
+      "counts": {
+        "proposed": 4,
+        "accepted": 2,
+        "rejected": 1,
+        "recolored": 1,
+        "rescoped": 0,
+        "noted": 0,
+        "user_added": 0
+      },
+      "accept_rate": 0.5,
+      "notes": "两个主结果句 s-4/s-5 原样接受；架构句 s-3 被改色 yellow→red；领域定位句 s-6 被删除"
+    },
+    {
+      "section_id": "s4",
+      "title": "2 The model",
+      "status": "reviewed",
+      "counts": {
+        "proposed": 3,
+        "accepted": 1,
+        "rejected": 1,
+        "recolored": 1,
+        "rescoped": 0,
+        "noted": 0,
+        "user_added": 0
+      },
+      "accept_rate": 0.333,
+      "notes": "EOS 技巧句 s-8 原样接受（yellow 保留）；深度设计句 s-7 被改色 yellow→red；RNN 局限动机句 s-9 被删除"
+    }
+  ],
+  "inferred": [
+    "改色规律（高置信，2/2）：方法核心设计决策（encoder-decoder 架构 s-3、深度 4 层选择 s-7）proposed=yellow 全被用户改红 → 该用户把『本文方法的核心设计决策』归为 red（核心洞见/贡献）而非 yellow；对照 s-8（EOS/softmax 实现细节技巧）yellow 被保留，说明被改红的是『设计决策』而非一切方法内容",
+    "删除模式（高置信，3/3）：动机/背景/领域定位类句子全部被删——DNN 无法映射序列的动机（s-2, blue）、RNN 对齐局限的动机（s-9, blue）、Kalchbrenner/Cho 继承定位（s-6, green）→ 用户不标『背景/动机/定位』内容，与颜色无关（blue 与 green 均有被删案例）",
+    "粒度（印证）：0 次 rescoped → 句子级粒度规则被用户接受，无需修正",
+    "密度观察（低置信）：审查后各节保留 s2:1 / s3:3 / s4:2 条，整体低于 3-5 基线且无手动新增，符合『宁缺毋滥』；但部分原因是本文去重后候选本身偏少，需更多节样本验证"
+  ],
+  "profile_proposal": {
+    "rules": [
+      {
+        "rule": "color_semantics: 方法核心设计决策（架构/深度/机制选择）按 red（核心洞见/贡献）提出；实现细节与记号技巧（EOS、softmax 等）仍按 yellow",
+        "confidence": "high",
+        "from": "s3/s4 两例 yellow→red 全改红（s-3、s-7），s-8 yellow 保留印证"
+      },
+      {
+        "rule": "value_filter: 动机/背景/领域定位类句子不提出高亮（如 DNN/RNN 局限动机、与已有工作的继承定位）",
+        "confidence": "high",
+        "from": "s2/s3/s4 三例背景类全被删（s-2、s-6、s-9），且与颜色无关"
+      },
+      {
+        "rule": "density_per_section: 每节 2-4 处（宁缺毋滥，倾向下限）",
+        "confidence": "low",
+        "from": "三节审查后保留 1/3/2 条均≤基线 3-5，无手动新增；样本仅 3 节，需后续验证"
+      }
+    ],
+    "exemplars": [
+      {
+        "span_id": "s-3",
+        "suggested": {
+          "color": "yellow"
+        },
+        "user_decision": {
+          "color": "red"
+        },
+        "section": "s3",
+        "pattern": "架构设计决策→red"
+      },
+      {
+        "span_id": "s-7",
+        "suggested": {
+          "color": "yellow"
+        },
+        "user_decision": {
+          "color": "red"
+        },
+        "section": "s4",
+        "pattern": "深度/结构设计决策→red"
+      },
+      {
+        "span_id": "s-8",
+        "suggested": {
+          "color": "yellow"
+        },
+        "user_decision": {
+          "color": "yellow",
+          "action": "accepted"
+        },
+        "section": "s4",
+        "pattern": "实现细节技巧保留 yellow"
+      },
+      {
+        "span_id": "s-2",
+        "suggested": {
+          "color": "blue"
+        },
+        "user_decision": {
+          "action": "rejected"
+        },
+        "section": "s2",
+        "pattern": "DNN 动机背景→删除"
+      },
+      {
+        "span_id": "s-6",
+        "suggested": {
+          "color": "green"
+        },
+        "user_decision": {
+          "action": "rejected"
+        },
+        "section": "s3",
+        "pattern": "领域定位→删除"
+      },
+      {
+        "span_id": "s-9",
+        "suggested": {
+          "color": "blue"
+        },
+        "user_decision": {
+          "action": "rejected"
+        },
+        "section": "s4",
+        "pattern": "RNN 局限动机→删除"
+      },
+      {
+        "span_id": "s-1",
+        "suggested": {
+          "color": "red"
+        },
+        "user_decision": {
+          "color": "blue"
+        },
+        "section": "s2",
+        "pattern": "框架句 red→blue（单例，方向独特，待观察）"
+      }
+    ],
+    "stats": {
+      "sections_reviewed": 3,
+      "spans_proposed": 9,
+      "spans_decided": 9,
+      "accepted": 3,
+      "rejected": 3,
+      "recolored": 3,
+      "final_retained": 6,
+      "tool_accept_rate": 0.333,
+      "retain_rate": 0.667,
+      "recolor_events": 3,
+      "reject_events": 3
+    }
+  },
+  "confirmation": {
+    "accepted": true,
+    "at": "2026-08-27T05:50:47.778Z",
+    "decisions": {
+      "accept": "all"
+    }
+  }
+}

@@ -1,1 +1,171 @@
-[]
+[
+  {
+    "span_id": "s-3",
+    "suggested": {
+      "color": "yellow"
+    },
+    "user_decision": {
+      "color": "red"
+    },
+    "section": "s3",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-7",
+    "suggested": {
+      "color": "yellow"
+    },
+    "user_decision": {
+      "color": "red"
+    },
+    "section": "s4",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-8",
+    "suggested": {
+      "color": "yellow"
+    },
+    "user_decision": {
+      "color": "yellow",
+      "action": "accepted"
+    },
+    "section": "s4",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-2",
+    "suggested": {
+      "color": "blue"
+    },
+    "user_decision": {
+      "action": "rejected"
+    },
+    "section": "s2",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-6",
+    "suggested": {
+      "color": "green"
+    },
+    "user_decision": {
+      "action": "rejected"
+    },
+    "section": "s3",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-9",
+    "suggested": {
+      "color": "blue"
+    },
+    "user_decision": {
+      "action": "rejected"
+    },
+    "section": "s4",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-1",
+    "suggested": {
+      "color": "red"
+    },
+    "user_decision": {
+      "color": "blue"
+    },
+    "section": "s2",
+    "note": null,
+    "from": "p-sutskever-2014-seq2seq"
+  },
+  {
+    "span_id": "s-001",
+    "suggested": {
+      "color": "yellow",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "yellow",
+      "status": "accepted"
+    },
+    "section": "s2",
+    "note": "NMT 范式定义按 yellow 提出被原样接受",
+    "from": "p-bahdanau-2016-attention"
+  },
+  {
+    "span_id": "s-002",
+    "suggested": {
+      "color": "yellow",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "yellow",
+      "status": "accepted"
+    },
+    "section": "s2",
+    "note": "encoder-decoder 基线框架定义按 yellow 被接受",
+    "from": "p-bahdanau-2016-attention"
+  },
+  {
+    "span_id": "s-003",
+    "suggested": {
+      "color": "red",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "red",
+      "status": "accepted"
+    },
+    "section": "s3",
+    "note": "瓶颈猜想（贡献类）按 red 被接受",
+    "from": "p-bahdanau-2016-attention"
+  },
+  {
+    "span_id": "s-004",
+    "suggested": {
+      "color": "red",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "red",
+      "status": "accepted"
+    },
+    "section": "s3",
+    "note": "联合学习对齐与翻译架构主张按 red 被接受",
+    "from": "p-bahdanau-2016-attention"
+  },
+  {
+    "span_id": "s-005",
+    "suggested": {
+      "color": "red",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "red",
+      "status": "accepted"
+    },
+    "section": "s3",
+    "note": "不定长向量序列化设计特征按 red 被接受",
+    "from": "p-bahdanau-2016-attention"
+  },
+  {
+    "span_id": "s-006",
+    "suggested": {
+      "color": "red",
+      "granularity": "sentence"
+    },
+    "user_decision": {
+      "color": "red",
+      "status": "accepted"
+    },
+    "section": "s3",
+    "note": "软对齐语言直觉结果主张按 red 被接受",
+    "from": "p-bahdanau-2016-attention"
+  }
+]

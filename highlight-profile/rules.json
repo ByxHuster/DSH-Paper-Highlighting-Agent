@@ -12,5 +12,61 @@
     "confidence": "medium",
     "source": "default-cold-start",
     "enabled": true
+  },
+  {
+    "id": "rule-3",
+    "rule": "color_semantics: 方法核心设计决策（架构/深度/机制选择）按 red（核心洞见/贡献）提出；实现细节与记号技巧（EOS、softmax 等）仍按 yellow",
+    "confidence": "high",
+    "source": "from p-sutskever-2014-seq2seq",
+    "from": "s3/s4 两例 yellow→red 全改红（s-3、s-7），s-8 yellow 保留印证",
+    "enabled": true
+  },
+  {
+    "id": "rule-4",
+    "rule": "value_filter: 动机/背景/领域定位类句子不提出高亮（如 DNN/RNN 局限动机、与已有工作的继承定位）",
+    "confidence": "high",
+    "source": "from p-sutskever-2014-seq2seq",
+    "from": "s2/s3/s4 三例背景类全被删（s-2、s-6、s-9），且与颜色无关",
+    "enabled": true
+  },
+  {
+    "id": "rule-5",
+    "rule": "density_per_section: 每节 2-4 处（宁缺毋滥，倾向下限）",
+    "confidence": "low",
+    "source": "from p-sutskever-2014-seq2seq",
+    "from": "三节审查后保留 1/3/2 条均≤基线 3-5，无手动新增；样本仅 3 节，需后续验证",
+    "enabled": false
+  },
+  {
+    "id": "rule-6",
+    "rule": "color_semantics: 论文贡献/核心洞见类主张（瓶颈猜想、新架构主张、核心结果主张）按 red 提出",
+    "confidence": "medium",
+    "source": "from p-bahdanau-2016-attention",
+    "from": "s3 节 4 条 red 候选全部接受（Intro 贡献类）",
+    "enabled": true
+  },
+  {
+    "id": "rule-7",
+    "rule": "color_semantics: 范式/框架类关键定义（NMT 定义、encoder-decoder 基线定义）按 yellow 提出",
+    "confidence": "medium",
+    "source": "from p-bahdanau-2016-attention",
+    "from": "s2 节 2 条 yellow 候选全部接受",
+    "enabled": true
+  },
+  {
+    "id": "rule-8",
+    "rule": "granularity: 默认句子级（整句/关键子句），避免整段刷色",
+    "confidence": "medium",
+    "source": "from p-bahdanau-2016-attention",
+    "from": "6/6 句子级候选全部接受",
+    "enabled": true
+  },
+  {
+    "id": "rule-9",
+    "rule": "dedup: 已在 duplicates 登记的主张在其 repeats_at 位置默认跳过，不再提出",
+    "confidence": "medium",
+    "source": "from p-bahdanau-2016-attention",
+    "from": "s6 零候选节与 Abstract 去重跳过均获审查认可",
+    "enabled": true
   }
 ]

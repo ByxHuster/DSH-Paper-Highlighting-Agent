@@ -1,0 +1,24 @@
+{
+  "id": "p-sutskever-2014-seq2seq",
+  "title": "Sequence to Sequence Learning with Neural Networks",
+  "source_pdf": "D:/aa/Sutskever 等 - 2014 - 2014.9 Seq2Seq.pdf",
+  "mineru_task": "80f40440-7a2f-4e83-89ca-9c87185ab12b",
+  "middle_json": "layout.json",
+  "created_at": "2026-08-27T05:39:26.213Z",
+  "stats": {
+    "pages": 9,
+    "kept_blocks": 66,
+    "kept_chars": 25018,
+    "skipped": {
+      "by_type": {
+        "empty": 5,
+        "image": 1,
+        "interline_equation": 4,
+        "table": 3,
+        "chart": 4,
+        "ref_text": 31
+      },
+      "header_footer": 0
+    }
+  }
+}

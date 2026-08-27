@@ -244,6 +244,10 @@ function mockWriteHandler(url, body) {
 }
 
 function fetchShim(url, opts) {
+  // The paper suite now has 3 papers; the assertion corpus (spans/plan/sections
+  // counts, h1 title) is pinned to p-mikolov, so a bare /paper-hl/read (which
+  // resolves to the first alphabetical paper) is redirected to it.
+  if (url === '/paper-hl/read') url = '/paper-hl/read?paperId=p-mikolov-2013-2013-1-word2vec'
   const target = url.startsWith('/') ? API_ORIGIN + url : url
   if (url.indexOf('/paper-hl/profile') === 0) {
     return mockProfileHandler(url, opts)

@@ -1,0 +1,998 @@
+{
+  "anchors": {
+    "a-0001-01-01": {
+      "block": 1,
+      "md_offset": 2,
+      "page": 1,
+      "par": 1,
+      "text": "Sequence to Sequence Learning with Neural Networks",
+      "type": "title"
+    },
+    "a-0001-02-01": {
+      "block": 2,
+      "md_offset": 54,
+      "page": 1,
+      "par": 1,
+      "text": "Ilya Sutskever Google ilyasu@google.com",
+      "type": "text"
+    },
+    "a-0001-03-01": {
+      "block": 3,
+      "md_offset": 95,
+      "page": 1,
+      "par": 1,
+      "text": "Oriol Vinyals Google vinyals@google.com",
+      "type": "text"
+    },
+    "a-0001-04-01": {
+      "block": 4,
+      "md_offset": 136,
+      "page": 1,
+      "par": 1,
+      "text": "Quoc V. Le Google qvl@google.com",
+      "type": "text"
+    },
+    "a-0001-05-01": {
+      "block": 5,
+      "md_offset": 173,
+      "page": 1,
+      "par": 1,
+      "text": "Abstract",
+      "type": "title"
+    },
+    "a-0001-06-01": {
+      "block": 6,
+      "md_offset": 183,
+      "page": 1,
+      "par": 1,
+      "text": "Deep Neural Networks (DNNs) are powerful models that have achieved excel- lent performance on difficult learning tasks. Although DNNs work well whenever large labeled training sets are available, they cannot be used to map sequences to sequences. In this paper, we present a general end-to-end approach to sequence learning that makes minimal assumptions on the sequence structure. Our method uses a multilayered Long Short-Term Memory (LSTM) to map the input sequence to a vector of a fixed dimensionality, and then another deep LSTM to decode the target sequence from the vector. Our main result is that on an English to French translation task from the WMT’14 dataset, the translations produced by the LSTM achieve a BLEU score of 34.8 on the entire test set, where the LSTM’s BLEU score was penalized on out-of-vocabulary words. Additionally, the LSTM did not have difficulty on long sentences. For comparison, a phrase-based SMT system achieves a BLEU score of 33.3 on the same dataset. When we used the LSTM to rerank the 1000 hypotheses produced by the aforementioned SMT system, its BLEU score increases to 36.5, which is close to the previous best result on this task. The LSTM also learned sensible phrase and sentence representations that are sensitive to word order and are relatively invariant to the active and the pas- sive voice. Finally, we found that reversing the order of the words in all source sentences (but not target sentences) improved the LSTM’s performance markedly, because doing so introduced many short term dependencies between the source and the target sentence which made the optimization problem easier.",
+      "type": "text"
+    },
+    "a-0001-07-01": {
+      "block": 7,
+      "md_offset": 1826,
+      "page": 1,
+      "par": 1,
+      "text": "1 Introduction",
+      "type": "title"
+    },
+    "a-0001-08-01": {
+      "block": 8,
+      "md_offset": 1842,
+      "page": 1,
+      "par": 1,
+      "text": "Deep Neural Networks (DNNs) are extremely powerful machine learning models that achieve ex- cellent performance on difficult problems such as speech recognition [13, 7] and visual object recog- nition [19, 6, 21, 20]. DNNs are powerful because they can perform arbitrary parallel computation for a modest number of steps. A surprising example of the power of DNNs is their ability to sort N N-bit numbers using only 2 hidden layers of quadratic size [27]. So, while neural networks are related to conventional statistical models, they learn an intricate computation. Furthermore, large DNNs can be trained with supervised backpropagation whenever the labeled training set has enough information to specify the network’s parameters. Thus, if there exists a parameter setting of a large DNN that achieves good results (for example, because humans can solve the task very rapidly), supervised backpropagation will find these parameters and solve the problem.",
+      "type": "text"
+    },
+    "a-0001-09-01": {
+      "block": 9,
+      "md_offset": 2799,
+      "page": 1,
+      "par": 1,
+      "text": "Despite their flexibility and power, DNNs can only be applied to problems whose inputs and targets can be sensibly encoded with vectors of fixed dimensionality. It is a significant limitation, since many important problems are best expressed with sequences whose lengths are not known a-priori. For example, speech recognition and machine translation are sequential problems. Likewise, ques- tion answering can also be seen as mapping a sequence of words representing the question to a sequence of words representing the answer. It is therefore clear that a domain-independent method that learns to map sequences to sequences would be useful.",
+      "type": "text"
+    },
+    "a-0002-02-01": {
+      "block": 2,
+      "md_offset": 3443,
+      "page": 2,
+      "par": 1,
+      "text": "Sequences pose a challenge for DNNs because they require that the dimensionality of the inputs and outputs is known and fixed. In this paper, we show that a straightforward application of the Long Short-Term Memory (LSTM) architecture [16] can solve general sequence to sequence problems. The idea is to use one LSTM to read the input sequence, one timestep at a time, to obtain large fixed- dimensional vector representation, and then to use another LSTM to extract the output sequence from that vector (fig. 1). The second LSTM is essentially a recurrent neural network language model [28, 23, 30] except that it is conditioned on the input sequence. The LSTM’s ability to successfully learn on data with long range temporal dependencies makes it a natural choice for this application due to the considerable time lag between the inputs and their corresponding outputs (fig. 1).",
+      "type": "text"
+    },
+    "a-0002-03-01": {
+      "block": 3,
+      "md_offset": 4325,
+      "page": 2,
+      "par": 1,
+      "text": "There have been a number of related attempts to address the general sequence to sequence learning problem with neural networks. Our approach is closely related to Kalchbrenner and Blunsom [18] who were the first to map the entire input sentence to vector, and is related to Cho et al. [5] although the latter was used only for rescoring hypotheses produced by a phrase-based system. Graves [10] introduced a novel differentiable attention mechanism that allows neural networks to focus on dif- ferent parts of their input, and an elegant variant of this idea was successfully applied to machine translation by Bahdanau et al. [2]. The Connectionist Sequence Classification is another popular technique for mapping sequences to sequences with neural networks, but it assumes a monotonic alignment between the inputs and the outputs [11].",
+      "type": "text"
+    },
+    "a-0002-05-01": {
+      "block": 5,
+      "md_offset": 5163,
+      "page": 2,
+      "par": 1,
+      "text": "The main result of this work is the following. On the WMT’14 English to French translation task, we obtained a BLEU score of 34.81 by directly extracting translations from an ensemble of 5 deep LSTMs (with 384M parameters and 8,000 dimensional state each) using a simple left-to-right beam- search decoder. This is by far the best result achieved by direct translation with large neural net- works. For comparison, the BLEU score of an SMT baseline on this dataset is 33.30 [29]. The 34.81 BLEU score was achieved by an LSTM with a vocabulary of 80k words, so the score was penalized whenever the reference translation contained a word not covered by these 80k. This result shows that a relatively unoptimized small-vocabulary neural network architecture which has much room for improvement outperforms a phrase-based SMT system.",
+      "type": "text"
+    },
+    "a-0002-06-01": {
+      "block": 6,
+      "md_offset": 5994,
+      "page": 2,
+      "par": 1,
+      "text": "Finally, we used the LSTM to rescore the publicly available 1000-best lists of the SMT baseline on the same task [29]. By doing so, we obtained a BLEU score of 36.5, which improves the baseline by 3.2 BLEU points and is close to the previous best published result on this task (which is 37.0 [9]).",
+      "type": "text"
+    },
+    "a-0002-07-01": {
+      "block": 7,
+      "md_offset": 6293,
+      "page": 2,
+      "par": 1,
+      "text": "Surprisingly, the LSTM did not suffer on very long sentences, despite the recent experience of other researchers with related architectures [26]. We were able to do well on long sentences because we reversed the order of words in the source sentence but not the target sentences in the training and test set. By doing so, we introduced many short term dependencies that made the optimization problem much simpler (see sec. 2 and 3.3). As a result, SGD could learn LSTMs that had no trouble with long sentences. The simple trick of reversing the words in the source sentence is one of the key technical contributions of this work.",
+      "type": "text"
+    },
+    "a-0002-08-01": {
+      "block": 8,
+      "md_offset": 6924,
+      "page": 2,
+      "par": 1,
+      "text": "A useful property of the LSTM is that it learns to map an input sentence of variable length into a fixed-dimensional vector representation. Given that translations tend to be paraphrases of the source sentences, the translation objective encourages the LSTM to find sentence representations that capture their meaning, as sentences with similar meanings are close to each other while different sentences meanings will be far. A qualitative evaluation supports this claim, showing that our model is aware of word order and is fairly invariant to the active and passive voice.",
+      "type": "text"
+    },
+    "a-0003-02-01": {
+      "block": 2,
+      "md_offset": 7503,
+      "page": 3,
+      "par": 1,
+      "text": "2 The model",
+      "type": "title"
+    },
+    "a-0003-03-01": {
+      "block": 3,
+      "md_offset": 7516,
+      "page": 3,
+      "par": 1,
+      "text": "The Recurrent Neural Network (RNN) [31, 28] is a natural generalization of feedforward neural networks to sequences. Given a sequence of inputs ( x _ { 1 } , \\dots , x _ { T } ) , a standard RNN computes a sequence of outputs ( y _ { 1 } , \\dots , y _ { T } ) by iterating the following equation:",
+      "type": "text"
+    },
+    "a-0003-05-01": {
+      "block": 5,
+      "md_offset": 7814,
+      "page": 3,
+      "par": 1,
+      "text": "The RNN can easily map sequences to sequences whenever the alignment between the inputs the outputs is known ahead of time. However, it is not clear how to apply an RNN to problems whose input and the output sequences have different lengths with complicated and non-monotonic relation- ships.",
+      "type": "text"
+    },
+    "a-0003-06-01": {
+      "block": 6,
+      "md_offset": 8108,
+      "page": 3,
+      "par": 1,
+      "text": "The simplest strategy for general sequence learning is to map the input sequence to a fixed-sized vector using one RNN, and then to map the vector to the target sequence with another RNN (this approach has also been taken by Cho et al. [5]). While it could work in principle since the RNN is provided with all the relevant information, it would be difficult to train the RNNs due to the resulting long term dependencies (figure 1) [14, 4, 16, 15]. However, the Long Short-Term Memory (LSTM) [16] is known to learn problems with long range temporal dependencies, so an LSTM may succeed in this setting.",
+      "type": "text"
+    },
+    "a-0003-07-01": {
+      "block": 7,
+      "md_offset": 8711,
+      "page": 3,
+      "par": 1,
+      "text": "The goal of the LSTM is to estimate the conditional probability p ( y _ { 1 } , . . . , y _ { T ^ { \\prime } } | x _ { 1 } , . . . , x _ { T } ) where ( x _ { 1 } , \\dots , x _ { T } ) is an input sequence and y _ { 1 } , \\ldots , y _ { T ^ { \\prime } } is its corresponding output sequence whose length \\dot { T } ^ { \\prime } may differ from \\dot { T } . The LSTM computes this conditional probability by first obtaining the fixed- dimensional representation v of the input sequence ( x _ { 1 } , \\ldots , x _ { T } ) given by the last hidden state of the LSTM, and then computing the probability of y _ { 1 } , \\ldots , y _ { T ^ { \\prime } } with a standard LSTM-LM formulation whose initial hidden state is set to the representation v of x _ { 1 } , \\ldots , x _ { T }",
+      "type": "text"
+    },
+    "a-0003-09-01": {
+      "block": 9,
+      "md_offset": 9486,
+      "page": 3,
+      "par": 1,
+      "text": "In this equation, each p ( y _ { t } | v , y _ { 1 } , \\dots , y _ { t - 1 } ) distribution is represented with a softmax over all the words in the vocabulary. We use the LSTM formulation from Graves [10]. Note that we require that each sentence ends with a special end-of-sentence symbol { \\mathrm { ~ ~ \\omega ~ } } ^ { \\mathrm { \\tiny ~ 6 6 } } < \\mathrm { E O S } > ^ { \\mathrm { \\tiny ~ , } } , which enables the model to define a distribution over sequences of all possible lengths. The overall scheme is outlined in figure 1, where the shown LSTM computes the representation of ^ { \\mathrm { \\tiny ~ 4 \\cdot 5 } } \\mathrm { \\bf A } ^ { \\mathrm { \\tiny ~ 5 } } , ~ ^ { \\mathrm { \\tiny ~ 4 \\cdot } } \\mathrm { \\bf B } ^ { \\mathrm { \\tiny ~ 5 } } , ~ ^ { \\mathrm { \\tiny ~ 4 \\cdot } } \\mathrm { \\bf C } ^ { \\mathrm { \\tiny ~ 5 } } , ~ ^ { \\mathrm { \\tiny ~ 4 \\cdot } } \\mathrm { \\bf < E 0 S > } ^ { \\mathrm { \\tiny ~ 5 } } and then uses this representation to compute the probability of ^ { \\mathrm { \\tiny ~ * } } \\mathrm { W } ^ { \\mathrm { \\tiny , ~ * } } \\mathrm { X } ^ { \\mathrm { \\tiny , ~ * } } , ^ { \\mathrm { \\tiny ~ * } } \\mathrm { Y } ^ { \\mathrm { \\tiny , ~ * } } , ^ { \\mathrm { \\tiny ~ * } } \\mathrm { Z } ^ { \\mathrm { \\tiny , ~ * } } \\mathrm { < E O S > } ^ { \\mathrm { \\tiny ~ , ~ } }",
+      "type": "text"
+    },
+    "a-0003-10-01": {
+      "block": 10,
+      "md_offset": 10794,
+      "page": 3,
+      "par": 1,
+      "text": "Our actual models differ from the above description in three important ways. First, we used two different LSTMs: one for the input sequence and another for the output sequence, because doing so increases the number model parameters at negligible computational cost and makes it natural to train the LSTM on multiple language pairs simultaneously [18]. Second, we found that deep LSTMs significantly outperformed shallow LSTMs, so we chose an LSTM with four layers. Third, we found it extremely valuable to reverse the order of the words of the input sentence. So for example, instead of mapping the sentence a , b , \\mathfrak { e } ^ { } c to the sentence \\alpha , \\beta , \\gamma , the LSTM is asked to map c , b , a \\ t o \\alpha , \\beta , \\gamma , where \\alpha , \\beta , \\gamma is the translation of a , b , c . This way, a is in close proximity to α, b is fairly close to \\beta , and so on, a fact that makes it easy for SGD to “establish communication” between the input and the output. We found this simple data transformation to greatly improve the performance of the LSTM.",
+      "type": "text"
+    },
+    "a-0003-11-01": {
+      "block": 11,
+      "md_offset": 11877,
+      "page": 3,
+      "par": 1,
+      "text": "3 Experiments",
+      "type": "title"
+    },
+    "a-0003-12-01": {
+      "block": 12,
+      "md_offset": 11892,
+      "page": 3,
+      "par": 1,
+      "text": "We applied our method to the WMT’14 English to French MT task in two ways. We used it to directly translate the input sentence without using a reference SMT system and we it to rescore the n-best lists of an SMT baseline. We report the accuracy of these translation methods, present sample translations, and visualize the resulting sentence representation.",
+      "type": "text"
+    },
+    "a-0004-01-01": {
+      "block": 1,
+      "md_offset": 12253,
+      "page": 4,
+      "par": 1,
+      "text": "3.1 Dataset details",
+      "type": "title"
+    },
+    "a-0004-02-01": {
+      "block": 2,
+      "md_offset": 12274,
+      "page": 4,
+      "par": 1,
+      "text": "We used the WMT’14 English to French dataset. We trained our models on a subset of 12M sen- tences consisting of 348M French words and 304M English words, which is a clean “selected” subset from [29]. We chose this translation task and this specific training set subset because of the public availability of a tokenized training and test set together with 1000-best lists from the baseline SMT [29].",
+      "type": "text"
+    },
+    "a-0004-03-01": {
+      "block": 3,
+      "md_offset": 12675,
+      "page": 4,
+      "par": 1,
+      "text": "As typical neural language models rely on a vector representation for each word, we used a fixed vocabulary for both languages. We used 160,000 of the most frequent words for the source language and 80,000 of the most frequent words for the target language. Every out-of-vocabulary word was replaced with a special “UNK” token.",
+      "type": "text"
+    },
+    "a-0004-04-01": {
+      "block": 4,
+      "md_offset": 13007,
+      "page": 4,
+      "par": 1,
+      "text": "3.2 Decoding and Rescoring",
+      "type": "title"
+    },
+    "a-0004-05-01": {
+      "block": 5,
+      "md_offset": 13035,
+      "page": 4,
+      "par": 1,
+      "text": "The core of our experiments involved training a large deep LSTM on many sentence pairs. We trained it by maximizing the log probability of a correct translation T given the source sentence S, so the training objective is",
+      "type": "text"
+    },
+    "a-0004-07-01": {
+      "block": 7,
+      "md_offset": 13257,
+      "page": 4,
+      "par": 1,
+      "text": "where s is the training set. Once training is complete, we produce translations by finding the most likely translation according to the LSTM:",
+      "type": "text"
+    },
+    "a-0004-09-01": {
+      "block": 9,
+      "md_offset": 13400,
+      "page": 4,
+      "par": 1,
+      "text": "We search for the most likely translation using a simple left-to-right beam search decoder which maintains a small number B of partial hypotheses, where a partial hypothesis is a prefix of some translation. At each timestep we extend each partial hypothesis in the beam with every possible word in the vocabulary. This greatly increases the number of the hypotheses so we discard all but the B most likely hypotheses according to the model’s log probability. As soon as the “<EOS>” symbol is appended to a hypothesis, it is removed from the beam and is added to the set of complete hypotheses. While this decoder is approximate, it is simple to implement. Interestingly, our system performs well even with a beam size of 1, and a beam of size 2 provides most of the benefits of beam search (Table 1).",
+      "type": "text"
+    },
+    "a-0004-10-01": {
+      "block": 10,
+      "md_offset": 14202,
+      "page": 4,
+      "par": 1,
+      "text": "We also used the LSTM to rescore the 1000-best lists produced by the baseline system [29]. To rescore an n-best list, we computed the log probability of every hypothesis with our LSTM and took an even average with their score and the LSTM’s score.",
+      "type": "text"
+    },
+    "a-0004-11-01": {
+      "block": 11,
+      "md_offset": 14454,
+      "page": 4,
+      "par": 1,
+      "text": "3.3 Reversing the Source Sentences",
+      "type": "title"
+    },
+    "a-0004-12-01": {
+      "block": 12,
+      "md_offset": 14490,
+      "page": 4,
+      "par": 1,
+      "text": "While the LSTM is capable of solving problems with long term dependencies, we discovered that the LSTM learns much better when the source sentences are reversed (the target sentences are not reversed). By doing so, the LSTM’s test perplexity dropped from 5.8 to 4.7, and the test BLEU scores of its decoded translations increased from 25.9 to 30.6.",
+      "type": "text"
+    },
+    "a-0004-13-01": {
+      "block": 13,
+      "md_offset": 14840,
+      "page": 4,
+      "par": 1,
+      "text": "While we do not have a complete explanation to this phenomenon, we believe that it is caused by the introduction of many short term dependencies to the dataset. Normally, when we concatenate a source sentence with a target sentence, each word in the source sentence is far from its corresponding word in the target sentence. As a result, the problem has a large “minimal time lag” [17]. By reversing the words in the source sentence, the average distance between corresponding words in the source and target language is unchanged. However, the first few words in the source language are now very close to the first few words in the target language, so the problem’s minimal time lag is greatly reduced. Thus, backpropagation has an easier time “establishing communication” between the source sentence and the target sentence, which in turn results in substantially improved overall performance.",
+      "type": "text"
+    },
+    "a-0004-14-01": {
+      "block": 14,
+      "md_offset": 15736,
+      "page": 4,
+      "par": 1,
+      "text": "Initially, we believed that reversing the input sentences would only lead to more confident predic- tions in the early parts of the target sentence and to less confident predictions in the later parts. How- ever, LSTMs trained on reversed source sentences did much better on long sentences than LSTMs trained on the raw source sentences (see sec. 3.7), which suggests that reversing the input sentences results in LSTMs with better memory utilization.",
+      "type": "text"
+    },
+    "a-0005-02-01": {
+      "block": 2,
+      "md_offset": 16192,
+      "page": 5,
+      "par": 1,
+      "text": "3.4 Training details",
+      "type": "title"
+    },
+    "a-0005-03-01": {
+      "block": 3,
+      "md_offset": 16214,
+      "page": 5,
+      "par": 1,
+      "text": "We found that the LSTM models are fairly easy to train. We used deep LSTMs with 4 layers, with 1000 cells at each layer and 1000 dimensional word embeddings, with an input vocabulary of 160,000 and an output vocabulary of 80,000. Thus the deep LSTM uses 8000 real numbers to represent a sentence. We found deep LSTMs to significantly outperform shallow LSTMs, where each additional layer reduced perplexity by nearly 10%, possibly due to their much larger hidden state. We used a naive softmax over 80,000 words at each output. The resulting LSTM has 384M parameters of which 64M are pure recurrent connections (32M for the “encoder” LSTM and 32M for the “decoder” LSTM). The complete training details are given below:",
+      "type": "text"
+    },
+    "a-0005-04-01": {
+      "block": 4,
+      "md_offset": 16934,
+      "page": 5,
+      "par": 1,
+      "text": "• We initialized all of the LSTM’s parameters with the uniform distribution between -0.08 and 0.08",
+      "type": "text"
+    },
+    "a-0005-05-01": {
+      "block": 5,
+      "md_offset": 17034,
+      "page": 5,
+      "par": 1,
+      "text": "• We used stochastic gradient descent without momentum, with a fixed learning rate of 0.7. After 5 epochs, we begun halving the learning rate every half epoch. We trained our models for a total of 7.5 epochs.",
+      "type": "text"
+    },
+    "a-0005-06-01": {
+      "block": 6,
+      "md_offset": 17244,
+      "page": 5,
+      "par": 1,
+      "text": "• We used batches of 128 sequences for the gradient and divided it the size of the batch (namely, 128).",
+      "type": "text"
+    },
+    "a-0005-07-01": {
+      "block": 7,
+      "md_offset": 17349,
+      "page": 5,
+      "par": 1,
+      "text": "• Although LSTMs tend to not suffer from the vanishing gradient problem, they can have exploding gradients. Thus we enforced a hard constraint on the norm of the gradient [10, 25] by scaling it when its norm exceeded a threshold. For each training batch, we compute s = \\| g \\| _ { 2 } , , where g is the gradient divided by 128. { \\mathrm { I f ~ } } s > 5 , we set \\begin{array} { r } { g = \\frac { 5 g } { s } } \\end{array}",
+      "type": "text"
+    },
+    "a-0005-08-01": {
+      "block": 8,
+      "md_offset": 17777,
+      "page": 5,
+      "par": 1,
+      "text": "• Different sentences have different lengths. Most sentences are short (e.g., length 20-30) but some sentences are long (e.g., length > 100), so a minibatch of 128 randomly chosen training sentences will have many short sentences and few long sentences, and as a result, much of the computation in the minibatch is wasted. To address this problem, we made sure that all sentences in a minibatch are roughly of the same length, yielding a 2x speedup.",
+      "type": "text"
+    },
+    "a-0005-09-01": {
+      "block": 9,
+      "md_offset": 18231,
+      "page": 5,
+      "par": 1,
+      "text": "3.5 Parallelization",
+      "type": "title"
+    },
+    "a-0005-10-01": {
+      "block": 10,
+      "md_offset": 18252,
+      "page": 5,
+      "par": 1,
+      "text": "A C++ implementation of deep LSTM with the configuration from the previous section on a sin- gle GPU processes a speed of approximately 1,700 words per second. This was too slow for our purposes, so we parallelized our model using an 8-GPU machine. Each layer of the LSTM was executed on a different GPU and communicated its activations to the next GPU / layer as soon as they were computed. Our models have 4 layers of LSTMs, each of which resides on a separate GPU. The remaining 4 GPUs were used to parallelize the softmax, so each GPU was responsible for multiplying by a 1000 × 20000 matrix. The resulting implementation achieved a speed of 6,300 (both English and French) words per second with a minibatch size of 128. Training took about a ten days with this implementation.",
+      "type": "text"
+    },
+    "a-0005-11-01": {
+      "block": 11,
+      "md_offset": 19038,
+      "page": 5,
+      "par": 1,
+      "text": "3.6 Experimental Results",
+      "type": "title"
+    },
+    "a-0005-12-01": {
+      "block": 12,
+      "md_offset": 19064,
+      "page": 5,
+      "par": 1,
+      "text": "We used the cased BLEU score [24] to evaluate the quality of our translations. We computed our BLEU scores using multi-bleu. \\mathtt { p l } ^ { 1 } on the tokenized predictions and ground truth. This way of evaluating the BELU score is consistent with [5] and [2], and reproduces the 33.3 score of [29]. However, if we evaluate the best WMT’14 system [9] (whose predictions can be downloaded from statmt.org\\matrix) in this manner, we get 37.0, which is greater than the 35.8 reported by statmt.org\\matrix.",
+      "type": "text"
+    },
+    "a-0005-13-01": {
+      "block": 13,
+      "md_offset": 19573,
+      "page": 5,
+      "par": 1,
+      "text": "The results are presented in tables 1 and 2. Our best results are obtained with an ensemble of LSTMs that differ in their random initializations and in the random order of minibatches. While the decoded translations of the LSTM ensemble do not outperform the best WMT’14 system, it is the first time that a pure neural translation system outperforms a phrase-based SMT baseline on a large scale MT task by a sizeable margin, despite its inability to handle out-of-vocabulary words. The LSTM is within 0.5 BLEU points of the best WMT’14 result if it is used to rescore the 1000-best list of the baseline system.",
+      "type": "text"
+    },
+    "a-0006-04-01": {
+      "block": 4,
+      "md_offset": 20188,
+      "page": 6,
+      "par": 1,
+      "text": "3.7 Performance on long sentences",
+      "type": "title"
+    },
+    "a-0006-05-01": {
+      "block": 5,
+      "md_offset": 20223,
+      "page": 6,
+      "par": 1,
+      "text": "We were surprised to discover that the LSTM did well on long sentences, which is shown quantita- tively in figure 3. Table 3 presents several examples of long sentences and their translations.",
+      "type": "text"
+    },
+    "a-0006-06-01": {
+      "block": 6,
+      "md_offset": 20420,
+      "page": 6,
+      "par": 1,
+      "text": "3.8 Model Analysis",
+      "type": "title"
+    },
+    "a-0006-09-01": {
+      "block": 9,
+      "md_offset": 20440,
+      "page": 6,
+      "par": 1,
+      "text": "One of the attractive features of our model is its ability to turn a sequence of words into a vector of fixed dimensionality. Figure 2 visualizes some of the learned representations. The figure clearly shows that the representations are sensitive to the order of words, while being fairly insensitive to the replacement of an active voice with a passive voice. The two-dimensional projections are obtained using PCA.",
+      "type": "text"
+    },
+    "a-0007-05-01": {
+      "block": 5,
+      "md_offset": 20861,
+      "page": 7,
+      "par": 1,
+      "text": "4 Related work",
+      "type": "title"
+    },
+    "a-0007-06-01": {
+      "block": 6,
+      "md_offset": 20877,
+      "page": 7,
+      "par": 1,
+      "text": "There is a large body of work on applications of neural networks to machine translation. So far, the simplest and most effective way of applying an RNN-Language Model (RNNLM) [23] or a",
+      "type": "text"
+    },
+    "a-0008-01-01": {
+      "block": 1,
+      "md_offset": 21063,
+      "page": 8,
+      "par": 1,
+      "text": "Feedforward Neural Network Language Model (NNLM) [3] to an MT task is by rescoring the n- best lists of a strong MT baseline [22], which reliably improves translation quality.",
+      "type": "text"
+    },
+    "a-0008-02-01": {
+      "block": 2,
+      "md_offset": 21240,
+      "page": 8,
+      "par": 1,
+      "text": "More recently, researchers have begun to look into ways of including information about the source language into the NNLM. Examples of this work include Auli et al. [1], who combine an NNLM with a topic model of the input sentence, which improves rescoring performance. Devlin et al. [8] followed a similar approach, but they incorporated their NNLM into the decoder of an MT system and used the decoder’s alignment information to provide the NNLM with the most useful words in the input sentence. Their approach was highly successful and it achieved large improvements over their baseline.",
+      "type": "text"
+    },
+    "a-0008-03-01": {
+      "block": 3,
+      "md_offset": 21831,
+      "page": 8,
+      "par": 1,
+      "text": "Our work is closely related to Kalchbrenner and Blunsom [18], who were the first to map the input sentence into a vector and then back to a sentence, although they map sentences to vectors using convolutional neural networks, which lose the ordering of the words. Similarly to this work, Cho et al. [5] used an LSTM-like RNN architecture to map sentences into vectors and back, although their primary focus was on integrating their neural network into an SMT system. Bahdanau et al. [2] also attempted direct translations with a neural network that used an attention mechanism to overcome the poor performance on long sentences experienced by Cho et al. [5] and achieved encouraging results. Likewise, Pouget-Abadie et al. [26] attempted to address the memory problem of Cho et al. [5] by translating pieces of the source sentence in way that produces smooth translations, which is similar to a phrase-based approach. We suspect that they could achieve similar improvements by simply training their networks on reversed source sentences.",
+      "type": "text"
+    },
+    "a-0008-04-01": {
+      "block": 4,
+      "md_offset": 22870,
+      "page": 8,
+      "par": 1,
+      "text": "End-to-end training is also the focus of Hermann et al. [12], whose model represents the inputs and outputs by feedforward networks, and map them to similar points in space. However, their approach cannot generate translations directly: to get a translation, they need to do a look up for closest vector in the pre-computed database of sentences, or to rescore a sentence.",
+      "type": "text"
+    },
+    "a-0008-05-01": {
+      "block": 5,
+      "md_offset": 23247,
+      "page": 8,
+      "par": 1,
+      "text": "5 Conclusion",
+      "type": "title"
+    },
+    "a-0008-06-01": {
+      "block": 6,
+      "md_offset": 23261,
+      "page": 8,
+      "par": 1,
+      "text": "In this work, we showed that a large deep LSTM, that has a limited vocabulary and that makes almost no assumption about problem structure can outperform a standard SMT-based system whose vocabulary is unlimited on a large-scale MT task. The success of our simple LSTM-based approach on MT suggests that it should do well on many other sequence learning problems, provided they have enough training data.",
+      "type": "text"
+    },
+    "a-0008-07-01": {
+      "block": 7,
+      "md_offset": 23666,
+      "page": 8,
+      "par": 1,
+      "text": "We were surprised by the extent of the improvement obtained by reversing the words in the source sentences. We conclude that it is important to find a problem encoding that has the greatest number of short term dependencies, as they make the learning problem much simpler. In particular, while we were unable to train a standard RNN on the non-reversed translation problem (shown in fig. 1), we believe that a standard RNN should be easily trainable when the source sentences are reversed (although we did not verify it experimentally).",
+      "type": "text"
+    },
+    "a-0008-08-01": {
+      "block": 8,
+      "md_offset": 24204,
+      "page": 8,
+      "par": 1,
+      "text": "We were also surprised by the ability of the LSTM to correctly translate very long sentences. We were initially convinced that the LSTM would fail on long sentences due to its limited memory, and other researchers reported poor performance on long sentences with a model similar to ours [5, 2, 26]. And yet, LSTMs trained on the reversed dataset had little difficulty translating long sentences.",
+      "type": "text"
+    },
+    "a-0008-09-01": {
+      "block": 9,
+      "md_offset": 24601,
+      "page": 8,
+      "par": 1,
+      "text": "Most importantly, we demonstrated that a simple, straightforward and a relatively unoptimized ap- proach can outperform an SMT system, so further work will likely lead to even greater translation accuracies. These results suggest that our approach will likely do well on other challenging sequence to sequence problems.",
+      "type": "text"
+    },
+    "a-0008-10-01": {
+      "block": 10,
+      "md_offset": 24925,
+      "page": 8,
+      "par": 1,
+      "text": "6 Acknowledgments",
+      "type": "title"
+    },
+    "a-0008-11-01": {
+      "block": 11,
+      "md_offset": 24944,
+      "page": 8,
+      "par": 1,
+      "text": "We thank Samy Bengio, Jeff Dean, Matthieu Devin, Geoffrey Hinton, Nal Kalchbrenner, Thang Luong, Wolf- gang Macherey, Rajat Monga, Vincent Vanhoucke, Peng Xu, Wojciech Zaremba, and the Google Brain team for useful comments and discussions.",
+      "type": "text"
+    },
+    "a-0009-01-01": {
+      "block": 1,
+      "md_offset": 25188,
+      "page": 9,
+      "par": 1,
+      "text": "References",
+      "type": "title"
+    }
+  },
+  "duplicates": [
+    {
+      "claim": "反转源句（不反转目标句）显著提升 LSTM 性能：perplexity 5.8→4.7、解码 BLEU 25.9→30.6",
+      "highlighted_at": "a-0004-12-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0002-07-01",
+        "a-0003-10-01",
+        "a-0008-07-01"
+      ]
+    },
+    {
+      "claim": "主结果：纯神经 LSTM 直接翻译在 WMT'14 英法上 BLEU 34.8，超越短语 SMT 基线 33.3",
+      "highlighted_at": "a-0002-05-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0005-13-01"
+      ]
+    },
+    {
+      "claim": "LSTM 重打分 SMT 的 1000-best 列表后 BLEU 提升至 36.5，接近当时最好结果 37.0",
+      "highlighted_at": "a-0002-06-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0005-13-01"
+      ]
+    },
+    {
+      "claim": "LSTM 在长句上表现良好，不因有限记忆而失败",
+      "highlighted_at": "a-0008-08-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0002-07-01",
+        "a-0006-05-01"
+      ]
+    },
+    {
+      "claim": "LSTM 学到词序敏感、对主被动语态相对不变的句子表示",
+      "highlighted_at": "a-0006-09-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0002-08-01"
+      ]
+    },
+    {
+      "claim": "架构：一个 LSTM 读入输入序列得定长向量，另一个 LSTM 从该向量解码输出序列（encoder-decoder）",
+      "highlighted_at": "a-0002-02-01",
+      "repeats_at": [
+        "a-0001-06-01",
+        "a-0003-07-01"
+      ]
+    },
+    {
+      "claim": "DNN 只能处理固定维度向量编码的输入/输出，无法直接用于序列到序列问题",
+      "highlighted_at": "a-0001-06-01",
+      "repeats_at": [
+        "a-0001-09-01"
+      ]
+    },
+    {
+      "claim": "定位：本文与 Kalchbrenner-Blunsom（首个整句→向量→整句）和 Cho et al.（仅用于 rescoring）密切相关，区别于 attention 路线",
+      "highlighted_at": "a-0002-03-01",
+      "repeats_at": [
+        "a-0008-03-01"
+      ]
+    },
+    {
+      "claim": "深度 LSTM 显著优于浅层 LSTM（本文选 4 层，每加一层 perplexity 降约 10%）",
+      "highlighted_at": "a-0003-10-01",
+      "repeats_at": [
+        "a-0005-03-01"
+      ]
+    }
+  ],
+  "paper": {
+    "id": "p-sutskever-2014-seq2seq",
+    "mineru_task": "80f40440-7a2f-4e83-89ca-9c87185ab12b",
+    "source_pdf": "D:/aa/Sutskever 等 - 2014 - 2014.9 Seq2Seq.pdf",
+    "title": "Sequence to Sequence Learning with Neural Networks"
+  },
+  "plan": {
+    "sections": [
+      {
+        "density_hint": "密集 5-6 处",
+        "expected_colors": [
+          "red",
+          "yellow",
+          "blue"
+        ],
+        "id": "s2",
+        "section": "Abstract",
+        "skip": false,
+        "status": "reviewed",
+        "reviewed_at": "2026-08-27T05:49:33.222Z"
+      },
+      {
+        "density_hint": "密集 5-6 处（与 Abstract 重复主张按 duplicates 跳过）",
+        "expected_colors": [
+          "red",
+          "yellow",
+          "blue"
+        ],
+        "id": "s3",
+        "section": "1 Introduction",
+        "skip": false,
+        "status": "reviewed",
+        "reviewed_at": "2026-08-27T05:49:33.304Z"
+      },
+      {
+        "density_hint": "4-6 处",
+        "expected_colors": [
+          "yellow",
+          "red"
+        ],
+        "id": "s4",
+        "section": "2 The model",
+        "skip": false,
+        "status": "reviewed",
+        "reviewed_at": "2026-08-27T05:49:33.362Z"
+      },
+      {
+        "density_hint": "稀疏 1-2 处",
+        "expected_colors": [
+          "yellow"
+        ],
+        "id": "s5",
+        "section": "3 Experiments",
+        "skip": false
+      },
+      {
+        "density_hint": "2-3 处",
+        "expected_colors": [
+          "yellow"
+        ],
+        "id": "s6",
+        "section": "3.1 Dataset details",
+        "skip": false
+      },
+      {
+        "density_hint": "3-4 处",
+        "expected_colors": [
+          "yellow",
+          "green"
+        ],
+        "id": "s7",
+        "section": "3.2 Decoding and Rescoring",
+        "skip": false
+      },
+      {
+        "density_hint": "密集 5-6 处",
+        "expected_colors": [
+          "red",
+          "purple",
+          "yellow"
+        ],
+        "id": "s8",
+        "section": "3.3 Reversing the Source Sentences",
+        "skip": false
+      },
+      {
+        "density_hint": "3-4 处",
+        "expected_colors": [
+          "yellow",
+          "green"
+        ],
+        "id": "s9",
+        "section": "3.4 Training details",
+        "skip": false
+      },
+      {
+        "density_hint": "稀疏 1-2 处",
+        "expected_colors": [
+          "green"
+        ],
+        "id": "s10",
+        "section": "3.5 Parallelization",
+        "skip": false
+      },
+      {
+        "density_hint": "4-5 处",
+        "expected_colors": [
+          "red",
+          "yellow"
+        ],
+        "id": "s11",
+        "section": "3.6 Experimental Results",
+        "skip": false
+      },
+      {
+        "density_hint": "2-3 处",
+        "expected_colors": [
+          "red",
+          "green"
+        ],
+        "id": "s12",
+        "section": "3.7 Performance on long sentences",
+        "skip": false
+      },
+      {
+        "density_hint": "2-3 处",
+        "expected_colors": [
+          "green",
+          "purple"
+        ],
+        "id": "s13",
+        "section": "3.8 Model Analysis",
+        "skip": false
+      },
+      {
+        "density_hint": "3-4 处",
+        "expected_colors": [
+          "green",
+          "purple"
+        ],
+        "id": "s14",
+        "section": "4 Related work",
+        "skip": false
+      },
+      {
+        "density_hint": "3-4 处",
+        "expected_colors": [
+          "red",
+          "blue",
+          "purple"
+        ],
+        "id": "s15",
+        "section": "5 Conclusion",
+        "skip": false
+      },
+      {
+        "density_hint": "跳过",
+        "expected_colors": [],
+        "id": "s16",
+        "section": "6 Acknowledgments",
+        "skip": true
+      }
+    ],
+    "summary": "Seq2Seq 奠基之作（Sutskever et al. 2014）：通用端到端 encoder-decoder LSTM 序列学习框架（一个 LSTM 把输入序列编码为定长向量、另一个 LSTM 条件解码），在 WMT'14 英法上以 BLEU 34.8 首次让纯神经翻译系统大幅超越短语 SMT 基线（33.3），rescore 1000-best 达 36.5。全文以 red（核心贡献：端到端框架、反转源句技巧、超越 SMT 的主结果）与 yellow（方法/定义：双 LSTM 目标函数、beam search、训练细节）双色主导，blue 点缀（OOV/80k 词表局限、标准 RNN 无法训练），purple 用于作者承认无完整解释的反转机制与表示性质。重点节：Abstract、1 Introduction、2 The model、3.3 Reversing、3.6 Results、5 Conclusion；低信息量节（3 Experiments 概述、3.5 并行化、3.7 长句、3.8 模型分析）从稀疏；6 Acknowledgments 跳过。多处主张（主结果、反转、长句、表示、rescoring、架构）在摘要/引言/正文/结论重复出现，已登记 duplicates，propose 时对重复位置默认跳过。"
+  },
+  "spans": [
+    {
+      "anchor": "a-0001-06-01",
+      "char_end": 380,
+      "char_start": 262,
+      "color": "blue",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:44:29.330Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.166Z"
+        },
+        {
+          "action": "recolored",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.198Z",
+          "from": "red",
+          "to": "blue"
+        }
+      ],
+      "id": "s-1",
+      "rationale": "核心贡献框架句：提出通用端到端序列学习方法、对序列结构仅做最小假设（区别于已登记的架构机制主张 claim 6——那是指 encoder 读入/decoder 解码的具体做法，两者主题不同），句子级粒度取整句",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0001-06-01",
+      "char_end": 245,
+      "char_start": 196,
+      "color": "blue",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:44:29.330Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.187Z"
+        },
+        {
+          "action": "rejected",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.210Z"
+        }
+      ],
+      "id": "s-2",
+      "rationale": "问题动机/局限：DNN 无法把变长序列映射为序列（输入输出需固定维度），是本文要解决的痛点，属局限/风险类；句子级粒度取核心子句，宁精勿滥",
+      "status": "rejected"
+    },
+    {
+      "anchor": "a-0002-02-01",
+      "char_end": 503,
+      "char_start": 289,
+      "color": "red",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:46:21.154Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.233Z"
+        },
+        {
+          "action": "recolored",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.285Z",
+          "from": "yellow",
+          "to": "red"
+        }
+      ],
+      "id": "s-3",
+      "rationale": "方法核心（claim 6 权威位置）：encoder-decoder 架构——一个 LSTM 逐时刻读入输入序列得定长向量，另一个 LSTM 从该向量提取输出序列；关键定义/方法类，句子级粒度",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0002-05-01",
+      "char_end": 828,
+      "char_start": 662,
+      "color": "red",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:46:21.154Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.256Z"
+        }
+      ],
+      "id": "s-4",
+      "rationale": "主结果结论句（claim 2 权威位置）：未充分优化的词表受限神经网络架构竟能超越短语 SMT 系统，是本文核心洞见；句子级粒度取整句",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0002-06-01",
+      "char_end": 296,
+      "char_start": 132,
+      "color": "red",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:46:21.154Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.268Z"
+        }
+      ],
+      "id": "s-5",
+      "rationale": "第二个主结果（claim 3 权威位置）：用 LSTM 重打分 SMT 1000-best 得 BLEU 36.5、提升 3.2 点，逼近当时最好结果 37.0；核心贡献证据，句子级子句",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0002-03-01",
+      "char_end": 381,
+      "char_start": 128,
+      "color": "green",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:46:21.154Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.278Z"
+        },
+        {
+          "action": "rejected",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.295Z"
+        }
+      ],
+      "id": "s-6",
+      "rationale": "领域定位（可借鉴/启发）：本文继承 Kalchbrenner-Blunsom（首个整句→向量→整句）与 Cho et al.（仅用于 rescoring），在 Related work 段有复述；句子级粒度",
+      "status": "rejected"
+    },
+    {
+      "anchor": "a-0003-10-01",
+      "char_end": 464,
+      "char_start": 352,
+      "color": "red",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:48:21.479Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.310Z"
+        },
+        {
+          "action": "recolored",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.333Z",
+          "from": "yellow",
+          "to": "red"
+        }
+      ],
+      "id": "s-7",
+      "rationale": "方法设计决策：深度 LSTM 显著优于浅层，故选 4 层（该主张在 3.4 训练细节有量化复述，已登记重复）；关键定义/方法类，句子级整句",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0003-09-01",
+      "char_end": 487,
+      "char_start": 206,
+      "color": "yellow",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:48:21.479Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.316Z"
+        }
+      ],
+      "id": "s-8",
+      "rationale": "方法技巧：句子以特殊 <EOS> 符号结尾，使模型能定义任意长度序列上的分布（变长输出关键设计）；关键定义/方法类，句子级整句",
+      "status": "accepted"
+    },
+    {
+      "anchor": "a-0003-05-01",
+      "char_end": 292,
+      "char_start": 133,
+      "color": "blue",
+      "decisions": [
+        {
+          "action": "proposed",
+          "at": "2026-08-27T05:48:21.479Z",
+          "by": "agent"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.324Z"
+        },
+        {
+          "action": "rejected",
+          "by": "user",
+          "at": "2026-08-27T05:49:33.344Z"
+        }
+      ],
+      "id": "s-9",
+      "rationale": "方法局限（局限/风险类）：输入输出长度不同、对齐关系复杂且非单调时 RNN 难以直接应用，这是本文 LSTM 方案的动机背景；句子级核心子句",
+      "status": "rejected"
+    }
+  ]
+}
