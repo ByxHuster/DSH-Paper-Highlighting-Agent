@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.4 项目进度（打磨导出 / 领域地图 / 论文级反思 / UX）
 
-> 版本：v0.4（打磨导出）· 状态：**Phase 0–1 已完成（归档 `v0.3.1`）· Phase 2–5 待实施** · 创建：2026-08-27 · 最近更新：2026-08-27
+> 版本：v0.4（打磨导出）· 状态：**Phase 0–2 已完成（归档 `v0.3.1` / `v0.3.2`）· Phase 3–5 待实施** · 创建：2026-08-27 · 最近更新：2026-08-27
 > **独立使用说明**：本文件含 v0.3 继承状态、v0.4 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.3.md`（归档，v0.3.0）。
 
 ---
@@ -198,7 +198,22 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 - `field-map.md` 落盘内容人工评审（设计 §7 一致性：按需注入、不常驻）
 - 本地回归全绿
 
-#### ✅ Phase 2 完成记录（待实施后填写，格式沿用 v0.3）
+#### ✅ Phase 2 完成记录（2026-08-27，验证通过）
+
+**交付**（git 工作区已落盘）
+- **`D:\aa\field-map.md`**（新，workspace 根，git 跟踪，D4）：领域发展线骨架 —— ① 领域主线（word2vec 2013 → seq2seq 2014 → attention 2015–2016 → 空白区 Transformer/预训练/LLM）；② 三篇已收录论文定位（每篇：贡献/继承/引领/范式地位/检索标记）；③ 里程碑与范式转移表（含「判断语句分量」的用法说明：首次提出/规模化范式节点按 red，复述按常规密度）；④ 空白区 + 增补约定（append-only，标注来源与日期）
+- `host/tools.js`（扩展）：新工具 **`read_field_map({root?})`**（D4，只读注入）—— 返回 `{ok, exists, path, chars, content}`；不存在时 `ok:false` + 提示「propose creating it at paper-level wrap-up (design §7)」；工具数 **9 → 10**
+- `skills/global-read.md`（更新）：输入新增 5「领域地图（read_field_map）」；步骤 3 领域定位改为走 `read_field_map` —— 存在则注入领域发展线并判断继承/挑战/引领与范式节点，不存在则基于常识定位并在论文级反思收尾提议初建/增补
+- `skills/propose.md`（更新）：输入新增 5「领域地图（按需）」—— 仅范式转移节点/领域分量判断时注入，不常驻 system prompt
+
+**验证结果（2026-08-27）**
+- `test/run-tools.js`（扩展）：read_field_map —— 存在（content+chars+path 解析到指定 root）/ 不存在（ok:false + create-hint）/ lossless → PASS
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render / run-profile / run-export → 全部 PASS；check-host / check-utf8 → PASS
+- 真实数据离线冒烟：`read_field_map`（root=D:/aa）→ ok:true / exists:true / 2367 chars，内容正确；root=D:/aa/data（无文件）→ ok:false + 正确提示
+- `field-map.md` 内容人工评审（设计 §7 一致性）：领域发展线 + 三篇定位（继承谁/挑战谁/引领什么）+ 里程碑/范式转移标注 + 空白区，按需注入不常驻 —— 通过
+- ⚠️ `read_field_map` 为 host 侧新增工具，**live 3081 待用户重启后生效**（技能变更经 .agents/skills junction 动态发现，无需重启；工具行需重启加载）
+
+**本轮未做（属后续 Phase）**：Phase 3 论文级反思（含 reflect.md 的「领域地图增补点」小节，与 Phase 3 一并）；Phase 4 UX 打磨；Phase 5 step8 端到端 + 归档 v0.4.0
 
 ### Phase 3 — 论文级反思 + 收尾总结（~1.5 天）
 
@@ -264,8 +279,8 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 
 ## 8. 当前状态 / 待办
 
-- **状态**：**v0.4 Phase 0–1 已完成（归档 `v0.3.1`）**——导出核心纯逻辑 + host 路由 + `export_paper` 工具；Phase 2–5 待实施。v0.3 全部完成（归档 `v0.3.0`）：四层画像 + 冷启动 + 摘要注入 + 确认机制 + GUI（画像/提案面板）+ 三篇收敛验收 PASS。
-- **待办（v0.4）**：Phase 2 `field-map.md` + `read_field_map` + 技能注入 → Phase 3 论文级反思 → Phase 4 UX 打磨（快捷键/导出入口/会话恢复）→ Phase 5 step8 端到端 + 文档收尾 + 归档 `v0.4.0`。Phase 0–1 已完成实现并验证（见 §6 完成记录）。
+- **状态**：**v0.4 Phase 0–2 已完成（归档 `v0.3.1` / `v0.3.2`）**——导出核心纯逻辑 + host 路由 + `export_paper` 工具 + `field-map.md` 领域地图 + `read_field_map` 工具 + 技能注入；Phase 3–5 待实施。v0.3 全部完成（归档 `v0.3.0`）。
+- **待办（v0.4）**：Phase 3 论文级反思（`paperReflectionTemplate` + reflect.md 更新）→ Phase 4 UX 打磨（快捷键/导出入口/会话恢复）→ Phase 5 step8 端到端 + 文档收尾 + 归档 `v0.4.0`。Phase 0–2 已完成实现并验证（见 §6 完成记录）。
 - ⚠️ 数据状态（v0.3 验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认，可作 GUI 演示）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）；**`field-map.md` 待 v0.4 初建**。
 - ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**；host 代码变更后需用户手动重启。
 
@@ -274,20 +289,20 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 | 路径（规划） | 内容 | 状态 |
 |---|---|---|
 | `docs/paper-highlight-progress-v0.4.md` | 本进度文件 | ✅ 已建（Phase 0–1 完成记录已写入，Phase 2–5 待填） |
-| `D:\aa\field-map.md` | 领域发展线（NLP 2013–2016 主线 + 三篇论文定位 + 空白区，D4） | 待实施（Phase 2） |
+| `D:\aa\field-map.md` | 领域发展线（NLP 2013–2016 主线 + 三篇论文定位 + 里程碑/范式转移 + 空白区，D4） | ✅ 已落盘（Phase 2） |
 | `packages/paper-highlight/host/export.js` | 导出纯逻辑：`buildExportSpans` / `renderHtml` / `renderMarkdown` / `legendHtml` / `legendMd`（D2/D3） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/host/reflection.js` | 论文级反思模板：`paperReflectionTemplate`（D5） | 待实施（Phase 3） |
 | `packages/paper-highlight/host/plugin.js`（扩展） | `GET /paper-hl/export?paperId=&format=&include_pending=&download=`（D7） | ✅ 已实现（Phase 1） |
-| `packages/paper-highlight/host/tools.js`（扩展） | `export_paper`（Phase 1 ✅）+ `read_field_map`（Phase 2）工具（工具数 8 → 10，D7/D4） | 部分（export_paper ✅ / read_field_map 待 Phase 2） |
-| `packages/paper-highlight/skills/global-read.md`（更新） | 领域定位改走 `read_field_map` + 定位增量记录（D4） | 待实施（Phase 2） |
-| `packages/paper-highlight/skills/propose.md`（更新） | `read_field_map` 按需注入（D4） | 待实施（Phase 2） |
+| `packages/paper-highlight/host/tools.js`（扩展） | `export_paper`（Phase 1 ✅）+ `read_field_map`（Phase 2 ✅）工具（工具数 8 → 10，D7/D4） | ✅ 已实现（Phase 1 + Phase 2） |
+| `packages/paper-highlight/skills/global-read.md`（更新） | 领域定位改走 `read_field_map` + 定位增量记录（D4） | ✅ 已实现（Phase 2） |
+| `packages/paper-highlight/skills/propose.md`（更新） | `read_field_map` 按需注入（D4） | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/skills/reflect.md`（更新） | 论文级反思步骤 + `paper-reflection.md` 落盘（D5） | 待实施（Phase 3） |
 | `packages/paper-highlight/client/render-body.js`（扩展） | `keyAction` + 导出对话框 + 审查进度条/继续上次（D6） | 待实施（Phase 4） |
 | `packages/paper-highlight/scripts/gen-client.js`（扩展） | 导出 `keyAction` 等新纯函数；bundle 重新生成 | 待实施（Phase 4） |
 | `packages/paper-highlight/scripts/step8-export-e2e.js` | 导出端到端验收驱动（html+md 产物校验 + 论文级反思断言） | 待实施（Phase 5） |
 | `packages/paper-highlight/scripts/verify-http.js`（扩展） | `/paper-hl/export` live 探针 | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/test/run-export.js` | 导出层单测（渲染矩阵 + 自包含断言 + 模板矩阵） | ✅ 已实现（Phase 0） |
-| `packages/paper-highlight/test/{run-tools,run-plugin}.js`（扩展） | `export_paper` 工具 + `/export` 路由断言（Phase 1 ✅）；`read_field_map`/快捷键/进度断言（Phase 2/4） | 部分（Phase 1 ✅ / Phase 2、4 待做） |
+| `packages/paper-highlight/test/{run-tools,run-plugin}.js`（扩展） | `export_paper` 工具 + `/export` 路由断言（Phase 1 ✅）；`read_field_map` 断言（Phase 2 ✅）；快捷键/进度断言（Phase 4 待做） | 部分（Phase 1+2 ✅ / Phase 4 待做） |
 | `packages/paper-highlight/scripts/simulate-render.js`（扩展） | P4 快捷键/导出对话框/进度条交互注入 | 待实施（Phase 4） |
 | 文档：设计文档 §8/§10 + README + one-pager | v0.4 完成标注 + 布局/状态更新 | 待实施（Phase 5） |
 
@@ -297,7 +312,7 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 |---|---|---|
 | M0 | Phase 0 完成 | ✅ 新增 `run-export.js` 全绿 + 本地回归全绿（run-mock/tools/actions/plugin/render/profile/export 全过）+ 真实数据离线冒烟 PASS |
 | M1 | Phase 1 完成 | ✅ `/paper-hl/export` 路由矩阵 + `export_paper` 工具断言 + verify-http PASS + **live 3081 冒烟 PASS**（用户已重启：200 text/html + md + download 附件头 + 负例 400/404） |
-| M2 | Phase 2 完成 | `field-map.md` 落盘 + `read_field_map` 工具 + 技能注入（本地全绿 + 内容人工评审） |
+| M2 | Phase 2 完成 | ✅ `field-map.md` 落盘（领域主线+三篇定位+里程碑/范式转移+空白区）+ `read_field_map` 工具（存在/缺失提示/root 解析）+ 技能注入（global-read/propose）+ 本地全绿 + 真实数据离线冒烟 PASS（live 工具行待用户重启 3081） |
 | M3 | Phase 3 完成 | `paperReflectionTemplate` 矩阵 PASS + 实跑一篇留盘样例 |
 | M4 | Phase 4 完成 | `keyAction`/进度矩阵 + simulate-render P4 交互 PASS；浏览器走查待用户 |
 | M5 | Phase 5 完成（**v0.4 验收**） | `step8-export-e2e.js` PASS（端到端稳定）+ 导出 HTML 浏览器/笔记软件打开正常、图例完整（人工）+ 文档更新 + 归档 `v0.4.0` |

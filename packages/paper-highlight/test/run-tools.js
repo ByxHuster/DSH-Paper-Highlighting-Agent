@@ -366,10 +366,30 @@ async function main() {
   assert(expGhost.ok === false && typeof expGhost.error === 'string', 'export_paper: unknown paper ok:false')
   assertLosslessJson(expBad, 'export_paper unknown-format output')
 
+  // 12) read_field_map (v0.4 Phase 2, D4): read-only domain-map injection +
+  //     not-found hint + root resolution + lossless.
+  const { readFieldMapTool } = require('../host/tools')
+  const fmRoot = path.join(__dirname, '.tmp', 'tools-fm-root')
+  await fsp.rm(fmRoot, { recursive: true, force: true })
+  await fsp.mkdir(fmRoot, { recursive: true })
+
+  const fmMissing = await readFieldMapTool().execute({ root: fmRoot })
+  assert(fmMissing.ok === false && fmMissing.exists === false && typeof fmMissing.path === 'string' && /propose creating it/.test(fmMissing.error),
+    'read_field_map: missing file -> ok:false with create-hint')
+  assertLosslessJson(fmMissing, 'read_field_map missing output')
+
+  await fsp.writeFile(path.join(fmRoot, 'field-map.md'), '# 领域地图\n\n## 空白区\n\n（待后续论文累积）\n', 'utf8')
+  const fmRead = await readFieldMapTool().execute({ root: fmRoot })
+  assert(fmRead.ok === true && fmRead.exists === true && fmRead.chars > 0 && fmRead.content.includes('领域地图'),
+    'read_field_map: exists -> content + metadata')
+  assert(fmRead.path === path.join(fmRoot, 'field-map.md'), 'read_field_map: path resolved under the given root')
+  assertLosslessJson(fmRead, 'read_field_map output')
+  await fsp.rm(fmRoot, { recursive: true, force: true })
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper', 'read_field_map'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
@@ -380,6 +400,7 @@ async function main() {
     duplicates_contract: 'schema validates duplicates entries (claim non-empty, repeats_at string array); append-only registration (Phase 4)',
     profile_tools: 'read_profile (has_profile/summary/pending, cold-start defaults) + confirm_proposal (one-shot host merge: rules/exemplars applied, confirmation append-only, double-confirm rejected) (v0.3 Phase 0)',
     export_tool: 'export_paper — inline (content + stats, lossless) / file (data/<paper_id>/export/<paper_id>.<ext>), format html|md, include_pending effect (4→5 marks), unknown format/paper ok:false (v0.4 Phase 1)',
+    field_map_tool: 'read_field_map — read-only domain-map injection (content+path+chars), missing -> ok:false with create-hint, root resolution, lossless (v0.4 Phase 2)',
   }, null, 2))
 }
 

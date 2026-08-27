@@ -14,6 +14,7 @@
  */
 
 const path = require('node:path')
+const fsp = require('node:fs/promises')
 
 const { processPdf, paperIdFromPdfPath } = require('./pipeline')
 const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, paperDir } = require('./store')
@@ -150,7 +151,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool(), readFieldMapTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -494,4 +495,43 @@ function exportPaperTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, allTools }
+/** read_field_map tool definition (v0.4 Phase 2, D4): read-only domain-map injection. */
+function readFieldMapTool() {
+  return {
+    name: 'read_field_map',
+    description:
+      'Read the field map (design §7): <root>/field-map.md — the domain development line ' +
+      '(NLP/LLM/Agent milestones + paradigm shifts) used to judge statement weight ' +
+      '("is this sentence at a paradigm-shift node?"). Read-only, on-demand injection: ' +
+      'call it in global-read, and in propose only when a candidate needs domain-weight ' +
+      'judgment (never resident in the system prompt). Returns content + metadata ' +
+      '(path/chars); ok:false with a hint when the file does not exist yet (propose ' +
+      'creating it at paper-level wrap-up). The agent creates/augments the file itself ' +
+      'via file tools; this tool never writes.',
+    parameters: {
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const file = path.join(root, 'field-map.md')
+      let text = null
+      try {
+        text = await fsp.readFile(file, 'utf8')
+      } catch {
+        return {
+          ok: false,
+          exists: false,
+          path: file,
+          error: `no field-map.md at ${file} — propose creating it at paper-level wrap-up (design §7)`,
+        }
+      }
+      return { ok: true, exists: true, path: file, chars: text.length, content: text }
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, readFieldMapTool, allTools }
