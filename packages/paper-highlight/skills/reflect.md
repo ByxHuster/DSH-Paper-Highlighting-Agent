@@ -16,13 +16,14 @@ description: 论文审查后反思（章节反思）——重读 paper.highlight
 
 1. `list_sections`（paper_id）：确认哪些节已 `status:'reviewed'`。
 2. `read_highlights`（paper_id）：取完整文档（spans 含 decisions 日志、plan、duplicates）。
-3. **逐 span 差异分析**（利用 `decisions[]` 只追加日志，对每个 span 对比 proposed 状态与最终状态）：
+3. **差异分析（用工具，勿手数，Phase 4）**：对每个已审查节调用 `summarize_section_diff`（paper_id, section）—— 工具按 decisions 日志自动分类 accepted/rejected/recolored/rescoped/noted/added/pending，输出计数、接受率与每类样例（改色含 from→to、改范围含区间）。整篇汇总时省略 section 参数。
+   - 兜底：若会话工具目录尚无 `summarize_section_diff`（host 工具需重启生效），按同样的分类逻辑从 `decisions[]` 手动计数与抽样，输出格式保持一致。
+4. **信号解读**（把工具输出的每类样例映射为画像信号）：
    - 接受：保持 `accepted`，无用户修改 → 画像信号「这类高亮符合预期」。
    - 删除：`rejected` → 价值/密度信号（这类句子不该高亮）。
-   - 改色：`decisions` 中 `user_recolored {from,to}` → 颜色-语义映射修正信号。
+   - 改色：`recolored {from,to}` → 颜色-语义映射修正信号。
    - 改范围：`rescoped` → 粒度偏好信号（如「以子句而非整句」）。
-   - 备注：`note` 或 `user_added` → 用户关注点信号（用户手动加的是什么）。
-4. **节级统计**：对该已审查节汇总——proposed/accepted/rejected/recolored/rescoped/added 各计数、颜色分布、接受率。
+   - 备注/新增：`noted` / `added` → 用户关注点信号（用户手动加的是什么）。
 5. **推断**（只对「明确的、重复出现的」模式下结论，避免把个例当规则）：
    - 改色规律：如「黄色全被改红 → 本用户认为这类内容属核心贡献而非定义」。
    - 删除模式：如「铺垫句全被删 → 密度/价值偏好收紧」。

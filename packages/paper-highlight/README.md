@@ -1,8 +1,8 @@
-# paper-highlight (v0.1 ✅)
+# paper-highlight (v0.2 ✅)
 
-论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具）。
+论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
-> v0.1（管线打通）已于 2026-08-26 验收通过：真实 PDF → MinerU → `data/<paper_id>/` → Agent 工具读写高亮 JSON → 3081 GUI 渲染正文 + 五色 spans（含悬浮 rationale）。验收记录见 `D:\aa\docs\paper-highlight-progress.md`。
+> v0.1（管线打通）2026-08-26 验收通过；**v0.2（审查闭环）2026-08-27 验收通过**：两遍阅读/逐节 propose/审查反思三技能（`paper-hl-global-read` / `paper-hl-propose` / `paper-hl-reflect`）+ GUI 审查交互（操作条/新增/改范围/节完成信号）+ 差异分析工具（`summarize_section_diff`）+ 去重硬规则（duplicates append-only），`step6-e2e.js` 端到端跑通「propose → 审查 → 反思 → reflections.json」并归档 `v0.2.0`。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.2.md`。
 
 ## 布局
 
@@ -14,8 +14,9 @@ host/
   normalize.js  # MinerU zip → paper.md + anchors.json + meta.json（正文过滤 + 锚点）
   pipeline.js   # 端到端管线：parsePdf → normalize → writePaper
   plugin.js     # (Step 3) durable host 插件：/paper-hl/read webserver 路由
-  tools.js      # (Step 2 + Phase 3) agent 工具：parse_pdf / read_highlights / write_highlights / list_sections / read_section
+  tools.js      # (Step 2 + Phase 3/4) agent 工具：parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff
   tools-plugin.mjs # (Step 2) 工具行 ESM 包装（allTools() 自动注册全部工具）
+  diff.js       # (Phase 4) 审查差异分析纯函数：classifySpanChange / summarizeDiff（计数+接受率+样例）
 client/
   client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层
   render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半）
@@ -30,11 +31,11 @@ scripts/
 dynamic/
   host-half.js  # 动态双半插件 host 半（harness.handle 数据源，备用）
   client-half.js# 动态双半插件浏览器半（host.call 数据源，备用）
-skills/         # (Phase 3) agent 技能：global-read（论文地图+plan）/ propose（逐节）/ reflect（审查反思→画像提案）
+skills/         # (Phase 3/4) agent 技能：global-read（论文地图+plan）/ propose（逐节 + 去重硬规则）/ reflect（summarize_section_diff 差异分析→画像提案）
                 #   运行时接线：<projectRoot>/.agents/skills → junction → 本目录（DSH skill-filesystem 按 cwd 自动发现）
 test/
   run-mock.js   # 离线 mock 验证（无网络）
-  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section（Phase 3）
+  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section + summarize_section_diff + duplicates 契约（Phase 3/4）
   run-plugin.js # host 插件 /paper-hl 路由回归（config.root 与 cwd 无关、404/500 JSON 行为）
   run-real.js   # 真实 MinerU 端到端验证（需 MINERU_API）
 ```

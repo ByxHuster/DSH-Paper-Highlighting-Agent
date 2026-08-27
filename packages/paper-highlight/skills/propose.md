@@ -18,14 +18,18 @@ description: 论文逐节 propose——输入 = 论文地图/plan + read_section
 
 1. `list_sections` + `read_highlights`：确认目标节 `id`，检查该节 plan 的 `skip` —— 若为 `true` 则跳过本节（汇报后等下一节）。
 2. `read_section`（paper_id, section=目标节 id）：拿到该节 `text`（锚点阅读序拼接）、`spans`（该节已有高亮）、`plan`。
-3. **去重**：对节内句子逐一对照「已高亮主张清单 + duplicates」，重复主张默认跳过（除非该节画像规则声明「重复也标」）。
+3. **去重（硬规则，Phase 4）**：对节内每个候选主张逐一对照「已高亮主张清单（`spans[]` 的 rationale 主题）+ `duplicates[]`」：
+   - **R1** 主张与任一既有 span 的 rationale 语义重复 → **默认跳过**，不再提候选。
+   - **R2** 主张已在 `duplicates[]` 登记（claim 主题匹配）→ **默认跳过**。
+   - **R3** 例外唯一来源：画像规则显式声明「重复也标」时才提出；否则一律不破 R1/R2。
+   - **R4** 新发现的重复主张 → **登记进 `duplicates`**（append-only）：`{ "claim": "<主张一句话>", "highlighted_at": "<已高亮 span id 或 's-000' 占位>", "repeats_at": ["<锚点 id>", ...] }`；**只追加、不删除/修改既有条目**（schema 已校验：claim 非空字符串、repeats_at 为字符串数组）。
 4. **提候选**：按该节 `expected_colors` 主导色 + `density_hint` 密度，从正文中选出值得高亮的片段。每条候选 span 需满足：
    - `anchor`：片段所在锚点 id（来自 `read_section` 返回的锚点信息或 anchors.json；span 必须落在该锚点文本内）。
    - `char_start` / `char_end`：0 起始、半开区间，指向 `anchor.text`。
    - `color`：来自该节 expected_colors（默认色表）。
    - `rationale`：一句话理由——为什么这句值得高亮（对贡献/方法/证据/局限的哪一类），以及粒度选择依据（整句 or 子句，宁精勿滥）。
    - 粒度建议：默认以句子/子句为粒度；核心贡献可整句，方法细节取关键子句，避免整段刷色。
-5. **追加写回**（append 模式）：`read_highlights` 取当前完整文档 → 在 `spans` **末尾追加**新候选（每条 `status: 'proposed'`，`decisions: [{ action: 'proposed', by: 'agent', at: <ISO 时间> }]`，id 取 `s-<N>` 递增）→ 原 spans/plan/duplicates 一律保留不动 → `write_highlights` 写回完整文档。
+5. **追加写回**（append 模式）：`read_highlights` 取当前完整文档 → 在 `spans` **末尾追加**新候选（每条 `status: 'proposed'`，`decisions: [{ action: 'proposed', by: 'agent', at: <ISO 时间> }]`，id 取 `s-<N>` 递增）→ 本次新登记的 `duplicates` 条目同样追加 → 原 spans/plan/duplicates 一律保留不动 → `write_highlights` 写回完整文档。
 6. **停下**：汇报本节的候选高亮清单（颜色 + 位置摘要 + rationale），等待用户在 GUI 审查。**不要**自动改色/删除/继续下一节。
 
 ## 完成标志
@@ -35,4 +39,4 @@ description: 论文逐节 propose——输入 = 论文地图/plan + read_section
 
 ## 输出
 
-简明列出：节 id/标题、提出 N 处候选（颜色分布）、每处位置摘要 + 理由、去重跳过数；然后等待审查反馈。
+简明列出：节 id/标题、提出 N 处候选（颜色分布）、每处位置摘要 + 理由、去重跳过数、新登记 `duplicates` 数；然后等待审查反馈。

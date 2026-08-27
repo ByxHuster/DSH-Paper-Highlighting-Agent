@@ -105,6 +105,17 @@ function validateHighlights(h) {
   }
   if (!Array.isArray(h.spans)) throw new Error('highlights.spans must be an array')
   if (!Array.isArray(h.duplicates)) throw new Error('highlights.duplicates must be an array')
+  // Phase 4: duplicates are append-only registrations of repeated claims
+  // (design §4.2): { claim, highlighted_at?, repeats_at? }. Validate entries so
+  // the propose skill's dedup registration cannot corrupt the document.
+  for (const d of h.duplicates) {
+    if (typeof d !== 'object' || d === null || Array.isArray(d)) throw new Error('duplicates entry must be an object')
+    if (typeof d.claim !== 'string' || d.claim.length === 0) throw new Error('duplicates entry: claim must be a non-empty string')
+    if (d.highlighted_at !== undefined && typeof d.highlighted_at !== 'string') throw new Error('duplicates entry: highlighted_at must be a string when present')
+    if (d.repeats_at !== undefined && (!Array.isArray(d.repeats_at) || d.repeats_at.some((r) => typeof r !== 'string'))) {
+      throw new Error('duplicates entry: repeats_at must be an array of strings when present')
+    }
+  }
 
   const seenSpanIds = new Set()
   for (const s of h.spans) {

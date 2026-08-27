@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.2 项目进度（审查闭环）
 
-> 版本：v0.2（审查闭环）· 状态：**Phase 0/1 + Phase 2 全部完成（P2-a…P2-f）+ Phase 3 Agent 技能+工具已完成（审查闭环核心 + 两遍阅读/propose/反思技能就绪）** · 最近更新：2026-08-27 —— Phase 3 三份技能 + `list_sections`/`read_section` 工具交付并验证；P2-e 浏览器走查真实写回（现 7 spans）
+> 版本：v0.2（审查闭环）· 状态：**Phase 0–6 全部完成（v0.2 交付验收通过）** · 最近更新：2026-08-27 —— Phase 5 step6-e2e 端到端验收 PASS（propose→审查→反思→reflections.json）+ Phase 6 文档收尾，归档 `v0.2.0`
 > **独立使用说明**：本文件含 v0.1 继承状态、v0.2 目标/决策/实施步骤/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.1.md`（归档）。
 
 ---
@@ -318,6 +318,30 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 - 可选 host 辅助工具 `summarize_section_diff({section})`：输出该节 proposed→final 变更计数与样例（accepted/rejected/recolored/rescoped/added），降低 Agent 漏算概率、逻辑可单测。
 - 去重提示词硬规则：主张已在已高亮清单/`duplicates` 中则默认跳过（除非画像规则声明「重复也标」）；Agent 把重复主张登记进 `duplicates`（只追加）。
 
+#### ✅ Phase 4 完成记录（2026-08-27，验证通过）
+
+**范围**：差异分析支撑 + 去重规则。未做 Phase 5/6。
+
+**交付**
+- `host/diff.js`（新增，纯函数可单测）：
+  - `classifySpanChange(span)`：按 decisions[] 日志（proposed/accepted/rejected/recolored/rescoped/added/noted）做**主分类**（优先级：rejected > user_added > recolored > rescoped > noted > accepted > pending）+ 并存 flags（recolored/rescoped/noted）。
+  - `summarizeDiff(spans, {max_samples})`：`{total, pending, decided, counts, accept_rate, samples}` —— counts 六类计数、`accept_rate = accepted/decided`、每类最多 3 条样例（改色带 from→to、改范围带 from/to 区间），全部 lossless JSON。
+- `host/tools.js`（扩展）：新增 `summarizeSectionDiffTool()`（并入 `allTools()`）：`summarize_section_diff({paper_id, section?, root})` —— section 省略 = 整篇汇总；未知节 `ok:false` + 可用 id。
+- `host/schema.js`（扩展）：`duplicates[]` 条目校验（append-only 契约）—— 每条必须 `claim` 非空字符串；`highlighted_at` 字符串（可选）；`repeats_at` 字符串数组（可选）。非法条目被 `write_highlights` 拒绝。
+- 技能更新（去重硬规则 R1–R4 + 差异分析工具化）：
+  - `skills/propose.md`：去重升级为**硬规则** —— R1 与既有 span rationale 语义重复默认跳过；R2 已在 `duplicates` 登记默认跳过；R3 例外唯一来源 = 画像规则声明「重复也标」；R4 新发现重复主张**登记进 `duplicates`（append-only）**并随本次 write 落盘；输出新增「新登记 duplicates 数」。
+  - `skills/global-read.md`：去重登记细化 —— 重复出现位置记 `duplicates`（`{claim, highlighted_at?, repeats_at?}`），propose 时默认跳过。
+  - `skills/reflect.md`：差异分析改由 `summarize_section_diff` 工具产出（计数/接受率/样例），**不再手数**；信号解读（改色/删除/粒度/关注点）保留。
+- `test/run-tools.js`（扩展）：`summarize_section_diff` 行为断言（6 span 夹具：accepted/rejected/recolored/rescoped/added/pending 各 1，计数 + accept_rate=1/5 + 样例 from→to / to 区间 + section/paper 双作用域 + 未知节 ok:false + lossless）+ duplicates 契约（合法条目通过、空 claim / 非数组 repeats_at 被拒）。
+
+**验证结果（2026-08-27）**
+- 本地回归全绿：run-mock / run-actions / run-plugin / run-render / **run-tools（扩展后）** → 全部 PASS；simulate-render → SIMULATION PASS；check-host / verify-http → PASS。
+- 新工具真实数据冒烟（只读）：`summarize_section_diff`（整篇）→ total=8 / decided=7 / accept_rate=0.571 / counts{accepted:4, rejected:1, rescoped:1, added:1, pending:1}，样例正确（s-003 rescoped to [410,420)、s-008 added）；`section=s2` → 过滤到该节 3 spans（accepted 1 / rejected 1 / added 1）；未知节 ok:false。
+- ⚠️ 数据状态更新：用户继续在 3081 走查（真实写回）—— 现真实数据 **8 spans**（s-001..s-004/s-007 accepted、s-005 proposed、s-006 rejected、**s-008 user_added**），plan.sections=[{id:s2,status:reviewed}]，duplicates 空；simulate-render 的自适应断言（排除 rejected）继续通过。
+- ⚠️ **新工具 `summarize_section_diff` 对运行中会话生效需重启 3081**（host `tools.js` 进程启动时加载；当前会话工具目录尚无该工具）。
+
+**本轮未做（属后续 Phase）**：Phase 5 step6-e2e 端到端验收；Phase 6 文档收尾。
+
 ### Phase 5 — 端到端验收（~1 天）
 - 新增 `scripts/step6-e2e.js`（仿 step4-e2e.js 驱动模式）：
   - `session.create` → prompt「全局通读并给出计划，然后对 §1 提出高亮」→ 轮询回合 → 断言 `plan` 写入 + proposed spans 落盘；
@@ -325,6 +349,32 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
   - 退出码 PASS/INCOMPLETE；真实数据用现有 `p-mikolov-2013-2013-1-word2vec`（不重复消耗 MinerU 额度）。
 - 回归全量：run-mock / run-tools / run-plugin / verify-http / simulate-render。
 - 人工验收路径：3081 浏览器 → 会话 →「论文」tab 走一遍完整审查（操作步骤文档化）。
+
+#### ✅ Phase 5 完成记录（2026-08-27，端到端验收 PASS）
+
+**交付**：`scripts/step6-e2e.js` —— v0.2 端到端验收驱动（仿 step4-e2e.js 的 RPC 模式）：
+- 回合 1：`session.create`（断言默认 preset=paper）→ prompt「全局通读并给出计划，然后对 1 Introduction 节 propose」（要求加载 `paper-hl-global-read` + `paper-hl-propose` 技能）→ 轮询至 idle → 磁盘断言：`plan.summary` 非空 + plan.sections 覆盖 §1（expected_colors/density_hint/skip）+ §1 出现 ≥1 条 proposed span + **既有 spans 全部保留**（append-only 契约）。
+- 模拟审查：经**真实 `POST /paper-hl/write`** 改色 1 处 / 删除 1 处 / 新增 1 处 / `review_section` §1（GUI 等价）。
+- 回合 2：prompt「本节审查完毕」（要求加载 `paper-hl-reflect`，用 `summarize_section_diff` 差异分析，写盘 `reflections.json`）→ 断言 §1 `status='reviewed'` + reflections.json 存在且含与模拟操作对应的信号（rejected/recolored/added）。
+- 安全网：运行前备份 `paper.highlights.json` 到 `test/.tmp`（gitignored），失败自动恢复；成功则验收状态留盘供 GUI 审查。
+
+**验证结果（2026-08-27，真实 LLM 会话）**
+- 回合 1 实测：Agent 加载 2 次技能 + `list_sections`/`read_section`/`read_highlights`/`write_highlights`（2 次）—— 写出 `plan.summary` + **20 条 plan.sections**（s3–s21 全带 expected_colors/density_hint/skip，s2 既有条目原样保留），**duplicates 0→3 条**（CBOW/Skip-gram 双架构、向量代数、DistBelief 训练，append-only），对 §1 提出 **s-009/s-010/s-011 三条 proposed**（蓝/绿/红），去重跳过 1 条（与 s-003 语义重复）；**既有 8 spans 零改动**（8→11）。磁盘断言全过。
+- 模拟审查实测：s-009 blue→red（改色）、s-010 rejected（删除）、s-012 purple user_added（新增，落在 §1 标题锚点）、s3 `status='reviewed'` —— 真实 POST 写通路全过。
+- 回合 2 实测：Agent 加载 3 次技能 + **调用 `summarize_section_diff`（新工具实测）** → 差异摘要与模拟操作逐项对应（改色 1/删除 1/新增 1/pending 1，接受率 0）+ 推断（改色规律 low 置信、背景句删除、跨节 2 次的短语级粒度偏好 medium）+ **画像更新提案**（L2 规则 3 条 + L3 示例 3 个 + L4 统计雏形）写盘 `data/…/reflections.json`（键：paper_id/updated_at/sections/inferred/profile_proposal），并明确「等用户确认，确认前不并入正式画像」。
+- **VERDICT: PASS（exit 0）** —— 「propose → 审查 → 反思 → reflections.json」全链路端到端跑通；验收状态留盘（plan + §1 候选 + 模拟结果 + reflections.json）。
+
+**人工验收路径（操作步骤文档化）**
+1. 3081 浏览器 → 新建会话（默认 paper preset）→ 提示词：「加载技能 paper-hl-global-read 并执行全局通读，然后加载 paper-hl-propose 对 1 Introduction 节提出高亮」→ 等 Agent 报告 plan 摘要与候选清单。
+2. 切到「论文」tab：确认节列表条渲染（20 可审查节，§1 带当前节高亮）；逐个候选操作 —— 点高亮 → 操作条「接受/删除/改色/备注/改范围」；选文本 → 「新增高亮」弹窗（选色 + 理由）；滚动换节；点「标记本节审查完毕」→ 节旁 ✓（刷新后保留）。
+3. 回到会话输入：「本节审查完毕」→ 等 Agent 加载 paper-hl-reflect 产出差异摘要 + 画像更新提案（reflections.json），确认/否决提案。
+4. 验收判定：GUI 操作即时落盘（`/paper-hl/read` 可读）、plan/reflections 与操作一致。
+
+#### ✅ Phase 6 完成记录（2026-08-27，文档收尾）
+
+- 设计文档 `paper-highlight-agent-design.md`：§8 v0.2 标注「✅ 已完成（2026-08-27）」并补验收记录；§10 风险 #4 标注 v0.2 化解（就近匹配 + 越界钳制 + 持续回归）、#5 更新（v0.2 已落地「只产出提案、确认后生效」防污染机制，推断质量指标随 v0.3 关闭）。
+- 本进度文件：Phase 5/6 完成记录（本节）、§8 状态/待办收尾、§9 交付物清单补 `step6-e2e.js` / `host/diff.js`。
+- README：状态横幅更新为 v0.2 ✅ + 布局补 `diff.js` / 技能接线说明。
 
 ### Phase 6 — 文档收尾（~0.5 天）
 - 设计文档 §8 v0.2 标注完成 + §10 风险 #4 更新（#5 差异推断质量随 v0.3 关闭）；本进度文件追加实施记录；README 状态横幅更新。
@@ -341,10 +391,10 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 
 ## 8. 当前状态 / 待办
 
-- **状态**：Phase 0/1 + **Phase 2 全部完成**（P2-a…P2-f，`v0.1.2` 已归档）+ **Phase 3 Agent 技能+工具完成**（三份技能 `paper-hl-global-read`/`paper-hl-propose`/`paper-hl-reflect` 已进会话 skill 目录、`list_sections`/`read_section` 工具已实现并经用户重启 3081 生效，**`v0.1.3` 已归档**，见 §6 Phase 3 完成记录）；下一步 = Phase 4（差异分析支撑 + 去重规则）。
-- 待办（剩余）：Phase 4 差异/去重 → Phase 5 step6-e2e 验收 → Phase 6 文档收尾。
-- 已知 cosmetic：空 `## References` 节已在 Phase 0 渲染端忽略（✅ 已完成）；GUI 高亮层可审查（✅ P2-c/d 完成：操作条接受/删除/改色/备注 + 选文本新增/改范围；✅ P2-e 节完成信号完成：节列表条 + 「标记本节审查完毕」+ plan 状态闭环；✅ Phase 3 审查循环技能就绪：全局通读→逐节 propose→审查→反思）。
-- ⚠️ 数据状态：P2-e 浏览器走查真实写回 —— 现 `data/p-mikolov-…/paper.highlights.json` **7 spans**（s-001..s-004/s-007 accepted、s-005 proposed、s-006 rejected），plan.sections 空；simulate-render live 计数已改为排除 rejected（自适应）。
+- **状态**：**v0.2 全部完成（Phase 0–6）** —— Phase 0/1（`v0.1.1`）、Phase 2（P2-a…P2-f，`v0.1.2`）、Phase 3（技能 + `list_sections`/`read_section`，`v0.1.3`）、Phase 4（`summarize_section_diff` + 去重硬规则 + duplicates 契约）、Phase 5（`step6-e2e.js` 端到端验收 **PASS**）、Phase 6（文档收尾）—— **已归档 `v0.2.0`**（见 §6 各完成记录）。
+- 待办（剩余）：无（v0.2 范围闭环）。v0.3 规划：四层画像落地 + 用户确认机制 + 画像摘要注入 propose（`highlight-profile/`、`reflections.json` 提案确认后并入 rules.json）。
+- 已知 cosmetic：空 `## References` 节已在 Phase 0 渲染端忽略（✅）；GUI 高亮层可审查（✅ P2-c/d）；节完成信号（✅ P2-e）；审查循环技能（✅ Phase 3）；差异分析工具化 + 去重硬规则（✅ Phase 4）；端到端验收（✅ Phase 5 step6-e2e PASS）。
+- ⚠️ 数据状态（验收留盘）：`data/p-mikolov-…/` 现 **11 spans**（原 8 保留 + s-009/s-010/s-011 为 §1 候选，其中 s-009 已改色 red、s-010 已 rejected、s-012 user_added 模拟新增）+ `plan`（summary + 20 条 sections，s3 reviewed）+ **`duplicates` 3 条** + **`reflections.json`**（画像更新提案）。GUI 可继续审查；simulate-render live 计数排除 rejected（自适应）。
 - ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**（见 §10 事故教训）。
 
 ## 9. v0.2 交付物清单（规划新增，随实施更新）
@@ -357,12 +407,13 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 | `packages/paper-highlight/host/plugin.js`（扩展） | `POST /paper-hl/write` 审查写通路 + `/read` 返回 sections | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/client/render-body.js`（扩展） | Phase 0 空节跳过 + span 钳制；P2-a 写通路纯函数；P2-b 状态模型；P2-c 操作条（`markStyle`/`reconcileSpan`/`renderText(opts)`/`applyAction` 乐观更新/悬浮操作条）；**P2-d 选择→新增/改范围（`buildBlockSegments`/`buildSegmentMap`/`mapSelection` 纯函数 + `nodeOffsetToSeg`/`blockChildToSeg`/`selectionToNorm` DOM 映射 + `renderText(withSegments)` data-phl-seg 包装 + 新增高亮弹窗/改范围按钮/onBodyMouseUp + `reconcileSpan` clientId 匹配）；P2-e 节状态闭环（`sectionList`/`currentSectionId` 纯函数 + 节列表条/「标记本节审查完毕」按钮/onBodyScroll 滚动定位/块 `data-phl-anchor` + 乐观 `sectionOverrides`）** | ✅ 已实现（Phase 0 + P2-a/b/c/d/e） |
 | `packages/paper-highlight/scripts/gen-client.js`（扩展） | durable bundle 注入 `writeData` fetch POST 传输；**导出内嵌纯函数（buildBlocks/buildSegmentMap/mapSelection/selectionToNorm/nodeOffsetToSeg/sectionList/currentSectionId）供 headless 测试驱动**；dynamic 半体暂不接 write | ✅ 已实现（P2-a + P2-d/e 导出） |
-| `packages/paper-highlight/host/tools.js`（扩展） | `list_sections` / `read_section`（Phase 3 新增，并入 `allTools()`）| ✅ 已实现（v0.1 + Phase 3） |
-| `packages/paper-highlight/skills/global-read.md` | Agent 技能：两遍阅读第一遍 —— 论文地图 + plan 落盘 | ✅ 已实现（Phase 3） |
-| `packages/paper-highlight/skills/propose.md` | Agent 技能：逐节 propose（append 模式、去重、停下等审查）| ✅ 已实现（Phase 3） |
-| `packages/paper-highlight/skills/reflect.md` | Agent 技能：审查后反思 → 画像更新提案落盘 reflections.json | ✅ 已实现（Phase 3） |
-| `packages/paper-highlight/scripts/step6-e2e.js` | v0.2 端到端验收驱动 | ⬜ 待实现（Phase 5） |
-| `packages/paper-highlight/test/*`（扩展） | run-actions / run-render 新增；run-plugin / simulate-render 扩展（**P2-c 注入交互：点 mark→操作条、accept/recolor POST 载荷 + 本地渲染同步；P2-d 注入伪造 selection：新增高亮弹窗 + add/rescope POST 载荷断言 + 渲染同步；P2-e 节状态：节条渲染数 = 内嵌 sectionList + 伪造 scroll target 驱动 currentSectionId + review_section POST + done 状态；Phase 3 run-tools：append 模式回归 + list_sections/read_section 行为 + 五工具 lossless**） | ✅ 已实现（Phase 0/1 + P2-a/b/c/d/e + Phase 3） |
+| `packages/paper-highlight/host/tools.js`（扩展） | `list_sections` / `read_section`（Phase 3）+ `summarize_section_diff`（Phase 4，并入 `allTools()`）| ✅ 已实现（v0.1 + Phase 3/4） |
+| `packages/paper-highlight/host/diff.js` | 审查差异分析纯函数（Phase 4）：`classifySpanChange` / `summarizeDiff`（计数 + 接受率 + 样例）| ✅ 已实现（Phase 4） |
+| `packages/paper-highlight/skills/global-read.md` | Agent 技能：两遍阅读第一遍 —— 论文地图 + plan 落盘（Phase 4：duplicates 登记细化）| ✅ 已实现（Phase 3 + Phase 4） |
+| `packages/paper-highlight/skills/propose.md` | Agent 技能：逐节 propose（append 模式、Phase 4 去重硬规则 R1–R4 + duplicates 登记、停下等审查）| ✅ 已实现（Phase 3 + Phase 4） |
+| `packages/paper-highlight/skills/reflect.md` | Agent 技能：审查后反思 → `summarize_section_diff` 差异分析 + 画像更新提案落盘 reflections.json | ✅ 已实现（Phase 3 + Phase 4） |
+| `packages/paper-highlight/scripts/step6-e2e.js` | v0.2 端到端验收驱动（Phase 5：global-read→propose→GUI 模拟→reflect→reflections.json，PASS）| ✅ 已实现（Phase 5） |
+| `packages/paper-highlight/test/*`（扩展） | run-actions / run-render 新增；run-plugin / simulate-render 扩展（**P2-c 注入交互：点 mark→操作条、accept/recolor POST 载荷 + 本地渲染同步；P2-d 注入伪造 selection：新增高亮弹窗 + add/rescope POST 载荷断言 + 渲染同步；P2-e 节状态：节条渲染数 = 内嵌 sectionList + 伪造 scroll target 驱动 currentSectionId + review_section POST + done 状态；Phase 3 run-tools：append 模式回归 + list_sections/read_section 行为 + 六工具 lossless；Phase 4 run-tools：summarize_section_diff 行为（计数/接受率/样例/作用域）+ duplicates 契约校验**） | ✅ 已实现（Phase 0/1 + P2-a/b/c/d/e + Phase 3/4） |
 
 ---
 

@@ -226,16 +226,86 @@ async function main() {
   assertLosslessJson(secOut, 'read_section output')
   assertLosslessJson(badSec, 'read_section unknown-section output')
 
+  // 8) summarize_section_diff (Phase 4): classify each span's proposed→final
+  //    trajectory from decisions[], aggregate counts/accept_rate, sample spans.
+  const { summarizeSectionDiffTool } = require('../host/tools')
+  const iso = (n) => new Date(Date.UTC(2026, 7, 27, 0, 0, n)).toISOString()
+  const dsec = { ...(await secRead.execute({ paper_id: secPaperId, root: secRoot })).highlights }
+  dsec.spans = [
+    // plain accept
+    { id: 's-001', anchor: 'a-0001-03-01', char_start: 0, char_end: 8, color: 'red', rationale: 'core', status: 'accepted', decisions: [{ action: 'proposed', by: 'agent', at: iso(1) }, { action: 'accepted', by: 'user', at: iso(2) }] },
+    // rejected
+    { id: 's-002', anchor: 'a-0001-03-01', char_start: 8, char_end: 13, color: 'yellow', rationale: 'fluff', status: 'rejected', decisions: [{ action: 'proposed', by: 'agent', at: iso(3) }, { action: 'rejected', by: 'user', at: iso(4) }] },
+    // recolored then accepted
+    { id: 's-003', anchor: 'a-0001-03-01', char_start: 13, char_end: 19, color: 'blue', rationale: 'method', status: 'accepted', decisions: [{ action: 'proposed', by: 'agent', at: iso(5) }, { action: 'recolored', by: 'user', at: iso(6), from: 'yellow', to: 'blue' }, { action: 'accepted', by: 'user', at: iso(7) }] },
+    // rescoped
+    { id: 's-004', anchor: 'a-0001-03-01', char_start: 9, char_end: 15, color: 'green', rationale: 'takeaway', status: 'accepted', decisions: [{ action: 'proposed', by: 'agent', at: iso(8) }, { action: 'rescoped', by: 'user', at: iso(9), from: { anchor: 'a-0001-03-01', char_start: 9, char_end: 18 }, to: { anchor: 'a-0001-03-01', char_start: 9, char_end: 15 } }] },
+    // user added
+    { id: 's-005', anchor: 'a-0001-03-01', char_start: 5, char_end: 12, color: 'purple', rationale: '', status: 'user_added', decisions: [{ action: 'added', by: 'user', at: iso(10) }] },
+    // pending (no user decision)
+    { id: 's-006', anchor: 'a-0001-03-01', char_start: 13, char_end: 16, color: 'yellow', rationale: 'open', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: iso(11) }] },
+  ]
+  await secWrite.execute({ paper_id: secPaperId, highlights: dsec, root: secRoot })
+
+  const diffTool = summarizeSectionDiffTool()
+  const diffOut = await diffTool.execute({ paper_id: secPaperId, section: 's2', root: secRoot })
+  assert(diffOut.ok === true && diffOut.scope.kind === 'section' && diffOut.scope.section.id === 's2', 'summarize_section_diff: resolves section scope')
+  assert(diffOut.total === 6 && diffOut.pending === 1 && diffOut.decided === 5, 'summarize_section_diff: total/pending/decided counts')
+  assert(diffOut.counts.accepted === 1 && diffOut.counts.rejected === 1 && diffOut.counts.recolored === 1,
+    'summarize_section_diff: accepted/rejected/recolored primary counts')
+  assert(diffOut.counts.rescoped === 1 && diffOut.counts.added === 1 && diffOut.counts.pending === 1,
+    'summarize_section_diff: rescoped/added/pending primary counts')
+  assert(Math.abs(diffOut.accept_rate - 0.2) < 1e-9, 'summarize_section_diff: accept_rate = accepted/decided (1/5)')
+  assert(diffOut.samples.recolored.length === 1 && diffOut.samples.recolored[0].recolor.from === 'yellow' && diffOut.samples.recolored[0].recolor.to === 'blue',
+    'summarize_section_diff: recolored sample carries from/to')
+  assert(diffOut.samples.rescoped.length === 1 && diffOut.samples.rescoped[0].rescope.to.char_start === 9 && diffOut.samples.rescoped[0].rescope.to.char_end === 15,
+    'summarize_section_diff: rescoped sample carries the to-range')
+  assert(diffOut.samples.added.length === 1 && diffOut.samples.added[0].span_id === 's-005', 'summarize_section_diff: added sample')
+  assertLosslessJson(diffOut, 'summarize_section_diff output')
+  const diffPaper = await diffTool.execute({ paper_id: secPaperId, root: secRoot })
+  assert(diffPaper.ok === true && diffPaper.scope.kind === 'paper' && diffPaper.total === 6, 'summarize_section_diff: paper-wide scope when section omitted')
+  const diffBad = await diffTool.execute({ paper_id: secPaperId, section: 's99', root: secRoot })
+  assert(diffBad.ok === false && typeof diffBad.error === 'string', 'summarize_section_diff: unknown section ok:false')
+  assertLosslessJson(diffPaper, 'summarize_section_diff paper-wide output')
+
+  // 9) duplicates append-only contract (Phase 4): schema validates entries.
+  const dupDoc = { ...(await secRead.execute({ paper_id: secPaperId, root: secRoot })).highlights }
+  dupDoc.duplicates = [
+    { claim: 'transformer parallelization advantage', highlighted_at: 's-001', repeats_at: ['a-0002-01-03', 'a-0009-04-01'] },
+  ]
+  const dupOk = await secWrite.execute({ paper_id: secPaperId, highlights: dupDoc, root: secRoot })
+  assert(dupOk.ok === true, 'duplicates: valid entry accepted')
+  const dupBad = { ...dupDoc, duplicates: [{ claim: '' }] }
+  let dupThrew = false
+  try {
+    await secWrite.execute({ paper_id: secPaperId, highlights: dupBad, root: secRoot })
+  } catch (err) {
+    dupThrew = true
+    assert(/claim must be a non-empty string/.test(err.message), `duplicates: invalid entry error message: ${err.message}`)
+  }
+  assert(dupThrew, 'duplicates: entry without claim rejected')
+  const dupBad2 = { ...dupDoc, duplicates: [{ claim: 'x', repeats_at: 'a-1' }] }
+  let dupThrew2 = false
+  try {
+    await secWrite.execute({ paper_id: secPaperId, highlights: dupBad2, root: secRoot })
+  } catch (err) {
+    dupThrew2 = true
+    assert(/repeats_at must be an array/.test(err.message), `duplicates: bad repeats_at error message: ${err.message}`)
+  }
+  assert(dupThrew2, 'duplicates: non-array repeats_at rejected')
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
-    lossless_output: 'parse_pdf / read_highlights / write_highlights / list_sections / read_section all lossless JSON',
+    lossless_output: 'parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff all lossless JSON',
     append_mode: 'write_highlights preserves existing spans + decisions when adding',
     section_tools: 'list_sections (index + plan/span merge) + read_section (body text + filtered spans, unknown -> ok:false)',
+    diff_tool: 'summarize_section_diff — decisions[]-driven classification (accepted/rejected/recolored/rescoped/added/pending) + counts/accept_rate + samples (Phase 4)',
+    duplicates_contract: 'schema validates duplicates entries (claim non-empty, repeats_at string array); append-only registration (Phase 4)',
   }, null, 2))
 }
 

@@ -263,7 +263,7 @@ for each § in paper:
 - DSH client 插件注册：`conversation.view` 槽位 + ModuleLoader bundle 格式；host 数据通路走 `/paper-hl/read` webserver 路由。
 - 正文文字过滤准确度：`scripts/step5-acceptance.js` 真实数据抽样校验（无表格/公式/图片/参考文献正文残留，仅 text/title 保留，跳过统计一致）。
 
-### v0.2 审查闭环（核心 loop）
+### v0.2 审查闭环（核心 loop）✅ 已完成（2026-08-27）
 
 **范围**
 - Agent 技能：全局通读（产出论文地图与章节计划）、逐节 propose（候选 spans + 理由）。
@@ -271,13 +271,14 @@ for each § in paper:
 - 差异分析 + 章节反思：产出画像更新提案。
 - 去重：论文地图「已高亮主张」清单驱动。
 
-**验收**
-- 完整跑通循环，人工评估 propose 质量可接受（高亮处确有语义价值、密度合理）。
-- 用户删除/改色操作后，Agent 能给出合理的画像更新提案。
+**验收（2026-08-27 全部通过，详见进度文档 §6 Phase 0–6 记录）**
+- 完整跑通循环，人工评估 propose 质量可接受（高亮处确有语义价值、密度合理）：✅ Phase 2 审查交互（P2-a…P2-f）+ Phase 3 技能/工具 + Phase 4 差异/去重 + Phase 5 step6-e2e 端到端（global-read → propose → GUI 模拟审查 → reflect → reflections.json）。
+- 用户删除/改色操作后，Agent 能给出合理的画像更新提案：✅ `summarize_section_diff` 差异分析 + `paper-hl-reflect` 技能产出提案（用户确认机制随 v0.3）。
+- 浏览器走查：用户在 3081 真实完成多轮审查（accept/recolor/rescope/reject/add/标记节完毕），数据落库（8 spans + Abstract reviewed）即真实写通路验收。
 
 **风险/依赖**
-- span 锚定在渲染后的稳定性（文本归一化、跨行处理）。
-- 审查交互 UX 的舒适度（标注层与原文的视觉区分）。
+- span 锚定在渲染后的稳定性（文本归一化、跨行处理）—— ✅ Phase 0 就近匹配 + 字符偏移钳制，simulate-render 断言稳定。
+- 审查交互 UX 的舒适度（标注层与原文的视觉区分）—— ✅ 悬浮操作条/半透明标注，用户浏览器目视验收通过。
 
 ### v0.3 个性化画像（收敛）
 
@@ -336,8 +337,8 @@ D:\aa\                               # workspace 根（DSH 工作区）
 | 1 | DSH client 插件注册/HMR 的精确 API（npm 包为 bundle） | ~~v0.1 阻塞~~ ✅ | 已解决：`conversation.view` 槽位 + `window.__ModuleLoader__` bundle 格式；host 数据通路走 `/paper-hl/read` webserver 路由（Step 3 实测） |
 | 2 | MinerU API 对本地上传的承载方式 | ~~v0.1~~ ✅ | 已解决：`POST /api/v4/file-urls/batch` 预签名 PUT（须 Content-Length），系统自动提交任务（Step 0/2 真实冒烟校准） |
 | 3 | 正文/非正文过滤准确度（公式、图表说明文字） | ~~v0.1~~ ✅ | 已解决：保留 text/title/content，SKIP_TYPES 扩充（ref_text/aside_text/page_number 等）；`scripts/step5-acceptance.js` 真实数据抽样校验通过（Step 5） |
-| 4 | span 跨行/表格内锚定稳定性 | v0.2 | 锚定到 par 级 + 字符偏移；渲染端容错（就近匹配） |
-| 5 | 差异推断质量 | v0.3 | 用户确认机制兜底；示例库积累 |
+| 4 | span 跨行/表格内锚定稳定性 | v0.2 ✅ | 锚定到 par 级 + 字符偏移；渲染端容错（就近匹配 + 越界钳制）—— Phase 0 实现，simulate-render / run-render 持续回归 |
+| 5 | 差异推断质量 | v0.3 | 用户确认机制兜底；示例库积累 —— v0.2 已落地「只产出提案、确认后生效」防污染机制（`paper-hl-reflect` + reflections.json），推断质量指标随 v0.3 关闭 |
 | 6 | 长论文（未来）的上下文管理 | 未来 | 论文地图压缩表示 + 分块注入 |
 | 7 | 颜色数量与语义的表达力上限 | 全周期 | 冷启动时引导 ≤6 色；colors.yml 可自由编辑 |
 

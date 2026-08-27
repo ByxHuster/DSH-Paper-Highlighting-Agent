@@ -18,6 +18,7 @@ const path = require('node:path')
 const { processPdf, paperIdFromPdfPath } = require('./pipeline')
 const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, paperDir } = require('./store')
 const { buildSections } = require('./sections')
+const { summarizeDiff } = require('./diff')
 
 /** Default data root: the process cwd (dsh launched from the workspace root). */
 function defaultRoot() {
@@ -136,7 +137,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -266,4 +267,46 @@ function readSectionTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, allTools }
+/** summarize_section_diff tool definition (Phase 4). */
+function summarizeSectionDiffTool() {
+  return {
+    name: 'summarize_section_diff',
+    description:
+      'Summarize the review diff for one section (or the whole paper when section is omitted): for each span, ' +
+      'classify the proposed→final trajectory from the decisions[] log (accepted / rejected / recolored / ' +
+      'rescoped / noted / added / pending), aggregate counts + accept_rate, and return up to 3 sample spans ' +
+      'per change kind. Powers the reflect skill — never hand-recount.',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id (from parse_pdf)' },
+      section: { type: 'string', description: 'Section id, e.g. "s3" (from list_sections). Omit for the whole paper.' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const { highlights, paperMd, anchors } = await readPaperContext(root, args.paper_id)
+      const sections = buildSections({ paperMd, anchors })
+      let spans = highlights.spans || []
+      let scope = { kind: 'paper', section: null }
+      if (args.section !== undefined && args.section !== null && args.section !== '') {
+        const sec = sections.find((s) => s.id === args.section)
+        if (!sec) {
+          return {
+            ok: false,
+            paper_id: args.paper_id,
+            error: `unknown section ${JSON.stringify(args.section)}; available: ${sections.map((s) => s.id).join(', ')}`,
+          }
+        }
+        spans = spans.filter((s) => (sec.anchor_ids || []).includes(s.anchor))
+        scope = { kind: 'section', section: { id: sec.id, title: sec.title, anchor_count: (sec.anchor_ids || []).length } }
+      }
+      const diff = summarizeDiff(spans)
+      return Object.assign({ ok: true, paper_id: args.paper_id, scope }, diff)
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, allTools }
