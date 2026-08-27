@@ -309,6 +309,9 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 **验证结果（2026-08-27）**
 - `step8-export-e2e.js` → **PASS**（30 项断言全过：html 6 marks/5 legend/自包含、md 可读、include_pending 6、论文级反思 7 节）
 - 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render / run-profile / run-export / run-reflect-paper → 全部 PASS；check-host / check-utf8 → PASS；simulate-render → SIMULATION PASS
+- **重启 3081 后 live 复验（2026-08-27，用户已重启）**：`/paper-hl/read` 200 json（159KB）· `/paper-hl/export` html 200（6 marks / 5 legend / 自包含）· md 200（6 marks）· `download=1` → `Content-Disposition: attachment; filename="p-bahdanau-2016-attention.html"` · 负例 ghost 404 / bad format 400 → 全部通过；verify-http / simulate-render / check-host live 全 PASS（确认 host 已加载 v0.4 全量代码：Phase 1 导出路由 + Phase 4 bundle 均生效）
+- **step8 非破坏化重构**：`reflect_paper` 改 `inline` 校验工具脚手架（不再覆盖已提交样例），产物文件就地位校验；导出产物重生成（仅导出时间戳变化）
+- **用户指南**：新增 `docs/paper-highlight-user-guide.md`（面向使用者：快速开始 / 工作流 / GUI 操作 / 快捷键 / 导出 / 数据位置 / FAQ），README 顶部加链接
 - 人工走查项（验收核对 ②）留待用户：浏览器打开导出 HTML 目视高亮颜色 + 图例与 colors.yml 五色一致；VS Code/笔记软件预览 MD；GUI 快捷键逐键 / 导出下载 / 刷新后进度保留
 
 ## 7. 风险与对策
@@ -334,7 +337,8 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 
 | 路径（规划） | 内容 | 状态 |
 |---|---|---|
-| `docs/paper-highlight-progress-v0.4.md` | 本进度文件 | ✅ 已建（Phase 0–4 完成记录已写入，Phase 5 待填） |
+| `docs/paper-highlight-progress-v0.4.md` | 本进度文件 | ✅ 已建（Phase 0–5 完成记录已写入） |
+| `docs/paper-highlight-user-guide.md` | 面向用户的 README（快速开始 / 工作流 / GUI 操作 / 快捷键 / 导出 / 数据位置 / FAQ） | ✅ 已落盘（v0.4.0 后补充） |
 | `D:\aa\field-map.md` | 领域发展线（NLP 2013–2016 主线 + 三篇论文定位 + 里程碑/范式转移 + 空白区，D4） | ✅ 已落盘（Phase 2） |
 | `packages/paper-highlight/host/export.js` | 导出纯逻辑：`buildExportSpans` / `renderHtml` / `renderMarkdown` / `legendHtml` / `legendMd`（D2/D3） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/host/reflection.js` | 论文级反思模板：`paperReflectionTemplate`（D5） | ✅ 已实现（Phase 3） |

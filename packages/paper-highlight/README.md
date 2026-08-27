@@ -2,6 +2,8 @@
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
+> **用户手册**：安装 / 启动 / 使用 / 快捷键 / 导出 / FAQ 见 [`docs/paper-highlight-user-guide.md`](../../../docs/paper-highlight-user-guide.md)（面向使用者；本文件为开发者说明）。
+
 > v0.1（管线打通）2026-08-26 验收通过；v0.2（审查闭环）2026-08-27 验收通过；**v0.3（画像收敛）2026-08-27 验收 PASS**：四层画像（`highlight-profile/`）+ 冷启动引导 + colors.yml 驱动图例/色板 + GUI 画像编辑面板 + propose 摘要注入（`read_profile`）+ 待确认提案面板 + 确认闭环（`confirm_proposal` / `/profile/apply`，append-only）+ 三篇同领域论文收敛验收（`step7-multi-paper.js`：认可率 50%→67%→100%，修改率 50%→33%→0%，PASS）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.3.md`。
 > **v0.4（打磨导出）2026-08-27 验收 PASS（归档 `v0.4.0`）**：HTML/MD 导出（`export_paper` 工具 + `/paper-hl/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` 只读注入 + 论文级反思（`reflect_paper` / `paper-reflection.md`）+ UX 打磨（`keyAction` 快捷键 / 审查进度条）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.4.md`（M0–M5 全达标）。
 

@@ -58,7 +58,9 @@ async function main() {
   async function backup() {
     await fsp.rm(backupRoot, { recursive: true, force: true })
     await fsp.mkdir(backupRoot, { recursive: true })
-    for (const src of [exportDir, reflFile]) {
+    // only the regenerated export/ dir needs backup (paper-reflection.md is
+    // validated in place, never rewritten by this e2e)
+    for (const src of [exportDir]) {
       if (!fs.existsSync(src)) continue
       const rel = path.relative(dir, src)
       const dest = path.join(backupRoot, rel)
@@ -67,7 +69,7 @@ async function main() {
     }
   }
   async function restore() {
-    for (const src of [exportDir, reflFile]) {
+    for (const src of [exportDir]) {
       if (fs.existsSync(src)) await fsp.rm(src, { recursive: true, force: true })
       const rel = path.relative(dir, src)
       const dest = path.join(backupRoot, rel)
@@ -124,9 +126,16 @@ async function main() {
     assert(pendingMarks === expectedPending, `include_pending <mark> = ${pendingMarks} (=${expectedPending})`)
     assert(expectedPending >= expectedDefault, 'include_pending count >= default count')
 
-    // ── 5. reflect_paper (file) — paper-level reflection artifact ───────────
-    const rp = await reflectPaperTool().execute({ paper_id: PAPER, output: 'file', root: ROOT })
-    assert(rp.ok === true && rp.output === 'file' && rp.file === reflFile, 'reflect_paper → paper-reflection.md path')
+    // ── 5. reflect_paper (inline) + paper-level reflection artifact ─────────
+    // reflect_paper inline proves the tool renders a valid scaffold without
+    // touching the committed artifact; the artifact file is validated as-is so
+    // re-running the e2e never clobbers the (Agent-filled) sample.
+    const rp = await reflectPaperTool().execute({ paper_id: PAPER, output: 'inline', root: ROOT })
+    assert(rp.ok === true && typeof rp.content === 'string' && rp.content.startsWith('# 论文级反思 — '), 'reflect_paper inline → valid scaffold (tool works)')
+    for (const sec of ['1. 论文概述', '2. 审查进度', '3. 整篇差异汇总', '4. 沉淀偏好', '5. 领域地图增补点', '6. 未来工作方向', '7. 导出状态']) {
+      assert(rp.content.includes(sec), `reflect_paper inline carries section "${sec}"`)
+    }
+    assert(fs.existsSync(reflFile), 'paper-reflection.md artifact exists on disk')
     const refl = await fsp.readFile(reflFile, 'utf8')
     assert(refl.startsWith('# 论文级反思 — '), 'paper-reflection.md starts with the 论文级反思 H1')
     for (const sec of ['1. 论文概述', '2. 审查进度', '3. 整篇差异汇总', '4. 沉淀偏好', '5. 领域地图增补点', '6. 未来工作方向', '7. 导出状态']) {
@@ -134,7 +143,7 @@ async function main() {
     }
     assert(refl.includes('认可率（accepted/decided）'), 'paper-reflection.md carries the whole-paper accept rate')
 
-    console.log(`\nSTEP8 PASS — v0.4 交付链端到端（无人工介入）：html+md 导出产物校验通过（${expectedDefault} 处高亮 / ${paletteKeys.length} 色图例 / 自包含）、include_pending 语义正确、论文级反思产物结构完整（7 节）`)
+    console.log(`\nSTEP8 PASS — v0.4 交付链端到端（无人工介入）：html+md 导出产物校验通过（${expectedDefault} 处高亮 / ${paletteKeys.length} 色图例 / 自包含）、include_pending 语义正确、reflect_paper 脚手架 + 论文级反思产物结构完整（7 节）`)
   } catch (err) {
     await restore()
     console.error('STEP8 FAILED (backup restored):', err.message)
