@@ -1,6 +1,6 @@
 # 论文级反思 — Neural Machine Translation by Jointly Learning to Align and Translate
 
-> paper_id: p-bahdanau-2016-attention · 生成时间 2026-08-27T11:34:58.398Z · 来源：paper-hl-reflect（论文级）
+> paper_id: p-bahdanau-2016-attention · 生成时间 2026-08-27T12:28:42.208Z · 来源：paper-hl-reflect（论文级）
 
 ## 1. 论文概述
 

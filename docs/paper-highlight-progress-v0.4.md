@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.4 项目进度（打磨导出 / 领域地图 / 论文级反思 / UX）
 
-> 版本：v0.4（打磨导出）· 状态：**Phase 0–4 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3` / `v0.3.4`）· Phase 5 待实施** · 创建：2026-08-27 · 最近更新：2026-08-27
+> 版本：v0.4（打磨导出）· 状态：**Phase 0–5 全部完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3` / `v0.3.4` → `v0.4.0`）** · 创建：2026-08-27 · 最近更新：2026-08-27
 > **独立使用说明**：本文件含 v0.3 继承状态、v0.4 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.3.md`（归档，v0.3.0）。
 
 ---
@@ -81,7 +81,7 @@ node D:\aa\packages\paper-highlight\test\run-reflect-paper.js   # v0.4 Phase 3 �
 node D:\aa\packages\paper-highlight\scripts\simulate-render.js   # live 3081，POST 走 mock，真实数据零改动
 node D:\aa\packages\paper-highlight\scripts\verify-http.js
 node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 运行 + LLM 会话（按需）
-node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5 新增（按需）
+node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5 新增（离线，验收 PASS）
 ```
 
 ## 4. v0.4 范围与验收（设计文档 §8）
@@ -298,7 +298,18 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 - ① 端到端稳定：`step8-export-e2e.js` PASS（完整流程无人工介入产出 html+md 交付物）
 - ② 导出 HTML 浏览器/笔记软件打开正常、图例完整：人工走查（浏览器打开导出 HTML 目视高亮颜色 + 图例与 colors.yml 五色一致；VS Code/笔记软件预览 MD 正常）
 
-#### ✅ Phase 5 完成记录（待实施后填写，格式沿用 v0.3）
+#### ✅ Phase 5 完成记录（2026-08-27，验收通过，归档 v0.4.0）
+
+**交付**（git 工作区已落盘）
+- `scripts/step8-export-e2e.js`（新）：真实论文 `p-bahdanau-2016-attention` 端到端验收驱动（离线，走 host 纯逻辑，无需 3081）——
+  ① 读真实 highlights+anchors 用规范 `buildExportSpans` 推导期望导出数（6 / pending 6）→ ② `export_paper html`（file）：产物存在 + `<mark>` 数=导出 spans + 图例条目=L1 色键数（5）+ 自包含（无 http(s)/script）+ 每色 `hl-<color>` 类 → ③ `export_paper md`（file）：H1 + 图例 + `<mark>` 数 + hl 类 → ④ include_pending 语义（=期望 pending 数）→ ⑤ `reflect_paper`（file）：`paper-reflection.md` 存在 + 7 节结构断言 + 认可率行 → **PASS**；运行前备份 export/ 与 paper-reflection.md、失败自动恢复
+- 产物留盘：`data/p-bahdanau-2016-attention/export/p-bahdanau-2016-attention.{html,md}`（6 处高亮 / 5 色图例 / 自包含）+ `paper-reflection.md` 重新生成（保留 Agent 填充样例内容，仅时间戳更新）
+- 文档收尾：设计文档 §8 v0.4 完成标注 + §10 风险 #6 对策更新；README v0.4 横幅 + 布局补 `host/export.js`/`host/reflection.js`/`field-map.md`/11 工具/`/export` 路由/`step8-export-e2e.js` + 测试命令；one-pager v0.4 状态 + 工具表 11 个 + 未来扩展；本进度文件 Phase 5 记录 + §8 终态 + §9 勾选
+
+**验证结果（2026-08-27）**
+- `step8-export-e2e.js` → **PASS**（30 项断言全过：html 6 marks/5 legend/自包含、md 可读、include_pending 6、论文级反思 7 节）
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render / run-profile / run-export / run-reflect-paper → 全部 PASS；check-host / check-utf8 → PASS；simulate-render → SIMULATION PASS
+- 人工走查项（验收核对 ②）留待用户：浏览器打开导出 HTML 目视高亮颜色 + 图例与 colors.yml 五色一致；VS Code/笔记软件预览 MD；GUI 快捷键逐键 / 导出下载 / 刷新后进度保留
 
 ## 7. 风险与对策
 
@@ -314,8 +325,8 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 
 ## 8. 当前状态 / 待办
 
-- **状态**：**v0.4 Phase 0–4 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3` / `v0.3.4`）**——导出核心纯逻辑 + host 路由 + `export_paper` + `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper` + `paper-reflection.md` 样例）+ UX 打磨（`keyAction` 快捷键 / 导出对话框 / 审查进度条）；Phase 5 待实施。v0.3 全部完成（归档 `v0.3.0`）。
-- **待办（v0.4）**：Phase 5 step8 端到端（`step8-export-e2e.js` + paper-reflection.md 结构断言）+ 文档收尾（README/一页纸/设计 §8）+ 归档 `v0.4.0`；浏览器人工走查清单（快捷键逐键、导出下载、刷新后进度保留）留待用户。Phase 0–4 已完成实现并验证（见 §6 完成记录）。
+- **状态**：**v0.4 全部完成（归档 `v0.4.0`）**——导出核心纯逻辑 + host 路由 + `export_paper` + `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper` + `paper-reflection.md`）+ UX 打磨（`keyAction` 快捷键 / 导出对话框 / 审查进度条）+ step8 端到端验收 PASS。v0.3 全部完成（归档 `v0.3.0`）。
+- **待办**：v0.4 已归档，无遗留实施项；浏览器人工走查清单（快捷键逐键、导出下载、刷新后进度保留、导出 HTML 目视 + 图例）留待用户；领域地图空白区（Transformer/预训练/LLM）随未来论文收录扩展。Phase 0–5 均已完成实现并验证（见 §6 完成记录）。
 - ⚠️ 数据状态（v0.3 验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认，可作 GUI 演示）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认 + `paper-reflection.md` 论文级反思留盘样例）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）；**`field-map.md` 已初建**（v0.3.2）。
 - ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**；host 代码变更后需用户手动重启。
 
@@ -334,13 +345,13 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 | `packages/paper-highlight/skills/reflect.md`（更新） | 论文级反思步骤 + `paper-reflection.md` 落盘（D5） | ✅ 已实现（Phase 3） |
 | `packages/paper-highlight/client/render-body.js`（扩展） | `keyAction` + 导出对话框 + 审查进度条（D6；「继续上次」滚动导航与图例 hover 已按精简授权裁剪，`n 新增` 键因无键盘目标裁剪） | ✅ 已实现（Phase 4） |
 | `packages/paper-highlight/scripts/gen-client.js`（扩展） | 导出 `keyAction`/`reviewProgress`/`buildExportUrl`；bundle 重新生成 | ✅ 已实现（Phase 4） |
-| `packages/paper-highlight/scripts/step8-export-e2e.js` | 导出端到端验收驱动（html+md 产物校验 + 论文级反思断言） | 待实施（Phase 5） |
+| `packages/paper-highlight/scripts/step8-export-e2e.js` | 导出端到端验收驱动（html+md 产物校验 + 论文级反思断言，备份/失败恢复） | ✅ 已实现（Phase 5，PASS） |
 | `packages/paper-highlight/scripts/verify-http.js`（扩展） | `/paper-hl/export` live 探针 | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/test/run-export.js` | 导出层单测（渲染矩阵 + 自包含断言 + 模板矩阵） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/test/run-reflect-paper.js` | 论文级反思模板单测（空/全接受/混合 diff/画像行/逐节表） | ✅ 已实现（Phase 3） |
 | `packages/paper-highlight/test/{run-tools,run-plugin,run-render}.js`（扩展） | `export_paper` 工具 + `/export` 路由断言（Phase 1 ✅）；`read_field_map` 断言（Phase 2 ✅）；`keyAction`/`reviewProgress`/`buildExportUrl` 矩阵（Phase 4 ✅，run-render） | ✅ 已实现（Phase 1/2/4） |
 | `packages/paper-highlight/scripts/simulate-render.js`（扩展） | P4 快捷键（真实 keydown 分派）/导出对话框/进度条交互注入（reactShim 升级 useRef/useEffect-deps/useCallback 记忆化 + window 键注册表） | ✅ 已实现（Phase 4，SIMULATION PASS） |
-| 文档：设计文档 §8/§10 + README + one-pager | v0.4 完成标注 + 布局/状态更新 | 待实施（Phase 5） |
+| 文档：设计文档 §8/§10 + README + one-pager | v0.4 完成标注 + 布局/状态更新 | ✅ 已实现（Phase 5） |
 
 ## 10. 里程碑检查点
 
@@ -351,4 +362,4 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 | M2 | Phase 2 完成 | ✅ `field-map.md` 落盘（领域主线+三篇定位+里程碑/范式转移+空白区）+ `read_field_map` 工具（存在/缺失提示/root 解析）+ 技能注入（global-read/propose）+ 本地全绿 + 真实数据离线冒烟 PASS（live 工具行待用户重启 3081） |
 | M3 | Phase 3 完成 | ✅ `paperReflectionTemplate` 矩阵 PASS（run-reflect-paper）+ `reflect_paper` 工具断言 + **实跑一篇留盘样例**（`p-bahdanau` paper-reflection.md，6/6 全接受） |
 | M4 | Phase 4 完成 | ✅ `keyAction`/`reviewProgress`/`buildExportUrl` 矩阵 PASS（run-render）+ simulate-render P4 交互 PASS（进度条/导出对话框/键盘 `d`→reject、`3`→recolor blue、Esc、输入态忽略）+ 本地回归全绿（无 host 改动，3081 无需重启）；浏览器走查待用户 |
-| M5 | Phase 5 完成（**v0.4 验收**） | `step8-export-e2e.js` PASS（端到端稳定）+ 导出 HTML 浏览器/笔记软件打开正常、图例完整（人工）+ 文档更新 + 归档 `v0.4.0` |
+| M5 | Phase 5 完成（**v0.4 验收**） | ✅ `step8-export-e2e.js` PASS（30 断言：html 6 marks/5 legend/自包含 + md 可读 + include_pending + 论文级反思 7 节）+ 导出产物留盘（`data/p-bahdanau/export/*.{html,md}`）+ 文档收尾（设计/README/one-pager）+ 归档 `v0.4.0`（人工浏览器走查留待用户） |

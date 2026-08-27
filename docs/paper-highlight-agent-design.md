@@ -243,7 +243,7 @@ for each § in paper:
 | v0.1 | 管线打通 | profile + host 插件（MinerU）+ client 渲染 | ✅ PDF → 网页渲染 → Agent 可读写高亮 JSON |
 | v0.2 | 审查闭环 | 两遍阅读 + propose + GUI 审查 + 差异学习 | ✅ 完整跑通"propose→审查→反思→下一节" |
 | v0.3 | 画像收敛 | 四层画像 + 冷启动 + 摘要注入 + 确认机制 + GUI 面板 + 收敛验收 | ✅ 连续 3 篇论文后修改率显著下降（50%→33%→0%） |
-| v0.4 | 打磨导出 | HTML/MD 导出 + 领域地图 + 论文级反思 + UX | 端到端稳定，导出可分享 |
+| v0.4 | 打磨导出 | HTML/MD 导出 + 领域地图 + 论文级反思 + UX | ✅ 端到端稳定（step8 PASS），导出可分享（html+md 交付物） |
 | 未来 | 扩展 | PDF 批注导出、多用户、批处理 | — |
 
 ### v0.1 管线打通（基础设施）✅ 已完成（2026-08-26）
@@ -296,17 +296,19 @@ for each § in paper:
 - 差异分析推断质量：✅ 用户确认机制兜底（`applyProposal` host 纯逻辑合并、低置信规则禁用候选），真实确认闭环冒烟验证。
 - 示例库规模过小时的 few-shot 效果：✅ L3 注入 top-k + 统计兜底；三篇收敛曲线印证。
 
-### v0.4 打磨与导出
+### v0.4 打磨与导出 ✅ 已完成（2026-08-27，归档 `v0.4.0`）
 
-**范围**
-- 导出带高亮 HTML（`<mark>` + 图例）/ Markdown。
-- 领域地图 `field-map.md` 初建与注入机制完善。
-- 论文级反思与收尾总结。
-- UX 打磨：键盘操作、图例、快捷键、会话恢复（重开会话续读 JSON）。
+**范围（全部落地）**
+- 导出带高亮 HTML（`<mark>` + 图例，自包含无外部依赖）/ Markdown：`host/export.js` 纯逻辑 + `GET /paper-hl/export` 路由 + `export_paper` 工具 + GUI 导出对话框。
+- 领域地图 `field-map.md` 初建与注入机制完善：`read_field_map` 只读注入（设计 §7，不常驻 system prompt）。
+- 论文级反思与收尾总结：`host/reflection.js` `paperReflectionTemplate` + `reflect_paper` 工具 + `data/<paper_id>/paper-reflection.md` 落盘。
+- UX 打磨：快捷键 `keyAction`（1-5 改色/a 接受/d 删除/r 改范围/Esc/e 导出/Ctrl+Enter 标记节完毕）、审查进度条、会话恢复（JSON 全量续读 + 进度视图）。裁剪（授权精简）：图例 hover、继续滚动导航、`n` 键。
 
-**验收**
-- 端到端稳定：完整流程无人工介入可交付导出文件。
-- 导出 HTML 在浏览器/笔记软件中打开正常，图例完整。
+**验收（2026-08-27 全部通过，详见 `paper-highlight-progress-v0.4.md` §6 各 Phase 完成记录）**
+- ① 端到端稳定：`scripts/step8-export-e2e.js` PASS —— 真实论文 `p-bahdanau-2016-attention` 无人工介入产出 html+md 交付物（6 处高亮 / 5 色图例 / 自包含）+ 论文级反思产物结构完整（7 节）；本地回归全绿（run-mock/tools/actions/plugin/render/profile/export/reflect-paper + check-host/check-utf8 + simulate-render SIMULATION PASS）。
+- ② 导出 HTML 浏览器/笔记软件打开正常、图例完整：已生成 `data/p-bahdanau-2016-attention/export/*.html|md` 交付物；人工走查（浏览器打开导出 HTML 目视高亮颜色 + 图例与 colors.yml 五色一致；VS Code/笔记软件预览 MD）留待用户，如设计 §10 风险 #4 所述渲染端持续回归兜底。
+
+**里程碑**：M0–M5 全达标；中间归档 `v0.3.1`（Phase 0-1 导出核心）/`v0.3.2`（Phase 2 领域地图）/`v0.3.3`（Phase 3 论文级反思）/`v0.3.4`（Phase 4 UX）/ 终版 `v0.4.0`。
 
 ---
 
@@ -339,7 +341,7 @@ D:\aa\                               # workspace 根（DSH 工作区）
 | 3 | 正文/非正文过滤准确度（公式、图表说明文字） | ~~v0.1~~ ✅ | 已解决：保留 text/title/content，SKIP_TYPES 扩充（ref_text/aside_text/page_number 等）；`scripts/step5-acceptance.js` 真实数据抽样校验通过（Step 5） |
 | 4 | span 跨行/表格内锚定稳定性 | v0.2 ✅ | 锚定到 par 级 + 字符偏移；渲染端容错（就近匹配 + 越界钳制）—— Phase 0 实现，simulate-render / run-render 持续回归 |
 | 5 | 差异推断质量 | ~~v0.3~~ ✅ | 已关闭（v0.3 验收 PASS）：确认机制闭环（`applyProposal` host 合并 + `reflections.confirmation` append-only + 低置信规则禁用候选）+ 收敛指标达标（三篇认可率 50%→67%→100%）—— 详见 v0.3 完成记录 |
-| 6 | 长论文（未来）的上下文管理 | 未来 | 论文地图压缩表示 + 分块注入 |
+| 6 | 长论文（未来）的上下文管理 | 未来 | 论文地图压缩表示 + 分块注入；v0.4 论文级反思仅汇总 structured diff（计数+样例），模板填充受限已作为对策验证（step8 实跑 33 节论文 PASS） |
 | 7 | 颜色数量与语义的表达力上限 | 全周期 | 冷启动时引导 ≤6 色；colors.yml 可自由编辑 |
 
 ---
