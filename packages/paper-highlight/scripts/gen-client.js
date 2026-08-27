@@ -90,6 +90,9 @@ function generateBundle() {
   lines.push(`\t\texports.profilePanelModel = profilePanelModel;`)
   lines.push(`\t\texports.profilePanelColors = profilePanelColors;`)
   lines.push(`\t\texports.profileSavePayload = profileSavePayload;`)
+  // v0.3 Phase 2: pending-proposal panel model + decisions payload builder.
+  lines.push(`\t\texports.proposalCardModel = proposalCardModel;`)
+  lines.push(`\t\texports.buildApplyDecisions = buildApplyDecisions;`)
   lines.push(`\t\treturn module.exports;`)
   lines.push(`\t}`)
   lines.push(`});`)

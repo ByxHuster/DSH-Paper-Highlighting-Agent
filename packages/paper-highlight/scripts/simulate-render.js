@@ -98,9 +98,44 @@ const API_ORIGIN = 'http://127.0.0.1:3081'
 //   has_profile=true  → legend / swatches / marks driven by the profile colors
 // v0.3 Phase 3: the mock GET serves the full four-layer profile so the edit
 // panel renders; POST /save is captured (payload asserted, not applied).
+// v0.3 Phase 2: the mock GET serves pending_proposals; POST /apply removes the
+// confirmed paper from the list (host-equivalent) + captures the decisions.
 const profileState = { has_profile: false, profile: null }
 const profileCapture = []
 const profileSaveCapture = []
+const applyCapture = []
+let mockPending = [
+  {
+    paper_id: 'p-a',
+    updated_at: '2026-08-27T00:00:00.000Z',
+    proposal: {
+      rules: [
+        { rule: 'color_semantics: 引言问题/动机类内容归 red', confidence: 'low', from: 's3 节 s-009 被 blue→red 改色' },
+        { rule: 'granularity: 高亮默认取短语级短片段', confidence: 'medium', from: 's-003 与 s-006 两次 rescope' },
+      ],
+      exemplars: [{ span_id: 's-009', suggested: { color: 'blue' }, user_decision: { color: 'red' }, section: 's3', note: '问题/动机类内容用户归 red' }],
+      stats: { sections_reviewed: 1, overall_accept_rate: 0, recolor_events: 1 },
+    },
+  },
+  {
+    paper_id: 'p-b',
+    updated_at: '2026-08-27T00:00:00.000Z',
+    proposal: {
+      rules: [{ rule: 'value/density: 背景铺垫类句子不提出高亮', confidence: 'high', from: 's3 节 s-010 被删除' }],
+      exemplars: [],
+      stats: { sections_reviewed: 1, overall_accept_rate: 1 },
+    },
+  },
+  {
+    paper_id: 'p-c',
+    updated_at: '2026-08-27T00:00:00.000Z',
+    proposal: {
+      rules: [],
+      exemplars: [{ span_id: 's-012', suggested: null, user_decision: { action: 'added', color: 'purple' }, section: 's3', note: '用户节标题 purple 标记' }],
+      stats: { sections_reviewed: 1 },
+    },
+  },
+]
 const CUSTOM_COLORS = {
   red: { color: '#ff0000', label: '红核心' },
   yellow: { color: '#fff3a0', label: '关键定义/方法' },
@@ -127,13 +162,21 @@ const MOCK_PROFILE = {
 function mockProfileHandler(url, opts) {
   if (opts && opts.method === 'POST') {
     const payload = JSON.parse(opts.body || '{}')
-    if (url.indexOf('/paper-hl/profile/save') === 0) profileSaveCapture.push({ url, payload })
-    else profileCapture.push({ url, payload })
+    if (url.indexOf('/paper-hl/profile/save') === 0) {
+      profileSaveCapture.push({ url, payload })
+    } else if (url.indexOf('/paper-hl/profile/apply') === 0) {
+      const m = /[?&]paperId=([^&]+)/.exec(url)
+      const paperId = m ? decodeURIComponent(m[1]) : null
+      applyCapture.push({ url, paperId, payload })
+      if (paperId) mockPending = mockPending.filter((p) => p.paper_id !== paperId)
+    } else {
+      profileCapture.push({ url, payload })
+    }
     // init/apply/save answer ok; the subsequent GET re-read reflects the new state
     return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, has_profile: true }) })
   }
   const res = profileState.has_profile
-    ? { ok: true, has_profile: true, profile: profileState.profile, summary: { colors: profileState.profile.colors } }
+    ? { ok: true, has_profile: true, profile: profileState.profile, summary: { colors: profileState.profile.colors }, pending_proposals: mockPending }
     : { ok: true, has_profile: false, profile: null, summary: null, pending_proposals: [] }
   return Promise.resolve({ ok: true, status: 200, json: async () => res })
 }
@@ -269,6 +312,10 @@ const p3 = ['profilePanelModel', 'profileSavePayload', '/paper-hl/profile/save',
 for (const needle of p3) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 3 profile-panel plumbing: ${needle}`)
 }
+const p2 = ['proposalCardModel', 'buildApplyDecisions', '待确认画像提案', 'phl-prop', '全部接受', '全部否决', '确认选择', 'data-phl-prop', 'data-phl-paper', 'pendingProposals']
+for (const needle of p2) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 2 proposal-panel plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
@@ -276,6 +323,7 @@ console.log('bundle selection→add/rescope (P2-d):', p2d.join(', '))
 console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
 console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
+console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -772,7 +820,78 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(byType.h1 && byType.h1.length === 1, 'P3: paper view restored after closing the panel')
   assert(byType.div.filter((d) => (d.props.className || '') === 'phl-pnl').length === 0, 'P3: panel dismissed')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) driven (write + profile mocked, real data untouched)`)
+  // ══════════════ v0.3 Phase 2: pending-proposal confirmation panel ══════════════
+  // The toolbar 提案 button shows the pending count from the mock GET; the
+  // panel lists one card per pending reflect proposal with per-item toggles.
+  const propBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-prop-btn') === 0)
+  assert(propBtn !== undefined, 'P2: 提案 toolbar button present')
+  assert(textOf(propBtn).indexOf('提案 (3)') === 0, 'P2: 提案 button carries the pending count badge (3)')
+  propBtn.props.onClick()
+  rerender()
+  const propPanel = byType.div.find((d) => (d.props.className || '') === 'phl-pnl')
+  assert(propPanel !== undefined && textOf(propPanel).includes('待确认画像提案'), 'P2: proposals panel rendered')
+  const cards = byType.div.filter((d) => d.props['data-phl-paper'] !== undefined)
+  assert(cards.length === 3, 'P2: 3 proposal cards (p-a / p-b / p-c)')
+  assert(cards[0].props['data-phl-paper'] === 'p-a', 'P2: first card is p-a')
+  const pAItems = byType.button.filter((b) => b.props['data-phl-prop'] !== undefined)
+  // p-a: 2 rules + 1 exemplar = 3 items × 2 buttons (接受/否决) = 6
+  assert(pAItems.length >= 6, 'P2: per-item 接受/否决 buttons rendered')
+
+  // 全部接受 on p-a → POST /apply?paperId=p-a {decisions:{accept:'all'}} → card gone
+  applyCapture.length = 0
+  const acceptAllBtn = collectButtons(cards[0]).find((b) => textOf(b) === '全部接受')
+  assert(acceptAllBtn !== undefined, 'P2: card has 全部接受 button')
+  acceptAllBtn.props.onClick()
+  assert(applyCapture.length === 1 && applyCapture[0].paperId === 'p-a', 'P2: apply POST targets paperId=p-a')
+  assert(JSON.stringify(applyCapture[0].payload.decisions) === '{"accept":"all"}', 'P2: 全部接受 payload {accept:"all"}')
+  await new Promise((r) => setTimeout(r, 200)) // flush loadProfile re-fetch
+  rerender()
+  assert(byType.div.filter((d) => d.props['data-phl-paper'] !== undefined).length === 2, 'P2: confirmed card removed (2 left)')
+
+  // 确认选择 with an empty selection → no POST, flash error
+  applyCapture.length = 0
+  const cards2 = byType.div.filter((d) => d.props['data-phl-paper'] !== undefined)
+  const pBConfirm = collectButtons(cards2.find((c) => c.props['data-phl-paper'] === 'p-b')).find((b) => textOf(b).indexOf('确认选择') === 0)
+  assert(pBConfirm !== undefined, 'P2: p-b card has 确认选择 button')
+  pBConfirm.props.onClick()
+  assert(applyCapture.length === 0, 'P2: empty selection does NOT POST')
+  rerender()
+  assert(byType.div.filter((d) => (d.props.className || '').indexOf('phl-flash-error') >= 0).length >= 1, 'P2: empty selection flashes an error')
+
+  // select rule-0 接受 on p-b → 确认选择 → POST {accept:['rule-0']} → card gone
+  applyCapture.length = 0
+  const pBItems = byType.button.filter((b) => b.props['data-phl-prop'] !== undefined)
+  const pBRule0Accept = pBItems.find((b) => b.props['data-phl-prop'] === 'rule-0' && textOf(b) === '接受')
+  assert(pBRule0Accept !== undefined, 'P2: p-b rule-0 接受 toggle present')
+  pBRule0Accept.props.onClick()
+  rerender()
+  const pBConfirm2 = collectButtons(byType.div.find((d) => d.props['data-phl-paper'] === 'p-b')).find((b) => textOf(b).indexOf('确认选择') === 0)
+  pBConfirm2.props.onClick()
+  assert(applyCapture.length === 1 && applyCapture[0].paperId === 'p-b', 'P2: apply POST targets paperId=p-b (逐条)')
+  assert(JSON.stringify(applyCapture[0].payload.decisions) === '{"accept":["rule-0"]}', 'P2: 确认选择 payload {accept:["rule-0"]} (proposal-relative id)')
+  await new Promise((r) => setTimeout(r, 200))
+  rerender()
+  assert(byType.div.filter((d) => d.props['data-phl-paper'] !== undefined).length === 1, 'P2: p-b card removed (1 left)')
+
+  // 全部否决 on p-c → POST {reject:'all'} → empty state
+  applyCapture.length = 0
+  const pCRejectAll = collectButtons(byType.div.find((d) => d.props['data-phl-paper'] === 'p-c')).find((b) => textOf(b) === '全部否决')
+  assert(pCRejectAll !== undefined, 'P2: p-c card has 全部否决 button')
+  pCRejectAll.props.onClick()
+  assert(applyCapture.length === 1 && applyCapture[0].paperId === 'p-c' && JSON.stringify(applyCapture[0].payload.decisions) === '{"reject":"all"}',
+    'P2: 全部否决 payload {reject:"all"}')
+  await new Promise((r) => setTimeout(r, 200))
+  rerender()
+  assert(byType.div.filter((d) => d.props['data-phl-paper'] !== undefined).length === 0, 'P2: all cards confirmed/rejected')
+  assert(textOf(byType.div.find((d) => (d.props.className || '') === 'phl-pnl')).includes('没有待确认的画像提案'), 'P2: empty state shown')
+
+  // back to the paper view
+  const backBtn2 = collectButtons(tree).find((b) => textOf(b) === '← 返回论文')
+  backBtn2.props.onClick()
+  rerender()
+  assert(byType.h1 && byType.h1.length === 1, 'P2: paper view restored after closing the proposals panel')
+
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) driven (write + profile mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

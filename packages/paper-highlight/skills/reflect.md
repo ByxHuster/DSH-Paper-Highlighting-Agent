@@ -1,6 +1,6 @@
 ---
 name: paper-hl-reflect
-description: 论文审查后反思（章节反思）——重读 paper.highlights.json，对已审查节做差异分析（proposed→final），推断改色规律/删除模式/粒度偏好，产出「画像更新提案」（规则修正 + 示例入库 + 统计雏形）落盘 data/<paper_id>/reflections.json。只产出提案，用户确认后才生效，防画像污染。
+description: 论文审查后反思（章节反思）——重读 paper.highlights.json，对已审查节做差异分析（proposed→final），推断改色规律/删除模式/粒度偏好，产出「画像更新提案」（规则修正 + 示例入库 + 统计雏形）落盘 data/<paper_id>/reflections.json。只产出提案，用户确认后由 host 合并（confirm_proposal / GUI 提案面板），防画像污染。
 ---
 
 # Paper Highlight · 审查后反思（reflect）
@@ -56,12 +56,15 @@ description: 论文审查后反思（章节反思）——重读 paper.highlight
 ```
 
 7. **写盘**：`write` / `edit` 工具直接写 `data/<paper_id>/reflections.json`（agent 文件工具可达；保持 JSON 合法、lossless）。
-8. **呈报并等待确认**：把「画像更新提案」摘要呈给用户（改了什么规则、要入库哪些示例、统计数字）。**用户明确确认后**才把 L2 规则并入正式画像（v0.3 highlight-profile/rules.json）；**未确认前只落盘提案**，绝不自动改写颜色语义或密度规则（防污染）。
+8. **呈报并等待确认（v0.3 Phase 2）**：把「画像更新提案」摘要呈给用户（改了什么规则、要入库哪些示例、统计数字）。确认走**双通道**，合并动作一律由 host 纯逻辑执行（`applyProposal`），Agent **绝不直接写 rules.json**：
+   - **GUI 通道（主）**：用户打开「待确认提案」面板（「提案」按钮），逐条或全部接受/否决 → host `POST /paper-hl/profile/apply`。
+   - **聊天通道（等价信号）**：用户说「确认提案」→ Agent 调用 `confirm_proposal` 工具（paper_id + `decisions: {accept: 'all' | [ids], reject: 'all' | [ids]}`，id 为提案内 `rule-<i>` / `exemplar-<i>` 或规则自身 id）→ host 合并并入 highlight-profile 四层 + 写 `reflections.json.confirmation`（append-only，一次确认后不可再确认）。
+   - **未确认前只落盘提案**，绝不自动改写颜色语义或密度规则（防污染）。低置信规则被确认后会以「禁用候选」形式入库（`enabled:false`），需用户在画像面板启用后生效。
 
 ## 完成标志
 
 - 已审查节的差异分析已落盘 `reflections.json`（含计数 + inferred + profile_proposal）。
-- 已向用户呈报提案并等待确认。
+- 已向用户呈报提案并等待确认（GUI 面板或聊天确认）。
 
 ## 输出
 

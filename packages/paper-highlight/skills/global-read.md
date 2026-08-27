@@ -17,6 +17,7 @@ description: 论文全局通读（两遍阅读第一遍）——构建「论文�
 1. `list_sections`（paper_id）→ 节索引（id/title/level/kind/empty/plan 状态）。可审查节 = `kind !== 'paper_title' && !empty`（空 References 等跳过）。
 2. 全文：`read_file` `data/<paper_id>/paper.md`（一次读全文最省 token；也可对每个可审查节用 `read_section` 分节读）。
 3. `read_highlights`（paper_id）→ 现有 plan/spans/duplicates（首跑为空）。
+4. **画像摘要（v0.3 Phase 2）**：调用 `read_profile` 取 `summary`——L1 颜色语义表（`colors`）、密度/粒度基线（`rules` 中的 `density` / `granularity`，**只参考 enabled 规则**）、示例库 top-k（`exemplars`，仅参考信号）、一句统计（`stats_summary`）。无画像（`has_profile: false`）时回退内置默认五色。
 
 ## 步骤
 
@@ -31,8 +32,8 @@ description: 论文全局通读（两遍阅读第一遍）——构建「论文�
    - 对每个可审查节写一条 `plan.sections[]`：
      - `id`：该节 id（与 `list_sections` 一致，如 `s3`）
      - `section`：节的显示名（`title`）
-     - `expected_colors`：预期颜色分布，来自画像 L1 颜色语义（默认：`red`=核心洞见/贡献，`yellow`=关键定义/方法，`blue`=局限/风险，`green`=可借鉴/启发，`purple`=待深挖/存疑）；该节以哪类内容为主就放哪类颜色，2–3 个为宜
-     - `density_hint`：该节建议高亮密度，写成可读字符串，如 `"3-5 处"`、`"稀疏 1-2 处"`、`"密集 6-8 处"`——按节的信息量定
+     - `expected_colors`：预期颜色分布，来自画像摘要 L1 颜色语义（`read_profile` 的 `summary.colors` 键；默认五色：`red`=核心洞见/贡献，`yellow`=关键定义/方法，`blue`=局限/风险，`green`=可借鉴/启发，`purple`=待深挖/存疑）；该节以哪类内容为主就放哪类颜色，2–3 个为宜
+     - `density_hint`：该节建议高亮密度，写成可读字符串，如 `"3-5 处"`、`"稀疏 1-2 处"`、`"密集 6-8 处"`——先按节的信息量定，再参照画像摘要的 `summary.density` 基线（如用户基线 `每节 3-5 处`，则高信息量节 `"4-6 处"`、低信息量节 `"2-3 处"`）
      - `skip`：低价值/纯铺垫/致谢类节置 `true`（propose 时跳过）
      - 不要写 `status`/`reviewed_at`（那是审查闭环 host 写入的字段，Agent 不写）。
    - `plan.summary`：一段话概括全文高亮策略（论文地图的核心结论：这篇论文值得高亮什么、用哪类颜色主导、重点在哪几节）。

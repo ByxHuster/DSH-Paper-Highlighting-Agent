@@ -57,6 +57,7 @@ const {
   nodeOffsetToSeg, blockChildToSeg, selectionToNorm,
   sectionList, currentSectionId,
   profilePanelModel, profilePanelColors, profileSavePayload,
+  proposalCardModel, buildApplyDecisions,
 } = require('../client/render-body')
 const { assert } = require('./verify')
 
@@ -268,6 +269,36 @@ function main() {
     assert(partial.colors && partial.rules === undefined && partial.exemplars === undefined && partial.reflection_notes === undefined,
       'profileSavePayload: absent draft layers omitted from the payload')
     assert(JSON.stringify(profileSavePayload({})) === '{}', 'profileSavePayload: empty drafts → empty payload')
+  }).then(() => {
+    // ══════════════════ v0.3 Phase 2: proposal panel model + decisions ══════════════════
+    const entry = {
+      paper_id: 'p-apply',
+      updated_at: '2026-08-27T00:00:00.000Z',
+      proposal: {
+        rules: [
+          { rule: 'color_semantics: 问题/动机归 red', confidence: 'low', from: 's3 改色' },
+          { rule: 'granularity: 短语级', confidence: 'medium', from: 's-003 rescope' },
+        ],
+        exemplars: [
+          { span_id: 's-009', suggested: { color: 'blue' }, user_decision: { color: 'red' }, section: 's3', note: '问题/动机归 red' },
+        ],
+        stats: { sections_reviewed: 1, overall_accept_rate: 0, recolor_events: 1 },
+      },
+    }
+    const card = proposalCardModel(entry)
+    assert(card.paper_id === 'p-apply', 'proposalCardModel: paper_id from the entry')
+    assert(card.rules.length === 2 && card.rules[0].id === 'rule-0' && card.rules[1].id === 'rule-1', 'proposalCardModel: rules get proposal-relative ids')
+    assert(card.rules[0].text.indexOf('color_semantics') === 0 && card.rules[0].confidence === 'low' && card.rules[0].from === 's3 改色', 'proposalCardModel: rule text/confidence/from')
+    assert(card.exemplars.length === 1 && card.exemplars[0].id === 'exemplar-0', 'proposalCardModel: exemplars get proposal-relative ids')
+    assert(card.exemplars[0].summary.indexOf('s-009') === 0, 'proposalCardModel: exemplar summary from span_id + decision + note')
+    assert(card.stats_text.indexOf('已审节 1') === 0 && card.stats_text.indexOf('接受率 0%') >= 0, 'proposalCardModel: stats one-liner')
+    const emptyCard = proposalCardModel({ paper_id: 'p-x', proposal: { rules: [], exemplars: [], stats: null } })
+    assert(emptyCard.rules.length === 0 && emptyCard.exemplars.length === 0 && emptyCard.stats_text === '（无统计雏形）', 'proposalCardModel: empty proposal → empty card')
+
+    assert(JSON.stringify(buildApplyDecisions(['rule-0', 'exemplar-0'], [])) === '{"accept":["rule-0","exemplar-0"]}', 'buildApplyDecisions: accept-only payload')
+    assert(JSON.stringify(buildApplyDecisions([], ['rule-1'])) === '{"reject":["rule-1"]}', 'buildApplyDecisions: reject-only payload')
+    assert(JSON.stringify(buildApplyDecisions(['rule-0'], ['exemplar-1'])) === '{"accept":["rule-0"],"reject":["exemplar-1"]}', 'buildApplyDecisions: mixed payload')
+    assert(JSON.stringify(buildApplyDecisions([], [])) === '{}', 'buildApplyDecisions: empty selection → empty payload (no POST)')
   }).then(() => {
     // ══════════════════ P2-b: excludeRejected ══════════════════
     const mixed = [
@@ -555,6 +586,7 @@ function main() {
       p2e: 'sectionList (reviewable filter + plan/override status merge) + currentSectionId (viewport-middle rule, paper_title/empty excluded, missing blockTop skipped)',
       v03p1: 'callProfile (GET/POST/ok:false/no-transport) + colorLegend (null/custom/partial/empty/unknown fallbacks) + markStyle(colors 4th arg) + renderText(opts.colors) — colors.yml-driven palette',
       v03p3: 'profilePanelModel/profilePanelColors (null fallback + profile mapping) + profileSavePayload (flat rows → {name:{color,label}} map, absent layers omitted)',
+      v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
     }, null, 2))
     return null
   })

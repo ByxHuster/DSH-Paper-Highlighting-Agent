@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.3 项目进度（个性化画像收敛）
 
-> 版本：v0.3（画像收敛）· 状态：**Phase 0/1/3 已完成（归档 v0.2.1 / v0.2.2），Phase 2 待做** · 创建：2026-08-27 · 最近更新：2026-08-27 —— Phase 0 画像存储层（v0.2.1）+ Phase 1 冷启动/图例驱动（v0.2.1）+ Phase 3 画像编辑面板（v0.2.2）完成；Phase 2（propose 摘要注入 + 提案确认 GUI）待做（完成记录见 §6）
+> 版本：v0.3（画像收敛）· 状态：**Phase 0/1/2/3 全部完成（归档 v0.2.1 / v0.2.2 / v0.2.3），Phase 4 待做** · 创建：2026-08-27 · 最近更新：2026-08-27 —— Phase 0 画像存储层（v0.2.1）+ Phase 1 冷启动/图例驱动（v0.2.1）+ Phase 3 画像编辑面板（v0.2.2）+ Phase 2 摘要注入/提案确认（v0.2.3）完成；Phase 4（多论文收敛验收）与 Phase 5（收尾 v0.3.0）待做（完成记录见 §6）
 > **独立使用说明**：本文件含 v0.2 继承状态、v0.3 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.2.md`（归档，v0.2.0）。
 
 ---
@@ -34,7 +34,7 @@
 - git：**tag `v0.2.0`**（审查闭环交付），工作区 clean
 - 插件包 `D:\aa\packages\paper-highlight\`：
   - `host/`：`schema.js`（模型校验 + `validateReflections`）、`store.js`（原子读写）、`mineru.js`（云 API 客户端）、`normalize.js`（zip 归一化）、`pipeline.js`（processPdf）、`plugin.js`（`/paper-hl`：GET `/read` + POST `/write` + GET `/profile` + POST `/profile/init` + POST `/profile/apply` + **POST `/profile/save`（v0.2.2）**）、`sections.js`（节树）、`actions.js`（7 审查动作纯逻辑）、`diff.js`（`classifySpanChange`/`summarizeDiff`）、**`profile.js`（v0.3：画像四层 + `ensureProfile`/`buildProfileSummary`/`applyProposal`/`applyProfileUpdate` 纯逻辑）**、`tools.js` + `tools-plugin.mjs`（**8 工具**：`parse_pdf` / `read_highlights` / `write_highlights` / `list_sections` / `read_section` / `summarize_section_diff` / `read_profile` / `confirm_proposal`）
-  - `client/`：`render-body.js`（渲染逻辑单一来源，含 P2-a…P2-e 全部纯函数与交互 + v0.3 `colorLegend`/`callProfile`/冷启动引导/**画像编辑面板**）、`client.js`（durable bundle，ModuleLoader 格式）
+  - `client/`：`render-body.js`（渲染逻辑单一来源，含 P2-a…P2-e 全部纯函数与交互 + v0.3 `colorLegend`/`callProfile`/冷启动引导/画像编辑面板/提案确认面板）、`client.js`（durable bundle，ModuleLoader 格式）
   - `dynamic/`：`client-half.js` / `host-half.js`（动态双半体备用，不含 writeData/profileData）
   - `skills/`：三份技能 `global-read.md` / `propose.md` / `reflect.md`（运行时经 `<projectRoot>/.agents/skills` junction 发现，**无需重启即可被 skill 工具加载**）
   - `scripts/`：`gen-client.js`、`simulate-render.js`、`verify-http.js`、`check-host.js`、`check-utf8.js`、`seed-demo.js`、`step4-e2e.js`、`step5-acceptance.js`、`step6-e2e.js`
@@ -204,6 +204,32 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 - 浏览器人工走查：对现有 `reflections.json`（s3 提案，**先备份**）点「全部接受」→ `rules.json` 出现 3 条规则、`exemplars.json` 3 条、`stats.json` 更新、`reflection-notes.md` 追加、reflections.json 打 confirmation → 刷新面板提案消失 → 恢复备份
 - ⚠️ host/tools 变更需用户重启 3081 后做真实冒烟（只读先行）
 
+#### ✅ Phase 2 完成记录（2026-08-27，验证通过）
+
+> 执行说明：Phase 3 曾先行完成（v0.2.2）；本记录为回到 Phase 2 补做的实现与验证。Phase 2 的 host 侧（`confirm_proposal` 工具 + `/profile/apply` 路由 + `reflections.confirmation` 契约）在 Phase 0 已就绪，本阶段补齐**技能摘要注入**与**GUI 提案确认面板**，并做真实确认闭环冒烟。
+
+**交付**（git 工作区已落盘）
+- `skills/propose.md`（更新）：输入 4 升级为**画像摘要（必取）** —— 先 `read_profile` 取 `summary`（L1 `colors`、L2 启用规则 top-k + `density`/`granularity` 基线、L3 `exemplars` top-k 参考信号、L4 `stats_summary` 一句统计）；步骤 3 新增 `read_profile`（先于提候选，冲突时画像规则 > plan 估计）；粒度默认按 `summary.granularity`；输出增加「画像摘要中生效的规则/示例」
+- `skills/reflect.md`（更新）：步骤 8 确认机制明确化 —— **双通道**（GUI「待确认提案」面板 POST `/profile/apply` 为主 + 聊天 `confirm_proposal` 工具等价）；合并一律 host `applyProposal` 执行、Agent 绝不直接写 rules.json；低置信规则确认后以禁用候选入库（需画像面板启用）
+- `skills/global-read.md`（微调）：输入 4 加 `read_profile` 画像摘要；`expected_colors` 取 `summary.colors` 键、`density_hint` 参照 `summary.density` 基线
+- `client/render-body.js`（扩展）：
+  - 纯函数 `proposalCardModel(entry)`（pending 条目 → 卡片：`rule-<i>`/`exemplar-<i>` 提案相对 id + 文本/置信度/来源 + stats 一句）+ `buildApplyDecisions(accept, reject)`（空列表省略；'all' 由按钮直发）
+  - `profileState` 增 `pendingProposals`（GET /profile 的 `pending_proposals`）；工具栏「提案 (N)」按钮（带待确认计数徽标）
+  - **「待确认画像提案」面板**（`panelView='proposals'`）：每论文一张卡片（规则区 + 示例区 + stats），逐条「接受/否决」toggle（互斥、二次点击取消）→「确认选择 (n)」→ `buildApplyDecisions` 载荷 → `POST /profile/apply?paperId=`；另有「全部接受」「全部否决」快捷；空选择点确认 → flash 报错不发 POST；成功后卡片移除 + `loadProfile()` 回读；空态提示
+  - `.phl-prop*` CSS
+- `scripts/gen-client.js`（扩展）：导出 `proposalCardModel`/`buildApplyDecisions`；`client/client.js` / `dynamic/client-half.js` 重新生成
+- `test/run-render.js`（扩展）：`proposalCardModel`（条目→卡片、提案相对 id、stats 一句、空提案兜底）+ `buildApplyDecisions`（仅接受/仅否决/混合/空载荷）
+- `scripts/simulate-render.js`（扩展）：mock GET 增 `pending_proposals`（可变 `mockPending` 3 条）；POST `/apply` 捕获 + 按 paperId 移除（host 等价）；P2 交互 —— 提案按钮计数徽标 (3) → 面板 3 卡片 → p-a「全部接受」（`{accept:'all'}`、卡片移除）→ p-b 空选择确认（**不发 POST** + flash 报错）→ p-b 逐条勾选 rule-0 接受 → 确认（`{accept:["rule-0"]}`、卡片移除）→ p-c「全部否决」（`{reject:"all"}`）→ 空态 → 返回论文
+
+**验证结果（2026-08-27）**
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render / run-profile → 全部 PASS；check-host / check-utf8 → PASS
+- 端到端 `simulate-render.js`（live 3081 读真实数据 + POST/profile mock）→ **SIMULATION PASS**：P1 冷启动 + P2-a…P2-e + P3 画像面板 + **P2 提案面板全链路（21 项断言）**；真实数据零改动
+- **真实确认闭环冒烟（备份后恢复）**：`confirm_proposal`（accept:'all'）对现有 `p-mikolov` 提案 → `{applied:{rules:3,exemplars:3}, confirmation.accepted:true}`；画像变为 5 规则（2 基线 + 3 提案；**2 条 low 置信存为禁用候选、3 条 enabled**）+ 3 示例 + stats 1 篇（approve_rate 0.5，符合 D4 口径 2/4）；二次确认 → `already confirmed` 拒绝 → **恢复备份**（reflections 无 confirmation、highlight-profile 回默认）
+- 调试中修正：`proposalCardModel` 初版直接收 `p.proposal`（profile_proposal 无 paper_id）→ 改为收整条 pending 条目（`entry.paper_id` + `entry.proposal.*`）
+- ⚠️ live 3081 冒烟：`/profile/apply` 路由 v0.2.1 已重启生效（早前 live 验证过 pending_proposals）；**技能变更无需重启**（.agents/skills junction 动态发现）；GUI 提案面板需用户重启后浏览器走查（当前 3081 已含 /apply 与 /profile，面板数据通路就绪）
+
+**本轮未做（属后续 Phase）**：Phase 4 多论文收敛验收（`step7-multi-paper.js` + `profile-stats.js`）；Phase 5 收尾归档 v0.3.0
+
 ### Phase 3 — 画像编辑面板（GUI）（~1.5 天）
 
 **目标**：四层画像可视化查看与手工修正（验收 2 的 GUI 通道）。
@@ -290,10 +316,10 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 
 ## 8. 当前状态 / 待办
 
-- **状态**：**v0.3 Phase 0 + Phase 1 归档 `v0.2.1`；Phase 3 已完成并归档 `v0.2.2`**（2026-08-27）。v0.2 归档 `v0.2.0`。
-- **待办**：Phase 2（画像摘要注入 propose + 提案确认 GUI 面板）→ 4（多论文收敛验收）→ 5（收尾归档 v0.3.0）。**注**：Phase 3 已先行（用户指示），其依赖（Phase 0 存储/路由 + Phase 1 完整画像）均已就绪；Phase 2 的确认机制 host 侧已具备（`confirm_proposal` 工具 + `/profile/apply` 路由 + reflections.confirmation 契约），待补 GUI 提案面板 + 技能摘要注入。
-- ⚠️ 数据状态：`data/p-mikolov-…/` **12 spans**（测试自适应）+ plan（s3 reviewed）+ duplicates 3 + `reflections.json`（**未确认提案，Phase 2 确认机制的首个真实用例**）；`D:\aa\highlight-profile/` **默认四层**（5 色 + 基线规则 rule-1/rule-2 + 空示例/统计 + 笔记模板）。
-- ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**（v0.2 §10 事故教训）；host 代码变更后需**用户手动重启**。当前 3081 已加载 v0.2.1 host（`/paper-hl/profile` 正常，live 冒烟通过：has_profile:true + pending_proposals 含 `p-mikolov` 提案 1 条）；**`POST /profile/save` 为 v0.2.2 新增，需再次重启后生效**；新 client bundle 已直接服务（画像按钮/面板可用，保存 404 → flash 报错属降级预期）。
+- **状态**：**v0.3 Phase 0/1 归档 `v0.2.1`；Phase 3 归档 `v0.2.2`；Phase 2 归档 `v0.2.3`**（2026-08-27）。v0.2 归档 `v0.2.0`。Phase 0–3（画像收敛的全部基础设施 + GUI）已完成并通过验证。
+- **待办**：Phase 4（多论文收敛验收：`step7-multi-paper.js` + `profile-stats.js`，3 篇同领域论文跑通认可率/修改率曲线，v0.3 核心验收指标）→ 5（收尾归档 v0.3.0）。
+- ⚠️ 数据状态：`data/p-mikolov-…/` **12 spans**（测试自适应）+ plan（s3 reviewed）+ duplicates 3 + `reflections.json`（**未确认提案 1 条，真实确认闭环已冒烟验证后恢复备份**）；`D:\aa\highlight-profile/` **默认四层**（5 色 + 基线规则 rule-1/rule-2 + 空示例/统计 + 笔记模板）。
+- ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**（v0.2 §10 事故教训）；host 代码变更后需**用户手动重启**。当前 3081 已含 `/paper-hl/profile` + `/profile/apply`（v0.2.1 重启生效）；**`/profile/save` 为 v0.2.2 新增，需再次重启后生效**；技能变更经 `.agents/skills` junction 动态生效无需重启。
 
 ## 9. v0.3 交付物清单（规划，随实施更新）
 
@@ -306,14 +332,14 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 | `packages/paper-highlight/host/plugin.js`（扩展） | `GET /paper-hl/profile` + `POST /init` + `POST /apply` + **`POST /save`（Phase 3）** 路由 | ✅ 已实现（Phase 0 + Phase 3） |
 | `packages/paper-highlight/host/schema.js`（扩展） | `reflections.json.confirmation` 校验（`validateReflections`） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/client/render-body.js`（扩展） | **`colorLegend(colors)` + `markStyle(colors)` + `callProfile` + 冷启动引导面板（Phase 1 ✅）+ 画像编辑面板 `profilePanelModel`/`profileSavePayload`（Phase 3 ✅）**；待确认提案面板（Phase 2） | Phase 1/3 已完成，Phase 2 规划 |
-| `packages/paper-highlight/skills/propose.md`（更新） | 画像摘要注入（read_profile → 摘要 → propose 参考） | 规划（Phase 2） |
-| `packages/paper-highlight/skills/reflect.md`（更新） | 提案 → 等待确认（确认由 applyProposal 执行） | 规划（Phase 2） |
-| `packages/paper-highlight/skills/global-read.md`（微调） | plan 生成参考画像摘要 | 规划（Phase 2） |
+| `packages/paper-highlight/skills/propose.md`（更新） | 画像摘要注入（read_profile → 摘要 → propose 参考） | ✅ 已实现（Phase 2） |
+| `packages/paper-highlight/skills/reflect.md`（更新） | 提案 → 等待确认（确认由 applyProposal 执行） | ✅ 已实现（Phase 2） |
+| `packages/paper-highlight/skills/global-read.md`（微调） | plan 生成参考画像摘要 | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/scripts/step7-multi-paper.js` | 3 篇同领域论文收敛验收驱动 | 规划（Phase 4） |
 | `packages/paper-highlight/scripts/profile-stats.js` | 逐篇收敛指标汇总（认可率/修改率曲线） | 规划（Phase 4） |
 | `packages/paper-highlight/test/run-profile.js` | 画像层单测（冷启动/校验/摘要/applyProposal 矩阵/confirm 工具/applyProfileUpdate 矩阵） | ✅ 已实现（Phase 0 + Phase 3） |
-| `packages/paper-highlight/test/{run-tools,run-plugin,run-render}.js`（扩展） | 新工具/路由/面板纯函数断言（Phase 0 ✅ / Phase 1 ✅ / Phase 3 ✅） | Phase 0/1/3 已完成，Phase 2 规划 |
-| `packages/paper-highlight/scripts/simulate-render.js`（扩展） | 引导/图例交互（Phase 1 ✅）+ 画像面板交互（Phase 3 ✅）；提案面板（Phase 2 规划） | Phase 1/3 已完成，Phase 2 规划 |
+| `packages/paper-highlight/test/{run-tools,run-plugin,run-render}.js`（扩展） | 新工具/路由/面板纯函数断言（Phase 0 ✅ / Phase 1 ✅ / Phase 3 ✅ / Phase 2 ✅） | Phase 0–3 已完成 |
+| `packages/paper-highlight/scripts/simulate-render.js`（扩展） | 引导/图例交互（Phase 1 ✅）+ 画像面板交互（Phase 3 ✅）+ 提案面板交互（Phase 2 ✅） | Phase 1–3 已完成 |
 
 ## 10. 里程碑检查点
 
@@ -321,7 +347,7 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 |---|---|---|
 | M0 | Phase 0 完成 | ✅ 本地回归全绿（含 run-profile）；`/paper-hl/profile` 路由矩阵 + `confirm_proposal` 夹具闭环（live 冒烟待用户重启 3081） |
 | M1 | Phase 1 完成 | ✅ 冷启动引导 + 图例/色板/mark palette 驱动（simulate-render PASS）；浏览器走查待用户操作 |
-| M2 | Phase 2 完成 | 现有 reflections.json 提案经确认并入四层（备份后恢复）；propose 摘要注入生效（step7 子流程） |
+| M2 | Phase 2 完成 | ✅ 技能摘要注入（read_profile）+ GUI 提案确认面板（simulate-render PASS）；真实确认闭环冒烟（备份后恢复）：3 规则+3 示例并入、低置信禁用、二次确认拒绝 |
 | M3 | Phase 3 完成 | ✅ 画像面板四层可查可改；编辑即落盘（/save 载荷 + 回读断言）；simulate-render PASS；live 冒烟/浏览器走查待用户重启 3081 |
 | M4 | Phase 4 完成（**v0.3 验收**） | 3 篇论文收敛指标达标（第 3 篇认可率 ≥ 70% 且修改率较基线相对下降 ≥ 50%，D4 口径） |
 | M5 | Phase 5 完成 | 文档/README 更新；归档 `v0.3.0` |

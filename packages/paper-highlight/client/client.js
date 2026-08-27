@@ -196,6 +196,37 @@ window.__ModuleLoader__.load({
 		  return out
 		}
 		
+		function proposalCardModel(entry) {
+		  const inner = entry && entry.proposal ? entry.proposal : entry
+		  const rules = inner && Array.isArray(inner.rules) ? inner.rules : []
+		  const exemplars = inner && Array.isArray(inner.exemplars) ? inner.exemplars : []
+		  const stats = inner && inner.stats ? inner.stats : null
+		  const statsText = stats && typeof stats.sections_reviewed === 'number'
+		    ? ('已审节 ' + stats.sections_reviewed + ' · 接受率 ' + Math.round((stats.overall_accept_rate || 0) * 100) + '%' + (stats.recolor_events ? ' · 改色 ' + stats.recolor_events : ''))
+		    : '（无统计雏形）'
+		  return {
+		    paper_id: (entry && entry.paper_id) || (inner && inner.paper_id) || '',
+		    rules: rules.map((r, i) => ({
+		      id: 'rule-' + i,
+		      text: (r && r.rule) || '',
+		      confidence: (r && r.confidence) || null,
+		      from: (r && r.from) || null,
+		    })),
+		    exemplars: exemplars.map((e, i) => ({
+		      id: 'exemplar-' + i,
+		      summary: ((e && e.span_id) || '?') + ' · ' + (((e && e.user_decision) && (e.user_decision.color || e.user_decision.action)) || '?') + ((e && e.note) ? ' — ' + e.note : ''),
+		    })),
+		    stats_text: statsText,
+		  }
+		}
+		
+		function buildApplyDecisions(acceptIds, rejectIds) {
+		  const decisions = {}
+		  if (Array.isArray(acceptIds) && acceptIds.length > 0) decisions.accept = acceptIds
+		  if (Array.isArray(rejectIds) && rejectIds.length > 0) decisions.reject = rejectIds
+		  return decisions
+		}
+		
 		function excludeRejected(spans) {
 		  return (spans || []).filter((s) => s.status !== 'rejected')
 		}
@@ -438,19 +469,22 @@ window.__ModuleLoader__.load({
 		  // onboard = the cold-start onboarding form draft (null unless no profile
 		  // exists yet). v0.3 Phase 3: panelView ('paper' | 'profile') switches to the
 		  // profile edit panel; panelDrafts holds its unsaved edits; newRuleText is the
-		  // add-rule input draft.
-		  const [profileState, setProfileState] = React.useState({ loading: true, has_profile: true, profile: null })
+		  // add-rule input draft. v0.3 Phase 2: pendingProposals (from /profile
+		  // pending_proposals[]) drives the 待确认提案 panel; propSelections holds the
+		  // per-paper per-item accept/reject choices for 确认选择.
+		  const [profileState, setProfileState] = React.useState({ loading: true, has_profile: true, profile: null, pendingProposals: [] })
 		  const [onboard, setOnboard] = React.useState(null)
 		  const [panelView, setPanelView] = React.useState('paper')
 		  const [panelDrafts, setPanelDrafts] = React.useState(null)
 		  const [newRuleText, setNewRuleText] = React.useState('')
+		  const [propSelections, setPropSelections] = React.useState({})
 		  const loadProfile = React.useCallback(() => {
 		    callProfile('GET', '').then((res) => {
-		      setProfileState({ loading: false, has_profile: !!res.has_profile, profile: res.profile || null })
+		      setProfileState({ loading: false, has_profile: !!res.has_profile, profile: res.profile || null, pendingProposals: Array.isArray(res.pending_proposals) ? res.pending_proposals : [] })
 		      if (!res.has_profile) setOnboard(defaultOnboardDraft(null))
 		    }).catch(() => {
 		      // host without the profile route (or offline) → fall back to defaults
-		      setProfileState({ loading: false, has_profile: true, profile: null })
+		      setProfileState({ loading: false, has_profile: true, profile: null, pendingProposals: [] })
 		    })
 		  }, [])
 		  const load = React.useCallback((id) => {
@@ -672,6 +706,11 @@ window.__ModuleLoader__.load({
 		        onClick: () => { setPanelDrafts(profilePanelModel(profileState.profile)); setPanelView('profile') },
 		        title: '查看 / 编辑个性化画像（四层）'
 		      }, '画像'),
+		      React.createElement('button', {
+		        className: 'phl-prop-btn',
+		        onClick: () => { setPropSelections({}); setPanelView('proposals') },
+		        title: profileState.pendingProposals.length > 0 ? ('待确认画像提案 ' + profileState.pendingProposals.length + ' 条') : '没有待确认的画像提案'
+		      }, '提案' + (profileState.pendingProposals.length > 0 ? ' (' + profileState.pendingProposals.length + ')' : '')),
 		      React.createElement('button', {
 		        className: 'phl-review-btn',
 		        onClick: markCurrentReviewed,
@@ -982,6 +1021,96 @@ window.__ModuleLoader__.load({
 		    )
 		  }
 		
+		  // v0.3 Phase 2: pending-proposal confirmation panel. Each paper's reflect
+		  // proposal (from /profile pending_proposals[]) is a card with rule/exemplar
+		  // rows; per-item 接受/否决 toggles feed 确认选择 (buildApplyDecisions), plus
+		  // 全部接受 / 全部否决 shortcuts. All merges run host-side (applyProposal).
+		  const applyProposalDecision = (paperId, decisions) => {
+		    callProfile('POST', '/apply?paperId=' + encodeURIComponent(paperId), { decisions }).then(() => {
+		      setFlash({ kind: 'info', text: '提案已确认：' + paperId })
+		      setPropSelections((s) => { const n = Object.assign({}, s); delete n[paperId]; return n })
+		      loadProfile()
+		    }).catch((err) => {
+		      setFlash({ kind: 'error', text: '确认失败：' + String((err && err.message) || err) })
+		    })
+		  }
+		  const renderProposalsPanel = () => {
+		    const pending = profileState.pendingProposals || []
+		    const cards = pending.map((p) => {
+		      const card = proposalCardModel(p)
+		      const sel = propSelections[card.paper_id] || { accept: [], reject: [] }
+		      const inList = (list, id) => list.indexOf(id) >= 0
+		      const toggle = (listName, id) => setPropSelections((s) => {
+		        const cur = s[card.paper_id] || { accept: [], reject: [] }
+		        const next = { accept: cur.accept.slice(), reject: cur.reject.slice() }
+		        const other = listName === 'accept' ? 'reject' : 'accept'
+		        next[listName] = inList(next[listName], id) ? next[listName].filter((x) => x !== id) : next[listName].concat([id])
+		        next[other] = next[other].filter((x) => x !== id)
+		        return Object.assign({}, s, { [card.paper_id]: next })
+		      })
+		      const itemBtn = (id, kind, label) =>
+		        React.createElement('button', {
+		          className: 'phl-prop-item' + (inList(sel[kind], id) ? ' phl-prop-item-on' : ''),
+		          'data-phl-prop': id,
+		          onClick: () => toggle(kind, id),
+		          title: kind === 'accept' ? '接受该项（并入画像）' : '否决该项'
+		        }, label)
+		      const ruleRows = card.rules.map((r) =>
+		        React.createElement('div', { key: r.id, className: 'phl-prop-row' },
+		          React.createElement('span', { className: 'phl-prop-text' }, r.text),
+		          React.createElement('span', { className: 'phl-prop-conf' }, r.confidence || ''),
+		          itemBtn(r.id, 'accept', '接受'),
+		          itemBtn(r.id, 'reject', '否决')
+		        )
+		      )
+		      const exRows = card.exemplars.map((e) =>
+		        React.createElement('div', { key: e.id, className: 'phl-prop-row' },
+		          React.createElement('span', { className: 'phl-prop-text' }, e.summary),
+		          itemBtn(e.id, 'accept', '接受'),
+		          itemBtn(e.id, 'reject', '否决')
+		        )
+		      )
+		      return React.createElement('div', { key: card.paper_id, className: 'phl-prop-card', 'data-phl-paper': card.paper_id },
+		        React.createElement('div', { className: 'phl-prop-head' },
+		          React.createElement('span', { className: 'phl-prop-paper' }, card.paper_id),
+		          React.createElement('span', { className: 'phl-prop-stats' }, card.stats_text)
+		        ),
+		        React.createElement('div', { className: 'phl-prop-sec' },
+		          React.createElement('span', { className: 'phl-prop-sec-title' }, '规则（' + card.rules.length + '）'),
+		          ...ruleRows
+		        ),
+		        React.createElement('div', { className: 'phl-prop-sec' },
+		          React.createElement('span', { className: 'phl-prop-sec-title' }, '示例（' + card.exemplars.length + '）'),
+		          ...exRows
+		        ),
+		        React.createElement('div', { className: 'phl-prop-actions' },
+		          React.createElement('button', { className: 'phl-prop-btn2', onClick: () => applyProposalDecision(card.paper_id, { accept: 'all' }) }, '全部接受'),
+		          React.createElement('button', { className: 'phl-prop-btn2', onClick: () => applyProposalDecision(card.paper_id, { reject: 'all' }) }, '全部否决'),
+		          React.createElement('button', {
+		            className: 'phl-prop-btn2 phl-prop-confirm',
+		            onClick: () => {
+		              const decisions = buildApplyDecisions(sel.accept, sel.reject)
+		              if (!decisions.accept && !decisions.reject) {
+		                setFlash({ kind: 'error', text: '请先选择要接受/否决的条目' })
+		                return
+		              }
+		              applyProposalDecision(card.paper_id, decisions)
+		            }
+		          }, '确认选择（' + (sel.accept.length + sel.reject.length) + '）')
+		        )
+		      )
+		    })
+		    return React.createElement('div', { className: 'phl-pnl' },
+		      React.createElement('div', { className: 'phl-pnl-head' },
+		        React.createElement('h2', { className: 'phl-pnl-title' }, '待确认画像提案' + (pending.length ? '（' + pending.length + '）' : '')),
+		        React.createElement('button', { className: 'phl-refresh', onClick: () => setPanelView('paper') }, '← 返回论文')
+		      ),
+		      pending.length === 0
+		        ? React.createElement('div', { className: 'phl-pnl-empty' }, '没有待确认的画像提案（reflect 产出 reflections.json 后出现）')
+		        : React.createElement('div', { className: 'phl-prop-list' }, ...cards)
+		    )
+		  }
+		
 		  const actionBar = activeSpan ? renderActionBar(activeSpan) : null
 		  // v0.3 Phase 1: cold start → onboarding panel replaces the paper view.
 		  if (!profileState.loading && !profileState.has_profile) {
@@ -990,6 +1119,10 @@ window.__ModuleLoader__.load({
 		  // v0.3 Phase 3: profile edit panel view.
 		  if (panelView === 'profile') {
 		    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProfilePanel())
+		  }
+		  // v0.3 Phase 2: pending-proposal confirmation panel view.
+		  if (panelView === 'proposals') {
+		    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProposalsPanel())
 		  }
 		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, sectionBar, flashEl, rescueHint, addPopup, actionBar, body)
 		}
@@ -1096,7 +1229,26 @@ window.__ModuleLoader__.load({
 		      '.phl-pnl-notes{width:100%;box-sizing:border-box;min-height:90px;padding:6px 8px;border-radius:6px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px;font-family:inherit;resize:vertical}',
 		      '.phl-pnl-actions{display:flex;justify-content:flex-end}',
 		      '.phl-pnl-save{padding:5px 16px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
-		      '.phl-pnl-save:hover{background:rgba(120,220,130,.14)}'
+		      '.phl-pnl-save:hover{background:rgba(120,220,130,.14)}',
+		      '.phl-prop-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(255,190,120,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+		      '.phl-prop-btn:hover{background:rgba(255,190,120,.14)}',
+		      '.phl-prop-list{display:flex;flex-direction:column;gap:12px}',
+		      '.phl-prop-card{padding:10px 12px;border-radius:8px;border:1px solid rgba(255,190,120,.4);background:rgba(255,190,120,.05)}',
+		      '.phl-prop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}',
+		      '.phl-prop-paper{font-family:monospace;font-size:12px;font-weight:600}',
+		      '.phl-prop-stats{font-size:11px;color:rgba(128,128,128,.85)}',
+		      '.phl-prop-sec{margin-bottom:8px}',
+		      '.phl-prop-sec-title{display:block;font-size:11px;color:rgba(128,128,128,.8);margin-bottom:4px}',
+		      '.phl-prop-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}',
+		      '.phl-prop-text{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+		      '.phl-prop-conf{flex:0 0 auto;font-size:11px;color:rgba(128,128,128,.75);width:52px;text-align:right}',
+		      '.phl-prop-item{padding:2px 8px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:11px;cursor:pointer;flex:0 0 auto}',
+		      '.phl-prop-item:hover{background:rgba(128,128,128,.12)}',
+		      '.phl-prop-item-on{border-color:rgba(120,220,130,.8);background:rgba(120,220,130,.14)}',
+		      '.phl-prop-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}',
+		      '.phl-prop-btn2{padding:3px 12px;border-radius:5px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+		      '.phl-prop-btn2:hover{background:rgba(128,128,128,.12)}',
+		      '.phl-prop-confirm{border-color:rgba(120,220,130,.8)}'
 		    ].join(''))
 		  }, 'paper-highlight: styles')
 		
@@ -1124,6 +1276,8 @@ window.__ModuleLoader__.load({
 		exports.profilePanelModel = profilePanelModel;
 		exports.profilePanelColors = profilePanelColors;
 		exports.profileSavePayload = profileSavePayload;
+		exports.proposalCardModel = proposalCardModel;
+		exports.buildApplyDecisions = buildApplyDecisions;
 		return module.exports;
 	}
 });
