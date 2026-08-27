@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.2 项目进度（审查闭环）
 
-> 版本：v0.2（审查闭环）· 状态：**Phase 0/1 已实现，已归档 v0.1.1（审查闭环进行中）** · 最近更新：2026-08-26 —— Phase 0/1 交付 + 端到端验证通过 + 事故教训（§10）+ Phase 2 分步策略（§6）
+> 版本：v0.2（审查闭环）· 状态：**Phase 0/1 + Phase 2 全部完成（P2-a…P2-f 已实现并验证，审查闭环核心达成）** · 最近更新：2026-08-27 —— P2-e 审查完成信号 + P2-f 全量回归/真实写冒烟/归档（`v0.1.2` 标签），P2-d 浏览器目视确认并真实新增 `s-006` 落库（§6 完成记录）
 > **独立使用说明**：本文件含 v0.1 继承状态、v0.2 目标/决策/实施步骤/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.1.md`（归档）。
 
 ---
@@ -164,6 +164,118 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 - 撤销 = 反向操作（重新接受/改回原色）记为新 decision，不删历史（维持 decisions 只追加契约）。
 - 颜色面板固定五色（colors.yml 驱动留 v0.3）；备注直接写 `span.note`（schema 已支持）。
 
+#### ✅ P2-a + P2-b 完成记录（2026-08-26 晚，验证通过）
+
+**范围**：仅 Phase 2 的 P2-a（写通路接线）与 P2-b（交互状态与纯 reducer），未做 P2-c…P2-f。
+
+**交付**（git 工作区已落盘，未提交）
+- `client/render-body.js`（扩展）：新增模块层纯函数 `buildWriteUrl` / `encodeWriteBody` / `callWrite`（P2-a 写通路）+ `excludeRejected` / `localApplySpans` / `spanActiveStyle`（P2-b 状态模型），全部经 `toString()` 嵌入 BODY；PaperView 增 `activeSpanId / menuOpen / drafts` 交互状态，渲染侧接入 `excludeRejected`（rejected 不高亮、保留 JSON 审计）
+- `scripts/gen-client.js`（扩展）：durable bundle 注入 `writeData` fetch POST 传输（`?paperId=` + JSON body）；**dynamic 半体备份暂不接 write**（callWrite 以 `typeof writeData` 守卫，明确报错）
+- `client/client.js` / `dynamic/client-half.js`：重新生成
+- `test/run-render.js`（扩展）：P2-a 纯函数矩阵（URL/body 构造、callWrite ok/ok:false/传输异常/无传输四态）+ P2-b reducer 矩阵（accept/reject/recolor/rescope/note/add、不可变性、未知 action/span 空操作容错）+ `excludeRejected`/`spanActiveStyle`
+- `scripts/simulate-render.js`（扩展）：断言 shipped bundle 含 `writeData/callWrite/buildWriteUrl/encodeWriteBody`（P2-a）与 `excludeRejected/localApplySpans/spanActiveStyle/activeSpanId/menuOpen/drafts`（P2-b）
+
+**验证结果（2026-08-26）**
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render → 全部 PASS
+- `check-host.js` / `check-utf8.js` → PASS（host/client 半体可加载、UTF-8 字符存活）
+- 端到端 `simulate-render.js`（live 3081，读真实数据）→ **SIMULATION PASS**：bundle 含写通路接线与交互状态；仍 1 h1 + 20 h2（References 空节跳过）、58 段、5 mark 五色各 1、图例/选择器/刷新齐全
+- 写通路未对真实数据做 live POST 冒烟（避免改动 5 spans 演示数据）；callWrite 的 HTTP 行为已在 run-render 用注入传输单测覆盖，真实 POST 留给 P2-c（操作条接线）端到端走查
+- ⚠️ 浏览器目视确认（3081 → 论文 tab：刷新后渲染行为不变，P2-b 状态字段无可见变化属预期）待用户操作
+
+**本轮未做（属后续 Phase）**
+- P2-d 选择→新增/改范围、P2-e 审查完成信号、P2-f 全量回归 + git 提交（工作区改动待 commit）
+
+#### ✅ P2-c 完成记录（2026-08-26 深夜，验证通过）
+
+**范围**：仅 Phase 2 的 P2-c（操作条：接受 / 删除 / 改色 / 备注 + 乐观更新接线），未做 P2-d…P2-f。
+
+**交付**（git 工作区已落盘，未提交）
+- `client/render-body.js`（扩展）：
+  - 新增纯函数 `markStyle(span, isActive, clickable)`（色块 + 状态样式 + 选中 outline）、`reconcileSpan(spans, serverSpan)`（服务端确认 span 合并回乐观层）
+  - `renderText(text, spans, opts)` 增 `{ onMarkClick, activeSpanId }`：mark 可点击（onClick）+ 选中 outline（向后兼容 2 参调用）
+  - PaperView：增 `spansOverride`（乐观覆盖层，null=服务端数据）与 `flash`（失败提示）；`onMarkClick` 选中/切换操作条；`applyAction(payload)` = 乐观 `localApplySpans` → `callWrite` → 成功以 `res.span` 做 `reconcileSpan` / 失败 `flash` 提示 + 回读 `/read` 校准（回滚覆盖层）；悬浮操作条（`phl-ab`：接受/删除按钮 + 五色板 + 备注输入+保存 + × 关闭），reject 后该 span 移出可见列表（操作条自然关闭）
+  - 新增 P2-c CSS（半透明悬浮条、色板、按钮、输入框、flash）
+- `test/run-render.js`（扩展）：`markStyle` 矩阵（色块/光标/选中 outline/状态透明度）+ `renderText(opts)`（onClick 触发、active 与否 outline、2 参向后兼容）+ `reconcileSpan`（按 id 替换、未知 id/null 不变、不可变性）
+- `scripts/simulate-render.js`（扩展）：**POST /paper-hl/write 走 MOCK**（`writeCapture` 捕获载荷，从只读 `/read` 派生完整响应，真实数据零改动——真实写冒烟留 P2-f 备份后做）；注入交互：点 mark→断言操作条渲染 + 选中 outline + 接受/删除/五色板/备注输入齐全；点接受→断言 POST 载荷 `{action:'accept', span_id}` + 本地渲染同步（`[accepted]`/opacity 1）；点绿色色板→断言 POST 载荷 `{action:'recolor', span_id, color:'green'}` + 背景变绿
+- `client/client.js` / `dynamic/client-half.js`：重新生成（dynamic 半体仍不含 writeData）
+
+**验证结果（2026-08-26）**
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render → 全部 PASS
+- `check-host.js` / `check-utf8.js` → PASS
+- 端到端 `simulate-render.js`（live 3081 读真实数据 + POST mock）→ **SIMULATION PASS**：bundle 含 P2-a/b/c 全部接线；mark 可点击、操作条渲染与五色板/备注齐全；accept/recolor 的 POST 载荷正确且本地渲染同步（status→accepted、背景→绿）；真实数据未被改动
+- ⚠️ 浏览器目视确认（3081 → 论文 tab：点高亮→操作条、接受/删除/改色/备注、失败提示）待用户操作
+- 调试中修正一处测试预期：操作条根节点 className 须精确匹配 `phl-ab`（前缀匹配会误命中 `phl-ab-head` 等子节点）；mock 写响应须为 `Response` 形状（`{ok,status,json}`），否则 durable `writeData` 的 `res.json()` 抛错
+
+**本轮未做（属后续 Phase）**
+- P2-d 选择→新增/改范围（`buildSegmentMap`/`mapSelection`）、P2-e 审查完成信号（review_section 按钮）、P2-f 全量回归 + 真实写冒烟 + git 提交（工作区改动待 commit）
+
+#### ✅ P2-d 完成记录（2026-08-26，验证通过）
+
+**范围**：仅 Phase 2 的 P2-d（选择→新增/改范围：`buildSegmentMap`/`mapSelection` 纯函数 + 文本选择→锚点区间映射 + 「新增高亮」弹窗 + 「改范围」模式），未做 P2-e…P2-f。
+
+**交付**（git 工作区已落盘，未提交）
+- `client/render-body.js`（扩展）：
+  - 新增纯函数 `buildBlockSegments`/`buildSegmentMap`（每段按 spans 切成文本节点段的扁平 segment 列表，带 anchorId + 相对 anchor.text 的 `[start,end)` 偏移，渲染节点序即 segment 序）、`mapSelection`（normalized `{start:{seg,offset}, end:{seg,offset}}` → `{anchor, char_start, char_end}`，同段/跨段/反向交换/越界钳制/空选择/跨锚点拒绝全容错）
+  - 新增 DOM 胶水 `nodeOffsetToSeg`/`blockChildToSeg`/`selectionToNorm`（按 `data-phl-seg`/`data-phl-anchor` 属性解析：文本节点在 seg 元素内→字符偏移、seg 元素本身→子索引 0/末尾、block 元素→子索引映射段、不可解析→null/ok:false 静默）
+  - `renderText` 增 `{withSegments, segBase, anchorId}`：每个渲染文本节点（普通文本 + mark）包 `<span data-phl-seg>`/`<mark data-phl-seg>` 以便 DOM 选择映射回锚点偏移；2 参/3 参旧调用完全向后兼容（不传 withSegments 时仍返回裸字符串 + mark）
+  - PaperView：增 `addDraft`（新增高亮弹窗：五色板 + 理由输入 + 添加/取消）与 `rescueTarget`（改范围模式：提示条 + 取消按钮）；`.phl-body` 挂 `onMouseUp`（非折叠选择 → `selectionToNorm`→`mapSelection`→ 新增弹窗或 rescope，跨段落选择 flash 提示「高亮不能跨段落选择」，处理完 `removeAllRanges` 清选择）；操作条新增「改范围」按钮（选中新文本替换原区间）
+  - `reconcileSpan` 增第三参 payload：`add` 的乐观 clientId 与服务端 s-<n> id 匹配（reconcile 替换 `_local` 乐观 span，新增即时回填真实 id）
+- `scripts/gen-client.js`（扩展）：durable bundle 额外导出 `buildBlocks/buildSegmentMap/mapSelection/selectionToNorm/nodeOffsetToSeg`（headless 测试与浏览器驱动同一份内嵌代码）
+- `client/client.js` / `dynamic/client-half.js`：重新生成（dynamic 半体仍不含 writeData，selection 胶水随 BODY 同步嵌入）
+- `test/run-render.js`（扩展）：P2-d 纯函数矩阵 —— buildBlockSegments（排序/钳制/空文本/无 spans 单段）、buildSegmentMap（跨块扁平序与区间保持）、mapSelection（同段/跨段/反向/越界索引拒绝/越界偏移钳制/边界 offset/空选择/跨锚点/null）、nodeOffsetToSeg（文本节点/seg 元素/block 元素边界/不可解析）、selectionToNorm（折叠→null、不可解析→ok:false）、renderText withSegments（data 属性 + 向后兼容）、reconcileSpan clientId 匹配
+- `scripts/simulate-render.js`（扩展）：POST /paper-hl/write 走 MOCK（载荷捕获 + 只读 /read 派生完整响应，真实数据零改动）；新增 P2-d 驱动 —— `window.getSelection` stub + `data-phl-seg` 节点链伪造 DOM-ish selection：选文本→断言「新增高亮」弹窗（五色板/理由输入/添加按钮）→ 点绿色 + 输入理由 → 断言 POST `{action:'add', anchor, char_start, char_end, color, rationale, clientId}` 与内嵌 `mapSelection` 期望范围一致 + 本地渲染同步（新 mark 绿色 [user_added]、服务端 s-id 回填）；点 mark→操作条「改范围」→ 断言提示条渲染 + 操作条关闭 → 在另一段落选文本 → 断言 POST `{action:'rescope', span_id, anchor, char_start, char_end}` 范围与 mapSelection 一致 + mark 迁移到新 anchor、提示条清除
+
+**验证结果（2026-08-26）**
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render → 全部 PASS
+- `check-host.js` / `check-utf8.js` / `verify-http.js` → PASS（host/client 半体可加载、UTF-8 字符存活、3081 路由与 bundle 正常）
+- 端到端 `simulate-render.js`（live 3081 读真实数据 + POST mock）→ **SIMULATION PASS**：bundle 含 P2-a/b/c/d 全部接线（新增 p2d 标记断言：buildSegmentMap/buildBlockSegments/mapSelection/selectionToNorm/nodeOffsetToSeg/data-phl-seg/新增高亮/改范围/addDraft/rescueTarget/onBodyMouseUp）；P2-c accept/recolor 回归通过；P2-d 新增全链路（弹窗渲染 → add 载荷与内嵌 mapSelection 逐字节一致 → 乐观新增 + 服务端 s-id 回填 → 新 mark 绿色 [user_added]）与改范围全链路（改范围按钮 → 提示条 → 另一段落选文本 → rescope 载荷正确 → mark 迁到新 anchor）通过；**真实数据零改动**（paper.highlights.json 仍 5 spans 五色 proposed、mtime 未变）
+- 调试中修正测试预期：buildBlockSegments 对「两 mark」文本产出 5 段（非 4）；buildSegmentMap 跨块计数（a-2 带 mark 为 3 段）；nodeOffsetToSeg 的 block 子索引边界语义（childIndex k → 第 k 个子段的起点）；segText 实际 28 字符（trailing 段长 17）
+- ⚠️ 浏览器目视确认（3081 → 论文 tab：选文本→新增高亮弹窗（选色/填理由→添加）、点高亮→操作条「改范围」→选新文本→范围迁移、跨段落选择提示）待用户操作
+
+**本轮未做（属后续 Phase）**
+- P2-e 审查完成信号（「本节审查完毕」按钮 + plan 状态闭环）、P2-f 全量回归 + 真实写冒烟（先备份 `paper.highlights.json`，git 可回滚）+ git 提交（工作区改动待 commit）
+
+#### ✅ P2-e 完成记录（2026-08-27，验证通过）
+
+**范围**：仅 Phase 2 的 P2-e（审查完成信号：节状态闭环 —— `/read` sections → GUI 节列表 + 「标记本节审查完毕」按钮 → POST `review_section` → 乐观更新 plan status「节旁 ✓」），未做 P2-f 及其它。
+
+**交付**（git 工作区已落盘，未提交）
+- `client/render-body.js`（扩展）：
+  - 新增纯函数 `sectionList(sections, plan, overrides)`（过滤 paper_title + empty 节，合并 plan 审查状态与乐观 override，输出 `{id,title,anchor_id,reviewed,reviewed_at}`）与 `currentSectionId(sections, blockTops, scrollTop, viewportHeight)`（视口中线规则：最后一个锚块顶 ≤ 视口中线的可审查节为「当前节」，paper_title/empty 永不入选）
+  - PaperView：新增 `sectionOverrides`（乐观节状态 map）+ `currentSection` 状态；`.phl-body` 挂 `onScroll`（从事件 target 读 scrollTop/clientHeight/children → 纯函数 `currentSectionId` 派生当前节，无需 ref、headless 可驱动）；头部工具栏新增「标记本节审查完毕」按钮（按当前节 POST `review_section`，乐观 ✓ → 服务端 entry 回填，失败回读校准）；legend 下方渲染节列表条（`phl-sections`：每节 chip 带 `data-phl-sec`，已审查 ✓ 高亮、当前节描边）；h1/h2/p 块元素增 `data-phl-anchor` 供滚动定位
+- `scripts/gen-client.js`（扩展）：durable bundle 额外导出 `sectionList`/`currentSectionId`
+- `client/client.js` / `dynamic/client-half.js`：重新生成
+- `test/run-render.js`（扩展）：P2-e 纯函数矩阵 —— sectionList（过滤 paper_title/empty、plan 状态合并、override 优先、plan 兜底、null/空）、currentSectionId（中线下/深滚/顶部 null、paper_title 排除、缺块顶跳过、empty 排除）
+- `scripts/simulate-render.js`（扩展）：mock 增 `review_section` 响应；P2-e 交互 —— 断言节条渲染数 = `sectionList(live)` 且每 chip 带节 id；伪造 DOM scroll target（均匀块顶）驱动 `onScroll` → 当前节与内嵌 `currentSectionId` 一致 + chip 高亮；点「标记本节审查完毕」→ 断言 POST `{action:'review_section', section:<current>}` → flush 后 chip 显示 done（✓）
+
+**验证结果（2026-08-27）**
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render → 全部 PASS
+- 端到端 `simulate-render.js`（live 3081 + POST mock）→ **SIMULATION PASS**：bundle 含 P2-a…P2-e 全部接线（新增 p2e 标记断言）；节条渲染 20 个可审查节（paper_title + empty References 剔除）、当前节高亮、review_section POST 命中当前节（s3）、chips 显示 done（✓）
+- 调试中修正：harness 的期望 `currentSectionId` 需按组件约定用「内容坐标」块顶（`rect.top − base + scrollTop`），否则与组件计算不一致（s21 vs s3）
+- ⚠️ 浏览器目视确认（3081 → 论文 tab：滚动切换当前节高亮、点「标记本节审查完毕」→ 节旁 ✓、刷新后节状态保留）待用户操作
+
+**本轮未做（属后续 Phase）**
+- P2-f 全量回归 + 真实写冒烟 + git 提交归档
+
+#### ✅ P2-f 完成记录（2026-08-27，交付验收）
+
+**范围**：Phase 2 收尾 —— 全量回归 + 真实写冒烟 + git 提交归档；同时记录 P2-d 人工目视留下的真实数据改动。
+
+**P2-d 目视确认遗留**：用户浏览器走查 P2-d（选文本→新增高亮）在 3081 上执行了**真实 POST `add`**，已持久化 `s-006`（`a-0001-07-01[55,78)`，yellow，user_added）—— 这本身就是「真实写通路」的活体证明。`data/` 已被 git 跟踪，该改动随本次归档一起提交。
+
+**真实写冒烟（2026-08-27，先备份后恢复）**
+- 备份 `paper.highlights.json` → 对 live 3081 执行真实 POST：`review_section s5` → 200 `{ok:true, section:{id:s5,status:'reviewed',reviewed_at}}`，重读 `/read` 确认 `s5.plan.status='reviewed'`；`accept s-001` → 200，span 变 `accepted` 且 decisions 追加为 2 条，重读确认 → **恢复备份**（回到用户当前状态：6 spans、plan.sections 空、`s-006` 保留）。真实写通路（P2-a + host applyAction）端到端验证通过。
+
+**回归全量（2026-08-27）**：run-mock / run-tools / run-actions / run-plugin / run-render → 全部 PASS；check-host / check-utf8 / verify-http → PASS（3081 现服务 6 spans，含用户 `s-006`）；simulate-render → **SIMULATION PASS**（P2-c accept/recolor + P2-d 新增/改范围 + P2-e 节状态闭环全链路，POST 全程 mock、真实数据零改动）。
+- 修订：`test/run-plugin.js` 的「5 spans served」硬断言改为「原 5 条 demo span 仍在 + ≥5 条」（demo 数据现合法携带用户走查新增的 span，精确计数不再成立）。
+
+**归档（git）**
+- 提交信息：`v0.1.2: Phase 2 审查交互完成（P2-a…P2-f）+ 用户走查 s-006 落库`
+- 标签：`v0.1.2`（Phase 2 快照；Phase 0/1 为 `v0.1.1`，v0.1 为 `v0.1`）
+- 提交内容：`client/render-body.js`、`client/client.js`、`dynamic/client-half.js`、`scripts/gen-client.js`、`scripts/simulate-render.js`、`test/run-render.js`、`test/run-plugin.js`、`docs/paper-highlight-progress-v0.2.md`、`data/…/paper.highlights.json`（含 `s-006`）
+
+**待人工验收（P2-f 收尾清单）**：3081 浏览器走查 —— 点高亮→操作条、接受/删除/改色/备注各一次、选文本→新增、改范围、标记本节完毕→刷新后节状态保留、References 空节不渲染。
+
 ### Phase 3 — Agent 技能 + 工具（~1.5–2 天）
 - `packages/paper-highlight/skills/` 三份技能（落地时按 DSH preset 机制选型是否并入 system prompt）：
   1. `global-read.md`：两遍阅读第一遍 —— 论文地图（章节结构、核心主张清单、领域定位）+ `plan`（每节 expected_colors / density_hint / skip）→ 写 `paper.highlights.json.plan`。
@@ -199,9 +311,9 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 
 ## 8. 当前状态 / 待办
 
-- **状态**：Phase 0/1 已实现并端到端验证通过（见 §6 Phase 0/1 完成记录），已 git 提交并打 **`v0.1.1`** 标签归档（Phase 0/1 快照）；**下一步 = Phase 2（client 审查交互，分步策略见 §6 P2-a…P2-f）**。
-- 待办（剩余）：Phase 2（P2-a…P2-f）→ Phase 3 Agent 技能+工具 → Phase 4 差异/去重 → Phase 5 step6-e2e 验收 → Phase 6 文档收尾。
-- 已知 cosmetic：空 `## References` 节已在 Phase 0 渲染端忽略（✅ 已完成）；GUI 高亮层只读（Phase 2 改造为可审查）。
+- **状态**：Phase 0/1 已实现并端到端验证通过（见 §6 Phase 0/1 完成记录），已 git 提交并打 **`v0.1.1`** 标签归档（Phase 0/1 快照）；**Phase 2 全部完成（P2-a 写通路接线 → P2-b 交互状态 → P2-c 操作条 → P2-d 选择→新增/改范围 → P2-e 审查完成信号 → P2-f 全量回归+真实写冒烟），已 git 提交并打 `v0.1.2` 标签归档**（见 §6 各完成记录）。浏览器目视：P2-d 已由用户走查（并真实新增 `s-006` 落库）；P2-e/f 目视走查待用户。
+- 待办（剩余）：Phase 3 Agent 技能+工具 → Phase 4 差异/去重 → Phase 5 step6-e2e 验收 → Phase 6 文档收尾。
+- 已知 cosmetic：空 `## References` 节已在 Phase 0 渲染端忽略（✅ 已完成）；GUI 高亮层可审查（✅ P2-c/d 完成：操作条接受/删除/改色/备注 + 选文本新增/改范围；✅ P2-e 节完成信号完成：节列表条 + 「标记本节审查完毕」+ plan 状态闭环）。
 - ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**（见 §10 事故教训）。
 
 ## 9. v0.2 交付物清单（规划新增，随实施更新）
@@ -212,11 +324,12 @@ node D:\aa\packages\paper-highlight\scripts\verify-http.js
 | `packages/paper-highlight/host/sections.js` | 节树构建 | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/host/actions.js` | 审查动作纯逻辑 | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/host/plugin.js`（扩展） | `POST /paper-hl/write` 审查写通路 + `/read` 返回 sections | ✅ 已实现（Phase 1） |
-| `packages/paper-highlight/client/render-body.js`（扩展） | Phase 0 空节跳过 + span 钳制 | ✅ 已实现（Phase 0）；审查交互 UI ⬜ 属 Phase 2 |
+| `packages/paper-highlight/client/render-body.js`（扩展） | Phase 0 空节跳过 + span 钳制；P2-a 写通路纯函数；P2-b 状态模型；P2-c 操作条（`markStyle`/`reconcileSpan`/`renderText(opts)`/`applyAction` 乐观更新/悬浮操作条）；**P2-d 选择→新增/改范围（`buildBlockSegments`/`buildSegmentMap`/`mapSelection` 纯函数 + `nodeOffsetToSeg`/`blockChildToSeg`/`selectionToNorm` DOM 映射 + `renderText(withSegments)` data-phl-seg 包装 + 新增高亮弹窗/改范围按钮/onBodyMouseUp + `reconcileSpan` clientId 匹配）；P2-e 节状态闭环（`sectionList`/`currentSectionId` 纯函数 + 节列表条/「标记本节审查完毕」按钮/onBodyScroll 滚动定位/块 `data-phl-anchor` + 乐观 `sectionOverrides`）** | ✅ 已实现（Phase 0 + P2-a/b/c/d/e） |
+| `packages/paper-highlight/scripts/gen-client.js`（扩展） | durable bundle 注入 `writeData` fetch POST 传输；**导出内嵌纯函数（buildBlocks/buildSegmentMap/mapSelection/selectionToNorm/nodeOffsetToSeg/sectionList/currentSectionId）供 headless 测试驱动**；dynamic 半体暂不接 write | ✅ 已实现（P2-a + P2-d/e 导出） |
 | `packages/paper-highlight/host/tools.js`（扩展） | `list_sections` / `read_section` / write append 模式 | ⬜ 待实现（Phase 3） |
 | `packages/paper-highlight/skills/global-read.md` 等 | 三份 Agent 技能 | ⬜ 待实现（Phase 3） |
 | `packages/paper-highlight/scripts/step6-e2e.js` | v0.2 端到端验收驱动 | ⬜ 待实现（Phase 5） |
-| `packages/paper-highlight/test/*`（扩展） | run-actions / run-render 新增；run-plugin / simulate-render 扩展 | ✅ 已实现（Phase 0/1 回归全绿） |
+| `packages/paper-highlight/test/*`（扩展） | run-actions / run-render 新增；run-plugin / simulate-render 扩展（**P2-c 注入交互：点 mark→操作条、accept/recolor POST 载荷 + 本地渲染同步；P2-d 注入伪造 selection：新增高亮弹窗 + add/rescope POST 载荷断言 + 渲染同步；P2-e 节状态：节条渲染数 = 内嵌 sectionList + 伪造 scroll target 驱动 currentSectionId + review_section POST + done 状态**） | ✅ 已实现（Phase 0/1 + P2-a/b/c/d/e 回归全绿） |
 
 ---
 

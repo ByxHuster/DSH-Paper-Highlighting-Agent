@@ -48,9 +48,29 @@ function generateBundle() {
   lines.push(`\t\t\tif (!res.ok) throw new Error("GET " + url + " -> " + res.status);`)
   lines.push(`\t\t\treturn res.json();`)
   lines.push(`\t\t};`)
+  // v0.2 Phase 2 (P2-a): durable review write transport. `callWrite(action,
+  // paperId)` inside the shared BODY posts to POST /paper-hl/write?paperId=…
+  // with the JSON-encoded action body. Only the durable bundle wires this;
+  // the dynamic half (generateDynamicClientHalf) deliberately stays read-only.
+  lines.push(`\t\tconst writeData = async (url, body) => {`)
+  lines.push(`\t\t\tconst res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });`)
+  lines.push(`\t\t\tif (!res.ok) throw new Error("POST " + url + " -> " + res.status);`)
+  lines.push(`\t\t\treturn res.json();`)
+  lines.push(`\t\t};`)
   for (const line of BODY.split('\n')) lines.push('\t\t' + line)
   lines.push(`\t\texports.apply = apply;`)
   lines.push(`\t\texports.inject = inject;`)
+  // P2-d: expose the embedded pure helpers so headless tests (simulate-render)
+  // can drive the same code that runs in the browser to derive expected ranges.
+  lines.push(`\t\texports.buildBlocks = buildBlocks;`)
+  lines.push(`\t\texports.buildBlockSegments = buildBlockSegments;`)
+  lines.push(`\t\texports.buildSegmentMap = buildSegmentMap;`)
+  lines.push(`\t\texports.mapSelection = mapSelection;`)
+  lines.push(`\t\texports.selectionToNorm = selectionToNorm;`)
+  lines.push(`\t\texports.nodeOffsetToSeg = nodeOffsetToSeg;`)
+  // P2-e: section-status + current-section helpers for headless tests.
+  lines.push(`\t\texports.sectionList = sectionList;`)
+  lines.push(`\t\texports.currentSectionId = currentSectionId;`)
   lines.push(`\t\treturn module.exports;`)
   lines.push(`\t}`)
   lines.push(`});`)

@@ -90,7 +90,14 @@ async function main() {
   assert(ok.status === 200 && j.ok === true, 'route serves a paper (200 ok)')
   assert(j.paperId === 'p-mikolov-2013-2013-1-word2vec', 'first paper is the real one')
   assert(j.anchors && Object.keys(j.anchors).length === 80, '80 anchors served')
-  assert(Array.isArray(j.highlights.spans) && j.highlights.spans.length === 5, '5 spans served')
+  // The real demo data may legitimately carry extra user-added spans from a
+  // manual browser walkthrough (live /write add persists); guard the invariant
+  // that the original 5 demo spans are still present rather than an exact count.
+  assert(Array.isArray(j.highlights.spans) && j.highlights.spans.length >= 5, 'real data serves 5+ spans')
+  const realIds = (j.highlights.spans || []).map((s) => s.id)
+  for (const id of ['s-001', 's-002', 's-003', 's-004', 's-005']) {
+    assert(realIds.includes(id), 'original demo span intact: ' + id)
+  }
 
   // ── 3) GET /read returns the derived section index (v0.2 Phase 1) ──────────
   assert(Array.isArray(j.sections) && j.sections.length === 22, '22 sections derived')
@@ -191,7 +198,7 @@ async function main() {
     step: 'plugin-route',
     result: 'PASS',
     config_root: 'cwd-independent data root (Step 4 restart regression guarded)',
-    read: '/paper-hl/read -> 200, 80 anchors, 5 spans, 22 sections (References empty)',
+    read: '/paper-hl/read -> 200, 80 anchors, 5+ spans (original demo intact, user walkthrough may add), 22 sections (References empty)',
     write: 'POST /paper-hl/write: accept/recolor/add/review_section applied + persisted; review status merged into read',
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
     fallback: 'unknown paperId -> first paper; missing root -> 500 JSON',

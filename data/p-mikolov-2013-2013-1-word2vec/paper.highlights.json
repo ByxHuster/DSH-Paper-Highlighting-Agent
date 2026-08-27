@@ -731,6 +731,37 @@
           "at": "2026-08-26T12:33:14.527Z"
         }
       ]
+    },
+    {
+      "id": "s-006",
+      "anchor": "a-0001-07-01",
+      "char_start": 55,
+      "char_end": 78,
+      "color": "yellow",
+      "rationale": "",
+      "status": "user_added",
+      "decisions": [
+        {
+          "action": "added",
+          "by": "user",
+          "at": "2026-08-26T15:32:55.541Z"
+        },
+        {
+          "action": "rescoped",
+          "by": "user",
+          "at": "2026-08-26T15:33:04.877Z",
+          "from": {
+            "anchor": "a-0001-07-01",
+            "char_start": 61,
+            "char_end": 71
+          },
+          "to": {
+            "anchor": "a-0001-07-01",
+            "char_start": 55,
+            "char_end": 78
+          }
+        }
+      ]
     }
   ],
   "duplicates": []
