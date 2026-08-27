@@ -43,11 +43,15 @@ function fakeCtx() {
 /** invoke(handler, req) → Promise<res>. For POST, pass req.body (mock string body). */
 function invoke(handler, req) {
   return new Promise((resolve) => {
-    const res = { status: 0, body: '' }
-    res.writeHead = (s) => { res.status = s }
+    const res = { status: 0, body: '', headers: {} }
+    res.writeHead = (s, h) => { res.status = s; res.headers = h || {} }
     res.end = (b) => { res.body = b; resolve(res) }
     handler(req, res)
   })
+}
+
+function marks(text) {
+  return (text.match(/<mark/g) || []).length
 }
 
 /** Build a throwaway paper fixture under test/.tmp (gitignored) → { root, paperId }. */
@@ -298,6 +302,43 @@ async function main() {
   const saveBadJson = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/save', body: 'nope' })
   assert(saveBadJson.status === 400 && /JSON/.test(JSON.parse(saveBadJson.body).error), 'save with malformed body -> 400')
 
+  // ══════════════════ v0.4 Phase 1: GET /paper-hl/export ══════════════════
+  // Fixture state: p-test spans = [s-001 accepted green, s-002 user_added
+  // yellow]; profile exists (custom colors from the init/save tests above).
+  const ex = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=html' })
+  const exText = Buffer.isBuffer(ex.body) ? ex.body.toString('utf8') : ex.body
+  assert(ex.status === 200 && ex.headers['Content-Type'] === 'text/html; charset=utf-8', 'export html -> 200 + text/html Content-Type')
+  assert(exText.startsWith('<!DOCTYPE html>') && marks(exText) === 2, 'export html: self-contained document with 2 marks (accepted + user_added)')
+  assert(ex.headers['Content-Disposition'] === undefined, 'export html: no attachment header by default')
+
+  const exDl = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=html&download=1' })
+  assert(exDl.status === 200 && /attachment/.test(exDl.headers['Content-Disposition']) && /p-test\.html/.test(exDl.headers['Content-Disposition']),
+    'export html download=1 -> Content-Disposition attachment with filename')
+
+  const exMd = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=md' })
+  const exMdText = Buffer.isBuffer(exMd.body) ? exMd.body.toString('utf8') : exMd.body
+  assert(exMd.status === 200 && exMd.headers['Content-Type'] === 'text/markdown; charset=utf-8', 'export md -> 200 + text/markdown Content-Type')
+  assert(exMdText.startsWith('# Title') && marks(exMdText) === 2, 'export md: H1 title + 2 marks')
+
+  // include_pending: add a proposed span, assert default excludes / flag includes it
+  const exDoc = await readHighlights(fx.root, fx.paperId)
+  exDoc.spans.push({ id: 's-003', anchor: 'a-0001-03-01', char_start: 0, char_end: 3, color: 'purple', rationale: 'pending', status: 'proposed', decisions: [] })
+  await writeHighlights(fx.root, fx.paperId, exDoc)
+  const exPendOff = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=html' })
+  const exPendOffText = Buffer.isBuffer(exPendOff.body) ? exPendOff.body.toString('utf8') : exPendOff.body
+  assert(marks(exPendOffText) === 2, 'export default: proposed span excluded')
+  const exPendOn = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=html&include_pending=1' })
+  const exPendOnText = Buffer.isBuffer(exPendOn.body) ? exPendOn.body.toString('utf8') : exPendOn.body
+  assert(marks(exPendOnText) === 3, 'export include_pending=1: proposed span included')
+
+  // export negatives (same contract as /write)
+  const exNoPaper = await invoke(wroute.handler, { url: '/paper-hl/export?format=html' })
+  assert(exNoPaper.status === 400 && /missing paperId/.test(JSON.parse(exNoPaper.body).error), 'export missing paperId -> 400')
+  const exBadFmt = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=p-test&format=pdf' })
+  assert(exBadFmt.status === 400 && /unsupported export format/.test(JSON.parse(exBadFmt.body).error), 'export unknown format -> 400')
+  const exUnknown = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=ghost&format=html' })
+  assert(exUnknown.status === 404 && /unknown paperId/.test(JSON.parse(exUnknown.body).error), 'export unknown paperId -> 404')
+
   // cleanup fixture (profile + paper)
   await fsp.rm(profileDir(fx.root), { recursive: true, force: true })
   await fsp.rm(fx.root, { recursive: true, force: true })
@@ -310,6 +351,7 @@ async function main() {
     write: 'POST /paper-hl/write: accept/recolor/add/review_section applied + persisted; review status merged into read',
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
     profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + POST /save (edit-panel partial update: colors/rules/exemplars/notes, stats read-only) + negatives',
+    export: 'GET /paper-hl/export (html|md, self-contained, Content-Type + download attachment header, include_pending effect, negatives 400/404) (v0.4 Phase 1)',
     fallback: 'unknown paperId -> first paper; missing root -> 500 JSON',
   }, null, 2))
 }

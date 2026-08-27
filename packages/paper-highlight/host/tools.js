@@ -19,6 +19,7 @@ const { processPdf, paperIdFromPdfPath } = require('./pipeline')
 const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, paperDir } = require('./store')
 const { buildSections } = require('./sections')
 const { summarizeDiff } = require('./diff')
+const { buildExport, normalizeFormat, writeExport } = require('./export')
 const {
   profileDir,
   profileExists,
@@ -149,7 +150,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -421,4 +422,76 @@ function confirmProposalTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, allTools }
+/** export_paper tool definition (v0.4 Phase 1, D7). */
+function exportPaperTool() {
+  return {
+    name: 'export_paper',
+    description:
+      'Export the reviewed highlights of data/<paper_id>/paper.highlights.json as a self-contained ' +
+      'HTML (<mark> + legend, inline CSS, no external resources) or Markdown document (D2/D3). ' +
+      'Exported spans default to accepted + user_added (rejected never); include_pending=true also ' +
+      'keeps proposed. format: html|md (default html). output: "inline" returns the content string ' +
+      '(default) | "file" writes data/<paper_id>/export/<paper_id>.<ext> and returns the path. ' +
+      'Colors come from the L1 profile (colors.yml) when present, built-in five otherwise.',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id (from parse_pdf)' },
+      format: { type: 'string', description: 'Export format: html|md (default html)' },
+      include_pending: { type: 'boolean', description: 'Also export proposed (pending) spans (default false)' },
+      output: { type: 'string', description: '"inline" returns content (default) | "file" writes data/<paper_id>/export/<paper_id>.<ext>' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      let format
+      try {
+        format = normalizeFormat(args.format)
+      } catch (err) {
+        return { ok: false, paper_id: args.paper_id, error: String(err && err.message ? err.message : err) }
+      }
+      const includePending = args.include_pending === true || args.include_pending === '1' || args.include_pending === 'true'
+      let highlights
+      try {
+        highlights = await readHighlights(root, args.paper_id)
+      } catch (err) {
+        return { ok: false, paper_id: args.paper_id, error: String(err && err.message ? err.message : err) }
+      }
+      const has = await profileExists(root)
+      const colors = has ? (await readProfile(root)).colors : null
+      const exported = buildExport({
+        format,
+        highlights,
+        colors,
+        include_pending: includePending,
+        exported_at: new Date().toISOString(),
+      })
+      const base = {
+        ok: true,
+        paper_id: args.paper_id,
+        format: exported.format,
+        include_pending: includePending,
+        title: exported.title,
+        stats: exported.stats,
+        output: 'inline',
+        content: exported.content,
+        file: null,
+      }
+      if (args.output === 'file') {
+        const file = await writeExport(root, args.paper_id, format, exported.content)
+        return {
+          ...base,
+          output: 'file',
+          content: null,
+          content_chars: exported.content.length,
+          file,
+        }
+      }
+      return base
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, allTools }

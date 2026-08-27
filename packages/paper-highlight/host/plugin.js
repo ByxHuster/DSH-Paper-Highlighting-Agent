@@ -44,6 +44,7 @@ const {
   writeReflections,
   listPendingProposals,
 } = require('./profile')
+const { buildExport, normalizeFormat, exportFileName } = require('./export')
 
 const name = 'paper-highlight'
 const inject = ['webServer']
@@ -284,6 +285,58 @@ async function handleProfileApply(root, url, req, res, send) {
   }
 }
 
+/** GET /paper-hl/export?paperId=<id>&format=html|md&include_pending=&download=1
+ *  (v0.4 Phase 1, D7): render the highlighted export for a paper and stream it
+ *  back with the right Content-Type (text/html|text/markdown, utf-8) + no-store.
+ *  `download=1` adds Content-Disposition: attachment. Colors come from the L1
+ *  profile when present (built-in five otherwise); no side effects (never
+ *  creates the profile — export falls back to defaults). */
+async function handleExport(root, url, res) {
+  const paperId = url.searchParams.get('paperId')
+  if (!paperId) {
+    sendJson(res, 400, { ok: false, error: 'missing paperId query param' })
+    return
+  }
+  const papers = await listPaperIds(root)
+  if (!papers.includes(paperId)) {
+    sendJson(res, 404, { ok: false, error: `unknown paperId: ${paperId}` })
+    return
+  }
+  let format
+  try {
+    format = normalizeFormat(url.searchParams.get('format') || 'html')
+  } catch (err) {
+    sendJson(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
+    return
+  }
+  const q = (name) => url.searchParams.get(name) || ''
+  const includePending = q('include_pending') === '1' || q('include_pending') === 'true'
+  const download = q('download') === '1' || q('download') === 'true'
+  try {
+    const highlights = await readHighlights(root, paperId)
+    const has = await profileExists(root)
+    const colors = has ? (await readProfile(root)).colors : null
+    const exported = buildExport({
+      format,
+      highlights,
+      colors,
+      include_pending: includePending,
+      exported_at: new Date().toISOString(),
+    })
+    const body = Buffer.from(exported.content, 'utf8')
+    const headers = {
+      'Content-Type': format === 'md' ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Length': String(body.length),
+    }
+    if (download) headers['Content-Disposition'] = `attachment; filename="${exportFileName(paperId, format)}"`
+    res.writeHead(200, headers)
+    res.end(body)
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
 function apply(ctx, config) {
   const root = workspaceRoot(config)
   const route = {
@@ -319,6 +372,10 @@ function apply(ctx, config) {
           await handleProfileApply(root, url, req, res, sendJson)
           return
         }
+        if (url.pathname === '/paper-hl/export' && (req.method === 'GET' || req.method === undefined)) {
+          await handleExport(root, url, res)
+          return
+        }
         sendJson(res, 404, { ok: false, error: 'not found' })
       } catch (err) {
         sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
@@ -328,4 +385,4 @@ function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register(route), 'paper-highlight: /paper-hl route')
 }
 
-module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, listPaperIds, buildSections, mergePlanStatus }
+module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, handleExport, listPaperIds, buildSections, mergePlanStatus }

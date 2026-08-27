@@ -335,10 +335,41 @@ async function main() {
   assert(profRead2.summary.rules.length === 1 && profRead2.pending_proposals === 0, 'read_profile: summary carries the rule; proposal consumed')
   assertLosslessJson(profRead2, 'read_profile after confirm output')
 
+  // 11) export_paper (v0.4 Phase 1): inline content + stats + lossless + file write.
+  //    p-sections spans at this point: s-001 accepted / s-002 rejected /
+  //    s-003 accepted / s-004 accepted / s-005 user_added / s-006 proposed.
+  const { exportPaperTool } = require('../host/tools')
+  const expDef = await exportPaperTool().execute({ paper_id: secPaperId, format: 'html', root: secRoot })
+  assert(expDef.ok === true && expDef.format === 'html' && expDef.title === 'Title', 'export_paper: html inline ok with title')
+  assert(expDef.stats.exported_marks === 4, 'export_paper: default excludes rejected + proposed (4 marks)')
+  assert(expDef.output === 'inline' && typeof expDef.content === 'string' && (expDef.content.match(/<mark/g) || []).length === 4,
+    'export_paper: inline returns content string with 4 <mark>')
+  assertLosslessJson(expDef, 'export_paper inline output')
+
+  const expPend = await exportPaperTool().execute({ paper_id: secPaperId, format: 'html', include_pending: true, root: secRoot })
+  assert(expPend.ok === true && expPend.stats.exported_marks === 5, 'export_paper: include_pending adds proposed (5 marks)')
+
+  const expMd = await exportPaperTool().execute({ paper_id: secPaperId, format: 'md', root: secRoot })
+  assert(expMd.ok === true && expMd.format === 'md' && expMd.content.startsWith('# Title'), 'export_paper: md format routing')
+
+  const expFile = await exportPaperTool().execute({ paper_id: secPaperId, format: 'html', output: 'file', root: secRoot })
+  assert(expFile.ok === true && expFile.output === 'file' && typeof expFile.file === 'string' && /p-sections\.html$/.test(expFile.file),
+    'export_paper: file output returns data/<paper_id>/export/p-sections.html path')
+  assert(expFile.content === null && typeof expFile.content_chars === 'number', 'export_paper: file output omits inline content')
+  const fileText = await fsp.readFile(expFile.file, 'utf8')
+  assert(fileText.startsWith('<!DOCTYPE html>') && (fileText.match(/<mark/g) || []).length === 4, 'export_paper: written file readable + 4 marks')
+  assertLosslessJson(expFile, 'export_paper file output')
+
+  const expBad = await exportPaperTool().execute({ paper_id: secPaperId, format: 'pdf', root: secRoot })
+  assert(expBad.ok === false && /unsupported export format/.test(expBad.error), 'export_paper: unknown format ok:false')
+  const expGhost = await exportPaperTool().execute({ paper_id: 'p-ghost', format: 'html', root: secRoot })
+  assert(expGhost.ok === false && typeof expGhost.error === 'string', 'export_paper: unknown paper ok:false')
+  assertLosslessJson(expBad, 'export_paper unknown-format output')
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
@@ -348,6 +379,7 @@ async function main() {
     diff_tool: 'summarize_section_diff — decisions[]-driven classification (accepted/rejected/recolored/rescoped/added/pending) + counts/accept_rate + samples (Phase 4)',
     duplicates_contract: 'schema validates duplicates entries (claim non-empty, repeats_at string array); append-only registration (Phase 4)',
     profile_tools: 'read_profile (has_profile/summary/pending, cold-start defaults) + confirm_proposal (one-shot host merge: rules/exemplars applied, confirmation append-only, double-confirm rejected) (v0.3 Phase 0)',
+    export_tool: 'export_paper — inline (content + stats, lossless) / file (data/<paper_id>/export/<paper_id>.<ext>), format html|md, include_pending effect (4→5 marks), unknown format/paper ok:false (v0.4 Phase 1)',
   }, null, 2))
 }
 
