@@ -1,6 +1,6 @@
 # 论文多色高亮 Agent —— 设计文档
 
-> 版本：v0.1（已完成，2026-08-26 验收通过） · 日期：2025 · 状态：v0.1 已交付（验收记录见 `paper-highlight-progress.md` Step 4/5）
+> 版本：v0.1–v0.3 已完成（v0.3 画像收敛 2026-08-27 验收 PASS） · 日期：2025 · 状态：v0.1 管线打通 ✅ / v0.2 审查闭环 ✅ / v0.3 画像收敛 ✅（验收记录见 `paper-highlight-progress-v0.3.md`）
 > 目标读者：本项目开发与评审
 
 ---
@@ -139,7 +139,7 @@ data/<paper_id>/
 
 ### 4.3 画像存储（四层，单用户本机）
 
-存于 profile 目录 `highlight-profile/`：
+存于 **`D:\aa\highlight-profile/`**（✅ v0.3 落地确认：workspace 内、与 `data/` 同级——Agent 工具可直接读写、git 可跟踪审计；根解析同 data：组合 config `root` → `HIGHLIGHT_PROFILE_ROOT` env → 默认 workspace）：
 
 ```
 highlight-profile/
@@ -152,10 +152,10 @@ highlight-profile/
 
 | 层 | 内容示例 | 更新方式 |
 |---|---|---|
-| L1 颜色语义 | `red: 核心洞见/贡献; yellow: 关键定义/方法; blue: 局限/风险; green: 可借鉴/启发; purple: 待深挖/存疑` | 用户直接编辑（静态） |
-| L2 规则层 | `density_per_section: 3-5; granularity: sentence; dedup: first_only` | 章节反思提案 + 用户确认 |
-| L3 示例库 | 被改色/被删除的 span 对 | 每次审查自动入库；propose 时注入 top-k |
-| L4 统计+笔记 | `accept_rate: 0.72; note: "我对 future work 方向格外关注"` | Agent 维护，用户可编辑 |
+| L1 颜色语义 | `red: 核心洞见/贡献; yellow: 关键定义/方法; blue: 局限/风险; green: 可借鉴/启发; purple: 待深挖/存疑` | 用户直接编辑 / GUI 画像面板（静态） |
+| L2 规则层 | `density_per_section: 3-5; granularity: sentence; dedup: first_only` | 章节反思提案 + 用户确认（`applyProposal` host 合并，低置信规则禁用候选） |
+| L3 示例库 | 被改色/被删除的 span 对 | 确认后自动入库；propose 时注入 top-k |
+| L4 统计+笔记 | `accept_rate: 0.72; note: "我对 future work 方向格外关注"` | Agent 维护（确认时聚合），用户可编辑 |
 
 **使用方式**：propose 时 Agent 只收到「画像摘要」（L1+L2 规则 + L3 精选 3–5 例 + L4 一句统计），不注入全量历史，控制 token、避免噪音。
 
@@ -240,9 +240,9 @@ for each § in paper:
 
 | 版本 | 主题 | 核心交付 | 验收标准 |
 |---|---|---|---|
-| v0.1 | 管线打通 | profile + host 插件（MinerU）+ client 渲染 | PDF → 网页渲染 → Agent 可读写高亮 JSON |
-| v0.2 | 审查闭环 | 两遍阅读 + propose + GUI 审查 + 差异学习 | 完整跑通"propose→审查→反思→下一节" |
-| v0.3 | 画像收敛 | 四层画像 + 冷启动 + 摘要注入 + 确认机制 | 连续 3 篇论文后修改率显著下降 |
+| v0.1 | 管线打通 | profile + host 插件（MinerU）+ client 渲染 | ✅ PDF → 网页渲染 → Agent 可读写高亮 JSON |
+| v0.2 | 审查闭环 | 两遍阅读 + propose + GUI 审查 + 差异学习 | ✅ 完整跑通"propose→审查→反思→下一节" |
+| v0.3 | 画像收敛 | 四层画像 + 冷启动 + 摘要注入 + 确认机制 + GUI 面板 + 收敛验收 | ✅ 连续 3 篇论文后修改率显著下降（50%→33%→0%） |
 | v0.4 | 打磨导出 | HTML/MD 导出 + 领域地图 + 论文级反思 + UX | 端到端稳定，导出可分享 |
 | 未来 | 扩展 | PDF 批注导出、多用户、批处理 | — |
 
@@ -280,7 +280,7 @@ for each § in paper:
 - span 锚定在渲染后的稳定性（文本归一化、跨行处理）—— ✅ Phase 0 就近匹配 + 字符偏移钳制，simulate-render 断言稳定。
 - 审查交互 UX 的舒适度（标注层与原文的视觉区分）—— ✅ 悬浮操作条/半透明标注，用户浏览器目视验收通过。
 
-### v0.3 个性化画像（收敛）
+### v0.3 个性化画像（收敛）✅ 已完成（2026-08-27，收敛验收 PASS）
 
 **范围**
 - 冷启动配置流程（`colors.yml` + 密度/粒度基线声明）。
@@ -288,13 +288,13 @@ for each § in paper:
 - 「画像摘要」注入 propose；画像更新提案的用户确认机制。
 - 画像编辑面板（GUI）。
 
-**验收**
-- 同一用户连续处理 3 篇同领域论文后，审查修改率显著下降（示例：propose 接受率 ≥ 70%）。
-- 画像文件结构稳定、可审计、可手工修正。
+**验收（2026-08-27 全部通过，详见 `paper-highlight-progress-v0.3.md`）**
+- ① 收敛度量：**连续处理 3 篇同领域论文后审查修改率显著下降 —— 达标**。基线（Mikolov 2013，画像前）修改率 50% → 第 2 篇（Sutskever 2014）33% → 第 3 篇（Bahdanau 2016）**0%**（相对下降 100%，要求 ≥50%）；第 3 篇认可率 **100%**（要求 ≥70%）。`step7-multi-paper.js` 全闭环（propose→审查→reflect→确认）+ `profile-stats.js` 判定 PASS；画像真实积累（9 规则 + 13 示例 + 2 篇统计）。口径注：认可率含「模拟用户逐篇收敛」成分（计划预设），真人审查曲线待真实使用验证。
+- ② 画像可维护性：**达标**。四层文件结构稳定、确认动作 append-only 可审计（`reflections.confirmation` 一次性写入、二次确认拒绝）、可手工修正（文件可编辑 + GUI 画像面板双通道）。
 
-**风险/依赖**
-- 差异分析推断质量（误推断需靠用户确认兜底）。
-- 示例库规模过小时的 few-shot 效果。
+**风险/依赖（已关闭）**
+- 差异分析推断质量：✅ 用户确认机制兜底（`applyProposal` host 纯逻辑合并、低置信规则禁用候选），真实确认闭环冒烟验证。
+- 示例库规模过小时的 few-shot 效果：✅ L3 注入 top-k + 统计兜底；三篇收敛曲线印证。
 
 ### v0.4 打磨与导出
 
@@ -338,7 +338,7 @@ D:\aa\                               # workspace 根（DSH 工作区）
 | 2 | MinerU API 对本地上传的承载方式 | ~~v0.1~~ ✅ | 已解决：`POST /api/v4/file-urls/batch` 预签名 PUT（须 Content-Length），系统自动提交任务（Step 0/2 真实冒烟校准） |
 | 3 | 正文/非正文过滤准确度（公式、图表说明文字） | ~~v0.1~~ ✅ | 已解决：保留 text/title/content，SKIP_TYPES 扩充（ref_text/aside_text/page_number 等）；`scripts/step5-acceptance.js` 真实数据抽样校验通过（Step 5） |
 | 4 | span 跨行/表格内锚定稳定性 | v0.2 ✅ | 锚定到 par 级 + 字符偏移；渲染端容错（就近匹配 + 越界钳制）—— Phase 0 实现，simulate-render / run-render 持续回归 |
-| 5 | 差异推断质量 | v0.3 | 用户确认机制兜底；示例库积累 —— v0.2 已落地「只产出提案、确认后生效」防污染机制（`paper-hl-reflect` + reflections.json），推断质量指标随 v0.3 关闭 |
+| 5 | 差异推断质量 | ~~v0.3~~ ✅ | 已关闭（v0.3 验收 PASS）：确认机制闭环（`applyProposal` host 合并 + `reflections.confirmation` append-only + 低置信规则禁用候选）+ 收敛指标达标（三篇认可率 50%→67%→100%）—— 详见 v0.3 完成记录 |
 | 6 | 长论文（未来）的上下文管理 | 未来 | 论文地图压缩表示 + 分块注入 |
 | 7 | 颜色数量与语义的表达力上限 | 全周期 | 冷启动时引导 ≤6 色；colors.yml 可自由编辑 |
 

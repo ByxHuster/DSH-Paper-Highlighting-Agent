@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.3 项目进度（个性化画像收敛）
 
-> 版本：v0.3（画像收敛）· 状态：**Phase 0–4 全部完成（归档 v0.2.1–v0.2.4），收敛验收 PASS；Phase 5 待做** · 创建：2026-08-27 · 最近更新：2026-08-27 —— Phase 0 存储层（v0.2.1）+ Phase 1 冷启动/图例（v0.2.1）+ Phase 3 画像面板（v0.2.2）+ Phase 2 摘要注入/提案确认（v0.2.3）+ Phase 4 多论文收敛验收（v0.2.4）完成；Phase 5（收尾归档 v0.3.0）待做（完成记录见 §6）
+> 版本：v0.3（画像收敛）· 状态：**全部完成（Phase 0–5，归档 v0.3.0）· 收敛验收 PASS** · 创建：2026-08-27 · 最近更新：2026-08-27 —— Phase 0–4 完成记录见 §6（v0.2.1–v0.2.4），Phase 5 收尾归档 `v0.3.0`
 > **独立使用说明**：本文件含 v0.2 继承状态、v0.3 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.2.md`（归档，v0.2.0）。
 
 ---
@@ -341,6 +341,15 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 - README：状态横幅更新为 v0.3 ✅ + 布局补 `host/profile.js` / `highlight-profile/` / 新技能说明 / step7
 - git 归档：`v0.3.0`（含 `highlight-profile/`、`host/profile.js`、GUI 画像面板、step7、测试扩展、文档）
 
+#### ✅ Phase 5 完成记录（2026-08-27，v0.3 收尾归档）
+
+- 设计文档 `paper-highlight-agent-design.md`：头部版本标注 v0.1–v0.3 全部完成；§8 总览表 v0.1/v0.2/v0.3 打 ✅（v0.3 附收敛曲线）；§8 v0.3 章节标注「✅ 已完成（2026-08-27，收敛验收 PASS）」并写验收记录（① 收敛度量达标：修改率 50%→33%→0%、认可率 100%≥70%，含模拟用户口径注；② 画像可维护性达标）；§10 风险 #5 关闭（确认机制闭环 + 收敛指标达标）；§4.3 画像目录落地确认（D1：`D:\aa\highlight-profile/`，根解析 + GUI 面板双通道）
+- 本进度文件：Phase 5 完成记录（本节）、§8 终态（无待办、v0.4 规划）、§9 交付物清单全部 ✅
+- README：横幅 v0.3 ✅ + 布局补 `host/profile.js` / 画像/提案面板 / `step7-multi-paper.js` / `profile-stats.js` / `run-profile.js` / 测试命令
+- **git 归档：`v0.3.0`**（v0.3 全量交付：highlight-profile 积累态、host profile.js、GUI 面板、step7、测试、文档）
+
+**v0.3 终态**：四层画像 + 冷启动 + 摘要注入 + 确认机制 + GUI（画像/提案面板）+ 三篇收敛验收 PASS，全部完成并归档。
+
 ## 7. 风险与对策
 
 | 风险 | 对策 | 验证点 |
@@ -355,22 +364,22 @@ node D:\aa\packages\paper-highlight\scripts\step6-e2e.js          # 需要 3081 
 
 ## 8. 当前状态 / 待办
 
-- **状态**：**v0.3 Phase 0–4 全部完成**（v0.2.1 存储层/冷启动、v0.2.2 画像面板、v0.2.3 摘要注入/提案确认、v0.2.4 **多论文收敛验收 PASS**）。**v0.3 核心验收指标已达成**（第 3 篇认可率 100% ≥ 70%、修改率 0% ≤ 基线 50%×0.5，D4 口径，模拟用户收敛成分已如实记录）。
-- **待办**：Phase 5（文档收尾：设计文档 §8 标注完成 + §10 #5 关闭 + README + 归档 `v0.3.0`）。
-- ⚠️ 数据状态（Phase 4 验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认提案）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认提案）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）。
-- ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**；host 代码变更后需用户手动重启；当前 3081 含 v0.2.1 起全部 host 路由（`/save` 为 v0.2.2 新增，step7 未使用；技能经 junction 动态生效）。
+- **状态**：**v0.3 全部完成（Phase 0–5，归档 `v0.3.0`）**。v0.2.1 存储层/冷启动、v0.2.2 画像面板、v0.2.3 摘要注入/提案确认、v0.2.4 多论文收敛验收 PASS、v0.3.0 收尾。
+- **待办**：无（v0.3 范围闭环）。v0.4 规划：导出 HTML/MD + 领域地图 + 论文级反思 + UX 打磨。
+- ⚠️ 数据状态（验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认，可作 GUI 演示）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）。
+- ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**；host 代码变更后需用户手动重启。
 
 ## 9. v0.3 交付物清单（规划，随实施更新）
 
 | 路径（规划） | 内容 | 状态 |
 |---|---|---|
-| `docs/paper-highlight-progress-v0.3.md` | 本进度文件 | ✅ 已建并维护（Phase 0/1/3 完成记录已写入） |
-| `D:\aa\highlight-profile\{colors.yml, rules.json, exemplars.json, stats.json, reflection-notes.md}` | 四层画像存储（D1） | ✅ 已落盘（Phase 0，默认四层 + 基线规则） |
+| `docs/paper-highlight-progress-v0.3.md` | 本进度文件 | ✅ 已建并维护（Phase 0–5 完成记录全部写入） |
+| `D:\aa\highlight-profile\{colors.yml, rules.json, exemplars.json, stats.json, reflection-notes.md}` | 四层画像存储（D1） | ✅ 已落盘（Phase 0 默认 + Phase 2/4 积累：9 规则 + 13 示例 + 2 篇统计） |
 | `packages/paper-highlight/host/profile.js` | 画像读写/校验/`ensureProfile`/`buildProfileSummary`/`applyProposal`/`applyProfileUpdate` 纯逻辑（D2/D3/D5/D7） | ✅ 已实现（Phase 0 + Phase 3） |
 | `packages/paper-highlight/host/tools.js`（扩展） | `read_profile` / `confirm_proposal` 工具 | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/host/plugin.js`（扩展） | `GET /paper-hl/profile` + `POST /init` + `POST /apply` + **`POST /save`（Phase 3）** 路由 | ✅ 已实现（Phase 0 + Phase 3） |
 | `packages/paper-highlight/host/schema.js`（扩展） | `reflections.json.confirmation` 校验（`validateReflections`） | ✅ 已实现（Phase 0） |
-| `packages/paper-highlight/client/render-body.js`（扩展） | **`colorLegend(colors)` + `markStyle(colors)` + `callProfile` + 冷启动引导面板（Phase 1 ✅）+ 画像编辑面板 `profilePanelModel`/`profileSavePayload`（Phase 3 ✅）**；待确认提案面板（Phase 2） | Phase 1/3 已完成，Phase 2 规划 |
+| `packages/paper-highlight/client/render-body.js`（扩展） | **`colorLegend(colors)` + `markStyle(colors)` + `callProfile` + 冷启动引导面板（Phase 1 ✅）+ 画像编辑面板（Phase 3 ✅）+ 待确认提案面板（Phase 2 ✅）** | ✅ Phase 1/2/3 全部完成 |
 | `packages/paper-highlight/skills/propose.md`（更新） | 画像摘要注入（read_profile → 摘要 → propose 参考） | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/skills/reflect.md`（更新） | 提案 → 等待确认（确认由 applyProposal 执行） | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/skills/global-read.md`（微调） | plan 生成参考画像摘要 | ✅ 已实现（Phase 2） |

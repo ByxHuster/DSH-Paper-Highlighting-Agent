@@ -1,6 +1,6 @@
 # Paper Highlight Agent —— 一页纸快照
 
-> **项目**：DSH 单论文多色高亮 Agent · **状态**：v0.2 ✅ · **v0.3 Phase 0–4 ✅（收敛验收 PASS，Phase 5 待做）**
+> **项目**：DSH 单论文多色高亮 Agent · **状态**：**v0.1 ✅ / v0.2 ✅ / v0.3 ✅（画像收敛，归档 v0.3.0）**
 > **定位**：PDF → MinerU 解析 → GUI 渲染 → Agent 逐节 propose 高亮 → 用户审查 → 画像持续学习
 
 
@@ -49,10 +49,10 @@ highlight-profile/ 四层（设计 §4.3）:
 |---|---|---|---|
 | **v0.1** | 管线打通 | PDF → MinerU → `data/` 归一化 → Agent 读写高亮 → GUI 渲染 | ✅ 已交付 |
 | **v0.2** | 审查闭环 | 全局通读→逐节 propose→GUI 审查（接受/删除/改色/改范围/新增/备注）→差异分析→`reflections.json` 提案 | ✅ 已交付（含 step6-e2e PASS） |
-| **v0.3** | 画像收敛 | 四层画像存储 + 冷启动引导 + `colors.yml` 驱动图例/色板 + 画像编辑面板 + propose 摘要注入（read_profile）+ 待确认提案面板 + 确认闭环（append-only）+ **三篇论文收敛验收（step7 + profile-stats：认可率 50%→67%→100%，修改率 50%→33%→0%，PASS）** | ✅ Phase 0–4 已交付 |
-| **v0.4** | 打磨导出 | HTML/MD 导出 + 领域地图 + 论文级反思 | 规划中 |
+| **v0.3** | 画像收敛 | 四层画像 + 冷启动 + colors.yml 驱动图例 + 画像/提案面板 + propose 摘要注入 + 确认闭环 + **三篇收敛验收（step7：认可率 50%→67%→100%，PASS）** | ✅ 已交付（归档 v0.3.0） |
+| **v0.4** | 打磨导出 | HTML/MD 导出 + 领域地图 + 论文级反思 + UX | 规划中 |
 
-**v0.3 当前实际**：`highlight-profile/` 已积累 **9 规则 + 13 示例 + 2 篇统计**（overall 认可率 80%）；`step7-multi-paper.js` 三篇同领域论文（Mikolov 2013 / Sutskever 2014 Seq2Seq / Bahdanau 2016 Attention）全闭环跑通（propose→审查→reflect→确认），收敛指标达标（模拟用户逐篇收敛成分已如实记录，真人曲线待真实使用验证）。
+**v0.3 当前实际**：`highlight-profile/` 积累 **9 规则 + 13 示例 + 2 篇统计**（overall 认可率 80%）；三篇同领域论文（Mikolov 2013 / Sutskever 2014 / Bahdanau 2016）全闭环跑通，收敛指标达标（模拟用户逐篇收敛成分已如实记录，真人曲线待真实使用验证）。
 
 ## ⚙️ 关键约束（每次续作必读）
 
@@ -74,10 +74,10 @@ node scripts/verify-http.js       # 路由自检
 node scripts/step6-e2e.js         # v0.2 端到端（需 LLM 会话，按需）
 ```
 
-## 🚧 v0.3 待办（Phase 5）
+## 🚧 下一步（v0.4）
 
-| Phase | 内容 | 依赖 |
+| 项 | 内容 | 依赖 |
 |---|---|---|
-| **Phase 5** | 文档收尾（设计文档 §8 标注完成 + §10 #5 关闭 + README）+ git 归档 `v0.3.0` | Phase 0–4 已完成（收敛验收 PASS） |
+| **v0.4** | 导出带高亮 HTML/MD + 领域地图 `field-map.md` + 论文级反思 + UX 打磨 | v0.3 已全部完成（无遗留待办） |
 
 **当前数据状态**：三篇论文（mikolov 12+ spans / sutskever 9 spans / bahdanau 6 spans，各含 plan + reviewed 节 + reflections）；`highlight-profile/` **9 规则 + 13 示例 + 2 篇统计**；`p-mikolov` 的 `reflections.json` 提案仍待确认（可在 GUI「提案」面板演示确认流程）。
