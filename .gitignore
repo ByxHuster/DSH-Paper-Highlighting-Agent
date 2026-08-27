@@ -6,6 +6,9 @@ node_modules/
 .mineru-work/
 .corepack/
 
+# runtime skill wiring: junction .agents/skills -> packages/paper-highlight/skills
+.agents/
+
 # test runtime artifacts
 packages/paper-highlight/test/.tmp/
 

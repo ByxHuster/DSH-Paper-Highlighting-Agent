@@ -17,6 +17,7 @@ const path = require('node:path')
 
 const { processPdf, paperIdFromPdfPath } = require('./pipeline')
 const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, paperDir } = require('./store')
+const { buildSections } = require('./sections')
 
 /** Default data root: the process cwd (dsh launched from the workspace root). */
 function defaultRoot() {
@@ -135,7 +136,134 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool()]
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, allTools }
+/** Shared read of highlights + paperMd + anchors for the section tools. */
+async function readPaperContext(root, paperId) {
+  const [highlights, paperMd, anchors] = await Promise.all([
+    readHighlights(root, paperId),
+    readPaperMd(root, paperId),
+    readAnchors(root, paperId),
+  ])
+  return { highlights, paperMd, anchors }
+}
+
+/** list_sections tool definition (Phase 3). */
+function listSectionsTool() {
+  return {
+    name: 'list_sections',
+    description:
+      'List the paper section index (design §4.2 plan / sections.js): every section with id, title, level, ' +
+      'kind (paper_title|section), empty flag, anchor/span counts, and the merged plan entry ' +
+      '(status/skip/expected_colors/density_hint). Use read_section to fetch one section body text.',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id (from parse_pdf)' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const { highlights, paperMd, anchors } = await readPaperContext(root, args.paper_id)
+      const sections = buildSections({ paperMd, anchors })
+      const planById = new Map((highlights.plan.sections || []).map((s) => [s.id, s]))
+      const spanCountByAnchor = {}
+      for (const s of highlights.spans) spanCountByAnchor[s.anchor] = (spanCountByAnchor[s.anchor] || 0) + 1
+      const list = sections.map((sec) => {
+        const plan = planById.get(sec.id)
+        const spanCount = (sec.anchor_ids || []).reduce((n, a) => n + (spanCountByAnchor[a] || 0), 0)
+        return {
+          id: sec.id,
+          title: sec.title,
+          level: sec.level,
+          kind: sec.kind,
+          empty: sec.empty,
+          anchor_id: sec.anchor_id,
+          anchor_count: (sec.anchor_ids || []).length,
+          span_count: spanCount,
+          status: (plan && plan.status) || 'pending',
+          skip: (plan && plan.skip) || false,
+          expected_colors: (plan && plan.expected_colors) || [],
+          density_hint: (plan && plan.density_hint) || '',
+          section: (plan && plan.section) || sec.title,
+        }
+      })
+      return {
+        ok: true,
+        paper_id: args.paper_id,
+        total: list.length,
+        reviewable: list.filter((s) => s.kind !== 'paper_title' && !s.empty).length,
+        sections: list,
+      }
+    },
+  }
+}
+
+/** read_section tool definition (Phase 3). */
+function readSectionTool() {
+  return {
+    name: 'read_section',
+    description:
+      'Read one paper section by id (e.g. "s3", from list_sections): the section body text (anchor texts ' +
+      'concatenated in reading order), its plan entry, and the spans already inside it. This is the propose ' +
+      'input. Unknown section ids return ok:false with the available ids.',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id (from parse_pdf)' },
+      section: { type: 'string', required: true, description: 'Section id, e.g. "s3" (from list_sections)' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const { highlights, paperMd, anchors } = await readPaperContext(root, args.paper_id)
+      const sections = buildSections({ paperMd, anchors })
+      const sec = sections.find((s) => s.id === args.section)
+      if (!sec) {
+        return {
+          ok: false,
+          paper_id: args.paper_id,
+          error: `unknown section ${JSON.stringify(args.section)}; available: ${sections.map((s) => s.id).join(', ')}`,
+        }
+      }
+      const text = (sec.anchor_ids || []).map((aid) => anchors[aid].text).join('\n')
+      const plan = (highlights.plan.sections || []).find((p) => p.id === sec.id) || null
+      const spans = highlights.spans
+        .filter((s) => (sec.anchor_ids || []).includes(s.anchor))
+        .map((s) => ({
+          id: s.id,
+          anchor: s.anchor,
+          char_start: s.char_start,
+          char_end: s.char_end,
+          color: s.color,
+          rationale: s.rationale,
+          status: s.status,
+          note: s.note || null,
+        }))
+      return {
+        ok: true,
+        paper_id: args.paper_id,
+        section: {
+          id: sec.id,
+          title: sec.title,
+          level: sec.level,
+          kind: sec.kind,
+          empty: sec.empty,
+          anchor_id: sec.anchor_id,
+          anchor_count: (sec.anchor_ids || []).length,
+        },
+        char_count: text.length,
+        text,
+        plan,
+        spans,
+      }
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, allTools }

@@ -649,7 +649,14 @@
   },
   "plan": {
     "summary": "",
-    "sections": []
+    "sections": [
+      {
+        "id": "s2",
+        "section": "Abstract",
+        "status": "reviewed",
+        "reviewed_at": "2026-08-27T02:15:12.265Z"
+      }
+    ]
   },
   "spans": [
     {
@@ -659,12 +666,17 @@
       "char_end": 499,
       "color": "red",
       "rationale": "核心贡献：以极低计算成本在 16 亿词级语料上习得高质量词向量，一天内完成训练。",
-      "status": "proposed",
+      "status": "accepted",
       "decisions": [
         {
           "action": "proposed",
           "by": "agent",
           "at": "2026-08-26T12:33:14.527Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T01:53:37.182Z"
         }
       ]
     },
@@ -675,28 +687,63 @@
       "char_end": 200,
       "color": "yellow",
       "rationale": "关键目标/定义：本文旨在从数十亿词数据、百万级词汇表中学习高质量词向量。",
-      "status": "proposed",
+      "status": "accepted",
       "decisions": [
         {
           "action": "proposed",
           "by": "agent",
           "at": "2026-08-26T12:33:14.527Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T01:54:24.123Z"
         }
       ]
     },
     {
       "id": "s-003",
       "anchor": "a-0001-10-01",
-      "char_start": 400,
-      "char_end": 563,
+      "char_start": 410,
+      "char_end": 420,
       "color": "blue",
       "rationale": "局限/风险：指出简单扩展基础技术在语音识别、机器翻译等任务上已达瓶颈，需要更先进技术。",
-      "status": "proposed",
+      "status": "accepted",
       "decisions": [
         {
           "action": "proposed",
           "by": "agent",
           "at": "2026-08-26T12:33:14.527Z"
+        },
+        {
+          "action": "rescoped",
+          "by": "user",
+          "at": "2026-08-27T01:53:51.075Z",
+          "from": {
+            "anchor": "a-0001-10-01",
+            "char_start": 400,
+            "char_end": 563
+          },
+          "to": {
+            "anchor": "a-0001-10-01",
+            "char_start": 410,
+            "char_end": 420
+          }
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T01:53:55.058Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T02:15:04.912Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T02:15:05.698Z"
         }
       ]
     },
@@ -707,12 +754,17 @@
       "char_end": 389,
       "color": "green",
       "rationale": "可借鉴/启发：King-Man+Woman 逼近 Queen 的向量代数类比推理，是极具启发性的经典结果。",
-      "status": "proposed",
+      "status": "accepted",
       "decisions": [
         {
           "action": "proposed",
           "by": "agent",
           "at": "2026-08-26T12:33:14.527Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T01:54:32.891Z"
         }
       ]
     },
@@ -739,7 +791,7 @@
       "char_end": 78,
       "color": "yellow",
       "rationale": "",
-      "status": "user_added",
+      "status": "rejected",
       "decisions": [
         {
           "action": "added",
@@ -760,6 +812,32 @@
             "char_start": 55,
             "char_end": 78
           }
+        },
+        {
+          "action": "rejected",
+          "by": "user",
+          "at": "2026-08-27T01:53:40.291Z"
+        }
+      ]
+    },
+    {
+      "id": "s-007",
+      "anchor": "a-0002-11-01",
+      "char_start": 68,
+      "char_end": 99,
+      "color": "green",
+      "rationale": "",
+      "status": "accepted",
+      "decisions": [
+        {
+          "action": "added",
+          "by": "user",
+          "at": "2026-08-27T01:54:44.720Z"
+        },
+        {
+          "action": "accepted",
+          "by": "user",
+          "at": "2026-08-27T01:55:02.136Z"
         }
       ]
     }

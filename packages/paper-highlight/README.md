@@ -14,8 +14,8 @@ host/
   normalize.js  # MinerU zip → paper.md + anchors.json + meta.json（正文过滤 + 锚点）
   pipeline.js   # 端到端管线：parsePdf → normalize → writePaper
   plugin.js     # (Step 3) durable host 插件：/paper-hl/read webserver 路由
-  tools.js      # (Step 2) agent 工具：parse_pdf / read_highlights / write_highlights
-  tools-plugin.mjs # (Step 2) 工具行 ESM 包装
+  tools.js      # (Step 2 + Phase 3) agent 工具：parse_pdf / read_highlights / write_highlights / list_sections / read_section
+  tools-plugin.mjs # (Step 2) 工具行 ESM 包装（allTools() 自动注册全部工具）
 client/
   client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层
   render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半）
@@ -30,10 +30,11 @@ scripts/
 dynamic/
   host-half.js  # 动态双半插件 host 半（harness.handle 数据源，备用）
   client-half.js# 动态双半插件浏览器半（host.call 数据源，备用）
-skills/         # (v0.2) agent 技能
+skills/         # (Phase 3) agent 技能：global-read（论文地图+plan）/ propose（逐节）/ reflect（审查反思→画像提案）
+                #   运行时接线：<projectRoot>/.agents/skills → junction → 本目录（DSH skill-filesystem 按 cwd 自动发现）
 test/
   run-mock.js   # 离线 mock 验证（无网络）
-  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归
+  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section（Phase 3）
   run-plugin.js # host 插件 /paper-hl 路由回归（config.root 与 cwd 无关、404/500 JSON 行为）
   run-real.js   # 真实 MinerU 端到端验证（需 MINERU_API）
 ```

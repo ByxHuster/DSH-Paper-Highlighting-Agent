@@ -337,7 +337,10 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   // /paper-hl/read endpoint serves (Step 4: agent-written spans, not the old
   // fixed 9-seed demo).
   const spanMarks = marks.filter((m) => m.props.title) // legend marks carry no title
-  const expectedSpans = await fetchShim('/paper-hl/read').then((r) => r.json()).then((j) => (j.ok ? j.highlights.spans.length : -1))
+  // Live span count, minus rejected spans (excludeRejected: rejected spans are
+  // kept in JSON but never rendered as marks) — data-adaptive so a user's
+  // browser walkthrough (accept/reject/add) never breaks the assertion.
+  const expectedSpans = await fetchShim('/paper-hl/read').then((r) => r.json()).then((j) => (j.ok ? j.highlights.spans.filter((s) => s.status !== 'rejected').length : -1))
   assert(expectedSpans > 0, 'live /paper-hl/read serves spans (got ' + expectedSpans + ')')
   assert(spanMarks.length === expectedSpans, spanMarks.length + ' highlight marks match live span count (' + expectedSpans + ')')
 
@@ -528,7 +531,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   rerender()
   assert(byType.div.filter((d) => (d.props.className || '') === 'phl-hint').length === 0, 'P2-d: rescope hint clears after the rescope')
   const marksAfterRescope = marks.filter((m) => m.props.title)
-  assert(marksAfterRescope.length === expectedSpans + 1, 'P2-d: mark count unchanged after rescope (still 6)')
+  assert(marksAfterRescope.length === expectedSpans + 1, 'P2-d: mark count unchanged after rescope (still ' + (expectedSpans + 1) + ')')
   const resMark = marksAfterRescope.find((m) => m.props.key === addedServerId)
   assert(resMark !== undefined && resMark.props['data-phl-anchor'] === segAnchor2, 'P2-d: the res-coped mark now carries the new anchor')
 
