@@ -83,6 +83,10 @@ function generateBundle() {
   // P2-e: section-status + current-section helpers for headless tests.
   lines.push(`\t\texports.sectionList = sectionList;`)
   lines.push(`\t\texports.currentSectionId = currentSectionId;`)
+  // v0.4 Phase 4: keyboard-shortcut mapper + review progress + export URL.
+  lines.push(`\t\texports.keyAction = keyAction;`)
+  lines.push(`\t\texports.reviewProgress = reviewProgress;`)
+  lines.push(`\t\texports.buildExportUrl = buildExportUrl;`)
   // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
   lines.push(`\t\texports.colorLegend = colorLegend;`)
   lines.push(`\t\texports.callProfile = callProfile;`)

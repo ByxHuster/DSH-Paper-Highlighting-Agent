@@ -400,6 +400,57 @@ function currentSectionId(sections, blockTops, scrollTop, viewportHeight) {
   return current
 }
 
+function keyAction(event, state, opts) {
+  if (!event) return null
+  const t = event.target
+  if (t && typeof t.tagName === 'string') {
+    const tag = t.tagName.toUpperCase()
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable === true) return null
+  }
+  const st = state || {}
+  if (st.panelView && st.panelView !== 'paper') return null
+  const key = event.key
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    if ((event.ctrlKey || event.metaKey) && key === 'Enter') {
+      const id = st.currentSection || (st.sectionItems && st.sectionItems[0] && st.sectionItems[0].id)
+      return id ? { type: 'markSectionReviewed', section: id } : null
+    }
+    return null
+  }
+  if (key === 'Escape') return { type: 'cancel' }
+  if (key === 'e' || key === 'E') return { type: 'toggleExport' }
+  const spanId = st.menuOpen && st.activeSpanId ? st.activeSpanId : null
+  if (key === 'a' || key === 'A') return spanId ? { type: 'accept', span_id: spanId } : null
+  if (key === 'd' || key === 'D') return spanId ? { type: 'reject', span_id: spanId } : null
+  if (key === 'r' || key === 'R') return spanId ? { type: 'rescope', span_id: spanId } : null
+  if (/^[1-5]$/.test(key)) {
+    const names = (opts && opts.palette) || []
+    const name = names[Number(key) - 1]
+    return spanId && name ? { type: 'recolor', span_id: spanId, color: name } : null
+  }
+  return null
+}
+
+function reviewProgress(items) {
+  const list = (items || []).filter((s) => s && !s.skip)
+  const total = list.length
+  const reviewed = (s) => !!(s && (s.reviewed === true || s.status === 'reviewed'))
+  const done = list.filter(reviewed).length
+  let nextId = null
+  for (const s of list) {
+    if (!reviewed(s)) { nextId = s.id; break }
+  }
+  return { total, done, ratio: total > 0 ? Math.round((done / total) * 100) : 0, nextId }
+}
+
+function buildExportUrl(paperId, format, includePending, download) {
+  const q = ['paperId=' + encodeURIComponent(paperId || '')]
+  if (format) q.push('format=' + encodeURIComponent(format))
+  if (includePending) q.push('include_pending=1')
+  if (download) q.push('download=1')
+  return '/paper-hl/export?' + q.join('&')
+}
+
 function defaultOnboardDraft(colors) {
   const legend = colorLegend(colors)
   const c = {}
@@ -427,6 +478,16 @@ function PaperView() {
   // ({status, reviewed_at}); currentSection = id of the section in view.
   const [sectionOverrides, setSectionOverrides] = React.useState({})
   const [currentSection, setCurrentSection] = React.useState(null)
+  // v0.4 Phase 4 (D6): export dialog state (open + format + include_pending).
+  const [exportOpen, setExportOpen] = React.useState(false)
+  const [exportFormat, setExportFormat] = React.useState('html')
+  const [exportPending, setExportPending] = React.useState(false)
+  // v0.4 Phase 4 (D6): render-time actions/hints are published into this ref
+  // (set in the ready path) so the keydown effect — declared BEFORE the early
+  // returns to keep React hook order stable across the loading→ready
+  // transition — always reads the freshest dispatch closures without capturing
+  // them at registration time.
+  const dispatchRef = React.useRef(null)
   // v0.3 Phase 1: profileState = { loading, has_profile, profile } from
   // /paper-hl/profile (full four-layer profile, colors.yml-driven palette);
   // onboard = the cold-start onboarding form draft (null unless no profile
@@ -458,6 +519,7 @@ function PaperView() {
     setRescueTarget(null)
     setSectionOverrides({})
     setCurrentSection(null)
+    setExportOpen(false)
     callData({ paperId: id }).then((res) => {
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'paper.read failed')
       setState({ phase: 'ready', error: null, data: res, papers: res.papers || [], paperId: res.paperId })
@@ -466,6 +528,39 @@ function PaperView() {
     })
   }, [])
   React.useEffect(() => { loadProfile(); load(null) }, [loadProfile, load])
+
+  // v0.4 Phase 4 (D6): keyboard shortcuts — keydown listener maps to review
+  // actions via keyAction (paper view only, input-state ignored). No deps ⇒
+  // re-registered after every render so the captured state values stay fresh;
+  // the ready-path dispatch closures come from dispatchRef (always current).
+  // The headless harness (no window) safely skips this.
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return undefined
+    const onKey = (e) => {
+      const d = dispatchRef.current
+      if (!d) return
+      const act = keyAction(e, {
+        panelView,
+        menuOpen,
+        activeSpanId,
+        addDraft: !!addDraft,
+        rescueTarget,
+        currentSection,
+        sectionItems: d.sectionItems || []
+      }, { palette: d.palette || [] })
+      if (!act) return
+      if (act.type === 'cancel') {
+        setMenuOpen(false); setAddDraft(null); setRescueTarget(null); setExportOpen(false)
+      } else if (act.type === 'accept') d.applyAction({ action: 'accept', span_id: act.span_id })
+      else if (act.type === 'reject') d.applyAction({ action: 'reject', span_id: act.span_id })
+      else if (act.type === 'rescope') { setRescueTarget(act.span_id); setMenuOpen(false) }
+      else if (act.type === 'recolor') d.applyAction({ action: 'recolor', span_id: act.span_id, color: act.color })
+      else if (act.type === 'markSectionReviewed') d.markCurrentReviewed()
+      else if (act.type === 'toggleExport') setExportOpen((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (state.phase === 'loading') {
     return React.createElement('div', { className: 'phl-wrap' },
@@ -607,6 +702,15 @@ function PaperView() {
     })
   }
 
+  // v0.4 Phase 4 (D6): publish the ready-path dispatch closures + hints so the
+  // keydown effect (declared before the early returns) reads them fresh.
+  dispatchRef.current = {
+    applyAction,
+    markCurrentReviewed,
+    sectionItems,
+    palette: palette.map((l) => l.name),
+  }
+
   const activeSpan = menuOpen && activeSpanId ? spans.find((s) => s.id === activeSpanId) || null : null
 
   const renderActionBar = (span) => {
@@ -665,6 +769,11 @@ function PaperView() {
       }, (state.papers || []).map((p) => React.createElement('option', { key: p, value: p }, p))),
       React.createElement('button', { className: 'phl-refresh', onClick: () => load(state.paperId) }, '刷新'),
       React.createElement('button', {
+        className: 'phl-export-btn',
+        onClick: () => setExportOpen(true),
+        title: '导出高亮（HTML / Markdown，下载）'
+      }, '导出'),
+      React.createElement('button', {
         className: 'phl-profile-btn',
         onClick: () => { setPanelDrafts(profilePanelModel(profileState.profile)); setPanelView('profile') },
         title: '查看 / 编辑个性化画像（四层）'
@@ -691,6 +800,61 @@ function PaperView() {
       ' ' + l.label
     ))
   )
+  // v0.4 Phase 4 (D6): review progress bar + next-unreviewed hint (passive; no
+  // scroll navigation). progress derives from sectionItems (plan + optimistic
+  // overrides merged by sectionList), so it updates live as sections are marked.
+  const progress = reviewProgress(sectionItems)
+  const progressBar = React.createElement('div', { className: 'phl-progress' },
+    React.createElement('span', { className: 'phl-progress-text' }, '已审 ' + progress.done + '/' + progress.total + ' 节'),
+    React.createElement('div', { className: 'phl-progress-track' },
+      React.createElement('div', { className: 'phl-progress-fill', style: { width: progress.ratio + '%' } })
+    ),
+    progress.nextId
+      ? React.createElement('span', { className: 'phl-progress-next' },
+          '下一个：' + (((sectionItems.find((s) => s.id === progress.nextId) || {}).title) || progress.nextId))
+      : React.createElement('span', { className: 'phl-progress-next phl-progress-done' }, '全部节已审查 ✓')
+  )
+  // v0.4 Phase 4 (D6): export dialog — format (HTML/MD) + include_pending + a
+  // download link into GET /paper-hl/export?…&download=1 (Phase 1 route).
+  const exportDialog = exportOpen
+    ? React.createElement('div', { className: 'phl-exp' },
+        React.createElement('div', { className: 'phl-exp-head' },
+          React.createElement('span', { className: 'phl-exp-title' }, '导出高亮'),
+          React.createElement('button', { className: 'phl-ab-close', onClick: () => setExportOpen(false) }, '×')
+        ),
+        React.createElement('div', { className: 'phl-exp-format' },
+          ['html', 'md'].map((f) =>
+            React.createElement('label', { key: f, className: 'phl-exp-opt' },
+              React.createElement('input', {
+                type: 'radio',
+                name: 'phl-exp-format',
+                checked: exportFormat === f,
+                onChange: () => setExportFormat(f)
+              }),
+              ' ' + (f === 'html' ? 'HTML' : 'Markdown')
+            )
+          )
+        ),
+        React.createElement('label', { className: 'phl-exp-opt' },
+          React.createElement('input', {
+            type: 'checkbox',
+            checked: exportPending,
+            onChange: (e) => setExportPending(e.target.checked)
+          }),
+          ' 包含未决（proposed）高亮'
+        ),
+        React.createElement('div', { className: 'phl-exp-actions' },
+          React.createElement('button', { className: 'phl-exp-btn', onClick: () => setExportOpen(false) }, '取消'),
+          React.createElement('a', {
+            className: 'phl-exp-btn phl-exp-download',
+            href: buildExportUrl(state.paperId, exportFormat, exportPending, true),
+            download: true,
+            onClick: () => setExportOpen(false),
+            'data-phl-export-url': buildExportUrl(state.paperId, exportFormat, exportPending, true)
+          }, '下载')
+        )
+      )
+    : null
   // P2-e: reviewable section bar (✓ on reviewed, highlight on the section in view).
   const sectionBar = React.createElement('div', { className: 'phl-sections' },
     sectionItems.map((s) =>
@@ -1087,7 +1251,7 @@ function PaperView() {
   if (panelView === 'proposals') {
     return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProposalsPanel())
   }
-  return React.createElement('div', { className: 'phl-wrap' }, header, legend, sectionBar, flashEl, rescueHint, addPopup, actionBar, body)
+  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, actionBar, body)
 }
 
 const inject = ['slots']
@@ -1105,6 +1269,23 @@ function apply(ctx) {
       '.phl-review-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
       '.phl-review-btn:hover:not(:disabled){background:rgba(120,220,130,.14)}',
       '.phl-review-btn:disabled{opacity:.45;cursor:not-allowed}',
+      '.phl-export-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(255,190,120,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+      '.phl-export-btn:hover{background:rgba(255,190,120,.14)}',
+      '.phl-progress{display:flex;align-items:center;gap:8px;padding:4px 0 8px;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',
+      '.phl-progress-text{flex:0 0 auto;font-weight:600}',
+      '.phl-progress-track{flex:0 1 220px;height:6px;border-radius:3px;background:rgba(128,128,128,.2);overflow:hidden}',
+      '.phl-progress-fill{height:100%;background:rgba(120,220,130,.85);border-radius:3px;transition:width .2s}',
+      '.phl-progress-next{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(160,230,170,.9)}',
+      '.phl-progress-done{color:rgba(120,220,130,.9)}',
+      '.phl-exp{position:fixed;top:60px;right:12px;z-index:22;width:260px;padding:10px 12px;border-radius:8px;background:rgba(30,30,30,.94);color:#f5f5f5;border:1px solid rgba(255,255,255,.2);box-shadow:0 4px 14px rgba(0,0,0,.35);font-size:12px;line-height:1.5}',
+      '.phl-exp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}',
+      '.phl-exp-title{font-weight:600}',
+      '.phl-exp-format{display:flex;gap:14px;margin-bottom:6px}',
+      '.phl-exp-opt{display:flex;align-items:center;gap:4px;cursor:pointer}',
+      '.phl-exp-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}',
+      '.phl-exp-btn{padding:4px 12px;border-radius:6px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:12px;cursor:pointer;text-decoration:none}',
+      '.phl-exp-btn:hover{background:rgba(128,128,128,.12)}',
+      '.phl-exp-download{border-color:rgba(120,220,130,.8)}',
       '.phl-legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',
       '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
       '.phl-count{margin-right:auto;opacity:.8}',

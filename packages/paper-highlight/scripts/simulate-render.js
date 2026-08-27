@@ -55,7 +55,11 @@ function createElement(type, props, ...children) {
 
 const stateCells = new Map() // hookIndex -> {value}; persistent across renders (one component instance)
 const effectQueue = []
+const effectCells = new Map() // effectHookIndex -> {fn, deps, cleanup}
+const callbackCells = new Map() // callbackHookIndex -> {fn, deps}
 let hookIndex = 0
+let effectHookIndex = 0
+let callbackHookIndex = 0
 
 function useState(initial) {
   const i = hookIndex++
@@ -71,14 +75,42 @@ function useState(initial) {
     },
   ]
 }
-function useEffect(fn) {
-  effectQueue.push(fn)
+function useRef(initial) {
+  const i = hookIndex++
+  let cell = stateCells.get(i)
+  if (!cell) {
+    cell = { value: { current: initial } }
+    stateCells.set(i, cell)
+  }
+  return cell.value
 }
-function useCallback(fn) {
-  return fn
+function useEffect(fn, deps) {
+  const i = effectHookIndex++
+  const cell = effectCells.get(i)
+  const prevDeps = cell ? cell.deps : undefined
+  // Run when: no prior run, no prior deps recorded, the effect has no deps
+  // (runs every render, like React), or the deps changed.
+  const changed = !cell || !prevDeps || deps === undefined || prevDeps === undefined ||
+    deps.length !== prevDeps.length || deps.some((d, j) => d !== prevDeps[j])
+  if (changed) {
+    if (cell && typeof cell.cleanup === 'function') cell.cleanup()
+    effectQueue.push(() => {
+      effectCells.set(i, { deps: deps || null, cleanup: fn() })
+    })
+  }
+}
+function useCallback(fn, deps) {
+  const i = callbackHookIndex++
+  const cell = callbackCells.get(i)
+  const d = deps || []
+  if (!cell || cell.deps.length !== d.length || d.some((x, j) => x !== cell.deps[j])) {
+    callbackCells.set(i, { fn, deps: d })
+    return fn
+  }
+  return cell.fn
 }
 
-const reactShim = { useState, useEffect, useCallback, createElement }
+const reactShim = { useState, useRef, useEffect, useCallback, createElement }
 
 // ── require shim for the ModuleLoader factory ────────────────────────────────
 function makeRequire() {
@@ -274,6 +306,7 @@ function fetchShim(url, opts) {
 // ── load + mount the bundle ─────────────────────────────────────────────────
 let loaded = null
 let fakeSelection = null // P2-d: stubbed window.getSelection() return value
+const keyHandlers = [] // v0.4 Phase 4: registered window keydown handlers
 global.window = {
   __ModuleLoader__: {
     load(spec) {
@@ -281,6 +314,11 @@ global.window = {
     },
   },
   getSelection: () => fakeSelection,
+  addEventListener: (type, fn) => { if (type === 'keydown') keyHandlers.push(fn) },
+  removeEventListener: (type, fn) => {
+    const i = keyHandlers.indexOf(fn)
+    if (i >= 0) keyHandlers.splice(i, 1)
+  },
 }
 global.document = documentShim
 global.fetch = fetchShim
@@ -320,6 +358,10 @@ const p2 = ['proposalCardModel', 'buildApplyDecisions', '待确认画像提案',
 for (const needle of p2) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 2 proposal-panel plumbing: ${needle}`)
 }
+const p4 = ['keyAction', 'reviewProgress', 'buildExportUrl', 'keydown', 'addEventListener', 'exportOpen', 'exportFormat', 'exportPending', 'phl-exp', 'phl-progress', 'download=1']
+for (const needle of p4) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.4 Phase 4 UX plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
@@ -328,6 +370,7 @@ console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
 console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
+console.log('bundle keyboard/export/progress plumbing (v0.4 P4):', p4.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -364,6 +407,8 @@ console.log('registration:', entry.id, '| label:', entry.label, '| order:', entr
 
 // ── render pass 1 (loading) ─────────────────────────────────────────────────
 hookIndex = 0
+effectHookIndex = 0
+callbackHookIndex = 0
 let tree = entry.Component()
 console.log('pass1 (loading) node:', tree.type, '| text:', JSON.stringify((tree.children[0] || {}).children || tree.children))
 console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.reduce((n, t) => n + t.textContent.length, 0))
@@ -377,7 +422,10 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
 
   // render pass 2 (ready)
   hookIndex = 0
+  effectHookIndex = 0
+  callbackHookIndex = 0
   tree = entry.Component()
+  for (const fn of effectQueue.splice(0)) fn() // v0.4 P4: re-register keydown with fresh closure
 
   const textOf = (n) => (typeof n === 'string' ? n : Array.isArray(n.children) ? n.children.map(textOf).join('') : '')
   const isMark = (n) => typeof n === 'object' && n && n.type === 'mark'
@@ -422,7 +470,10 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
 
   const rerender = () => {
     hookIndex = 0
+    effectHookIndex = 0
+    callbackHookIndex = 0
     tree = entry.Component()
+    while (effectQueue.length) effectQueue.shift()() // flush re-registered effects (keydown)
     view = walkTree(tree)
     marks = view.marks
     byType = view.byType
@@ -895,7 +946,92 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   rerender()
   assert(byType.h1 && byType.h1.length === 1, 'P2: paper view restored after closing the proposals panel')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) driven (write + profile mocked, real data untouched)`)
+  // ══════════════ v0.4 Phase 4: progress bar + export dialog + keyboard ══════════════
+  // Progress bar derives from sectionItems (plan + the optimistic override the
+  // P2-e review_section test added), via the EMBEDDED reviewProgress.
+  const progressOverrides = {}
+  progressOverrides[expectedCurrent] = { status: 'reviewed' }
+  const expectedProgress = exportsObj.reviewProgress(exportsObj.sectionList(liveData.sections, liveData.highlights.plan, progressOverrides))
+  const expDiv = () => byType.div.find((d) => (d.props.className || '') === 'phl-exp')
+  const prog = byType.div.find((d) => (d.props.className || '') === 'phl-progress')
+  assert(prog !== undefined, 'P4: progress bar (.phl-progress) rendered')
+  assert(textOf(prog).includes('已审 ' + expectedProgress.done + '/' + expectedProgress.total + ' 节'),
+    'P4: progress bar text = 已审 done/total 节 (' + expectedProgress.done + '/' + expectedProgress.total + ')')
+  const fill = byType.div.find((d) => (d.props.className || '') === 'phl-progress-fill')
+  assert(fill !== undefined && fill.props.style.width === expectedProgress.ratio + '%', 'P4: progress fill width = ratio%')
+  assert(expectedProgress.nextId
+    ? textOf(prog).includes('下一个：')
+    : textOf(prog).includes('全部节已审查'), 'P4: progress hints the next unreviewed section (or all-done)')
+
+  // Export dialog: toolbar 导出 → dialog with a download URL into the P1 route.
+  const exportBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-export-btn') === 0)
+  assert(exportBtn !== undefined, 'P4: 导出 toolbar button present')
+  assert(expDiv() === undefined, 'P4: export dialog closed by default')
+  exportBtn.props.onClick()
+  rerender()
+  const exp = expDiv()
+  assert(exp !== undefined, 'P4: export dialog (.phl-exp) opens after clicking 导出')
+  const dl = byType.a.find((a) => a.props['data-phl-export-url'] !== undefined)
+  assert(dl !== undefined, 'P4: download link present')
+  assert(dl.props.href === exportsObj.buildExportUrl(liveData.paperId, 'html', false, true),
+    'P4: download URL defaults to html + download=1 (no pending)')
+  const radios = byType.input.filter((i) => i.props.type === 'radio')
+  assert(radios.length === 2, 'P4: two format radios (html/md)')
+  const mdRadio = radios.find((i) => i.props.checked === false)
+  mdRadio.props.onChange()
+  rerender()
+  const dl2 = byType.a.find((a) => a.props['data-phl-export-url'] !== undefined)
+  assert(dl2.props.href.indexOf('format=md') >= 0, 'P4: switching to md updates the download URL')
+  const pendingChk = byType.input.find((i) => i.props.type === 'checkbox')
+  assert(pendingChk !== undefined, 'P4: include-pending checkbox present')
+  pendingChk.props.onChange({ target: { checked: true } })
+  rerender()
+  const dl3 = byType.a.find((a) => a.props['data-phl-export-url'] !== undefined)
+  assert(dl3.props.href.indexOf('format=md') >= 0 && dl3.props.href.indexOf('include_pending=1') >= 0 && dl3.props.href.indexOf('download=1') >= 0,
+    'P4: download URL carries format=md + include_pending=1 + download=1')
+  const cancelBtn = collectButtons(expDiv()).find((b) => textOf(b) === '取消')
+  assert(cancelBtn !== undefined, 'P4: export dialog has a 取消 button')
+  cancelBtn.props.onClick()
+  rerender()
+  assert(expDiv() === undefined, 'P4: export dialog closes via 取消')
+
+  // Keyboard dispatch through the REAL keydown effect path (window shim).
+  const keydown = (key, extra) => keyHandlers[keyHandlers.length - 1](Object.assign(
+    { key, target: { tagName: 'BODY' }, ctrlKey: false, metaKey: false, altKey: false }, extra || {}))
+  assert(keyHandlers.length === 1, 'P4: exactly one live keydown handler (fresh closure)')
+  writeCapture.length = 0
+  keydown('d')
+  assert(writeCapture.length === 0, 'P4: d with no active span does nothing')
+  // click a mark → action bar open → d → reject POST for the active span
+  const marksNow = marks.filter((m) => m.props.title)
+  const markForReject = marksNow[0]
+  assert(markForReject !== undefined && typeof markForReject.props.onClick === 'function', 'P4: a clickable mark exists for the keyboard test')
+  markForReject.props.onClick(clickEvent())
+  rerender()
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-ab').length === 1, 'P4: action bar open after mark click (keyboard target)')
+  assert(keyHandlers.length === 1, 'P4: keydown handler re-registered after mark click')
+  writeCapture.length = 0
+  keydown('d')
+  assert(writeCapture.length === 1 && writeCapture[0].action === 'reject' && writeCapture[0].span_id === markForReject.props.key,
+    'P4: d dispatches reject POST for the active span')
+  // 3 → recolor the active span to palette[2] (blue)
+  writeCapture.length = 0
+  keydown('3')
+  assert(writeCapture.length === 1 && writeCapture[0].action === 'recolor' && writeCapture[0].color === 'blue',
+    'P4: 3 dispatches recolor to palette[2] (blue)')
+  // Escape closes the action bar without a write
+  writeCapture.length = 0
+  keydown('Escape')
+  rerender()
+  assert(writeCapture.length === 0, 'P4: Escape sends no write')
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-ab').length === 0, 'P4: Escape closes the action bar')
+  // input focus → ignored
+  writeCapture.length = 0
+  const inputKeydown = () => keyHandlers[keyHandlers.length - 1]({ key: 'a', target: { tagName: 'INPUT' }, ctrlKey: false, metaKey: false, altKey: false })
+  inputKeydown()
+  assert(writeCapture.length === 0, 'P4: input-focused a is ignored')
+
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) driven (write + profile mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

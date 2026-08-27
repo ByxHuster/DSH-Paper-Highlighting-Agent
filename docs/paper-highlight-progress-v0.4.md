@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.4 项目进度（打磨导出 / 领域地图 / 论文级反思 / UX）
 
-> 版本：v0.4（打磨导出）· 状态：**Phase 0–3 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3`）· Phase 4–5 待实施** · 创建：2026-08-27 · 最近更新：2026-08-27
+> 版本：v0.4（打磨导出）· 状态：**Phase 0–4 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3` / `v0.3.4`）· Phase 5 待实施** · 创建：2026-08-27 · 最近更新：2026-08-27
 > **独立使用说明**：本文件含 v0.3 继承状态、v0.4 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.3.md`（归档，v0.3.0）。
 
 ---
@@ -263,7 +263,27 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 - `scripts/simulate-render.js`（扩展）：P4 交互注入 —— 快捷键触发（如 `d` → 删除 POST 载荷断言）、导出对话框打开 → 下载 URL 断言（paperId/format/include_pending/download=1）、进度条渲染断言
 - 本地回归全绿；浏览器人工走查清单（快捷键逐键操作、导出下载后浏览器打开、刷新后进度保留）
 
-#### ✅ Phase 4 完成记录（待实施后填写，格式沿用 v0.3）
+#### ✅ Phase 4 完成记录（2026-08-27，验证通过）
+
+**裁剪决定（用户授权精简）**
+- 砍：图例 hover 说明（图例已显示 label 文本，价值低）；「继续上次」DOM 滚动定位（改为被动进度条 + 下一未审查节提示，纯函数可测）；`n 新增` 快捷键（新增依赖鼠标选文 onBodyMouseUp，无键盘目标）。
+
+**交付**（git 工作区已落盘）
+- `client/render-body.js`（扩展，纯函数可单测 + 嵌入 BODY）：
+  - `keyAction(event, state, opts)`：快捷键映射 —— 1-5 改色（对活动 span）/ a 接受 / d 删除 / r 改范围（进入选文态）/ Esc 取消 / Ctrl+Enter 标记当前节完毕 / e 打开导出对话框；仅在论文视图（panelView 'paper'）生效，忽略输入态（INPUT/TEXTAREA/SELECT/contentEditable）与修饰键（除 Ctrl/Cmd+Enter）
+  - `reviewProgress(items)`：进度模型 —— {total, done, ratio(0-100), nextId}；兼容 sectionItems（reviewed）与 plan.sections（status/skip），skip 条目不计入总数与 nextId；空输入全 0 兜底
+  - `buildExportUrl(paperId, format, includePending, download)`：导出下载 URL（参数编码）
+  - PaperView：工具栏「导出」按钮 + 导出对话框（HTML/MD 单选、含未决 checkbox、下载链接 → `GET /paper-hl/export?…&download=1`）；进度条（已审 X/Y 节 + 填充条 + 下一未审查节提示）；keydown 监听经 `dispatchRef`（effect 置于早返回之前以保持 React hook 顺序稳定，ready 路径发布最新 action 闭包）
+- `scripts/gen-client.js`（扩展）：导出 `keyAction`/`reviewProgress`/`buildExportUrl`；bundle 重新生成（client.js 80286 B / client-half.js 75006 B）
+- `scripts/simulate-render.js`（扩展）：reactShim 升级 —— `useRef` + 带 deps 的 `useEffect`（cleanup 追踪）+ 记忆化 `useCallback`（mount effect 只在首轮运行，避免 rerender 重载）→ keydown handler 每轮重注册、闭包新鲜；window shim 加 `addEventListener/removeEventListener` 键注册表；P4 断言
+
+**验证结果（2026-08-27）**
+- `test/run-render.js`（扩展）：keyAction 矩阵（a/d/r/1-5/e/Escape/Ctrl+Enter 正确映射；无活动 span / 数字超 palette / 非论文视图 / 输入态 / alt 修饰 / null 事件忽略）+ reviewProgress（部分/全部/无、plan+skip 语义、零兜底）+ buildExportUrl（参数 + 编码）→ PASS
+- `scripts/simulate-render.js`（扩展，live 3081 数据路径 + write/profile 均 mock）：进度条（已审 2/20、ratio%、下一未审查节提示）+ 导出对话框（打开/关闭、格式切 md、含未决勾选、download URL 断言 `buildExportUrl` 一致）+ **键盘真实分派**（`d` → reject POST 载荷断言、`3` → recolor blue、Esc 关栏无写、输入态忽略）→ **SIMULATION PASS**（原有 P1/P2-c/P2-d/P2-e/P3/P2 全部回归通过）
+- 本地回归全绿：run-mock / run-tools / run-actions / run-plugin / run-render / run-profile / run-export / run-reflect-paper → 全部 PASS；check-host / check-utf8 → PASS
+- ⚠️ 本阶段仅改 client 产物（render-body.js + 生成的 bundle），**无 host 侧改动，live 3081 无需重启**；刷新 GUI 即加载新 bundle
+
+**本轮未做（属后续 Phase）**：Phase 5 step8 端到端（含 paper-reflection.md 结构断言）+ 文档收尾（README/一页纸/设计 §8）+ 归档 v0.4.0；浏览器人工走查清单（快捷键逐键、导出下载、刷新后进度保留）留待用户。
 
 ### Phase 5 — step8 端到端 + 文档收尾 + 归档 v0.4.0（~1.5 天）
 
@@ -294,16 +314,16 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 
 ## 8. 当前状态 / 待办
 
-- **状态**：**v0.4 Phase 0–3 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3`）**——导出核心纯逻辑 + host 路由 + `export_paper` + `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper` + `paper-reflection.md` 样例）；Phase 4–5 待实施。v0.3 全部完成（归档 `v0.3.0`）。
-- **待办（v0.4）**：Phase 4 UX 打磨（快捷键 `keyAction` / 导出入口 / 会话恢复进度条）→ Phase 5 step8 端到端 + 文档收尾 + 归档 `v0.4.0`。Phase 0–3 已完成实现并验证（见 §6 完成记录）。
-- ⚠️ 数据状态（v0.3 验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认，可作 GUI 演示）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）；**`field-map.md` 待 v0.4 初建**。
+- **状态**：**v0.4 Phase 0–4 已完成（归档 `v0.3.1` / `v0.3.2` / `v0.3.3` / `v0.3.4`）**——导出核心纯逻辑 + host 路由 + `export_paper` + `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper` + `paper-reflection.md` 样例）+ UX 打磨（`keyAction` 快捷键 / 导出对话框 / 审查进度条）；Phase 5 待实施。v0.3 全部完成（归档 `v0.3.0`）。
+- **待办（v0.4）**：Phase 5 step8 端到端（`step8-export-e2e.js` + paper-reflection.md 结构断言）+ 文档收尾（README/一页纸/设计 §8）+ 归档 `v0.4.0`；浏览器人工走查清单（快捷键逐键、导出下载、刷新后进度保留）留待用户。Phase 0–4 已完成实现并验证（见 §6 完成记录）。
+- ⚠️ 数据状态（v0.3 验收留盘）：**三篇论文** —— `p-mikolov…`（v0.2 数据，reflections 提案未确认，可作 GUI 演示）、`p-sutskever-2014-seq2seq`（9 spans + 3 节 reviewed + 已确认）、`p-bahdanau-2016-attention`（6 spans + 3 节 reviewed + 已确认 + `paper-reflection.md` 论文级反思留盘样例）；`highlight-profile/` **9 规则 + 13 示例 + stats 2 篇**（overall 认可率 80% / 修改率 20%）；**`field-map.md` 已初建**（v0.3.2）。
 - ⚠️ 环境纪律：**3081 = 会话 Web，Agent 不得自行 kill/restart**；host 代码变更后需用户手动重启。
 
 ## 9. v0.4 交付物清单（规划，随实施更新）
 
 | 路径（规划） | 内容 | 状态 |
 |---|---|---|
-| `docs/paper-highlight-progress-v0.4.md` | 本进度文件 | ✅ 已建（Phase 0–1 完成记录已写入，Phase 2–5 待填） |
+| `docs/paper-highlight-progress-v0.4.md` | 本进度文件 | ✅ 已建（Phase 0–4 完成记录已写入，Phase 5 待填） |
 | `D:\aa\field-map.md` | 领域发展线（NLP 2013–2016 主线 + 三篇论文定位 + 里程碑/范式转移 + 空白区，D4） | ✅ 已落盘（Phase 2） |
 | `packages/paper-highlight/host/export.js` | 导出纯逻辑：`buildExportSpans` / `renderHtml` / `renderMarkdown` / `legendHtml` / `legendMd`（D2/D3） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/host/reflection.js` | 论文级反思模板：`paperReflectionTemplate`（D5） | ✅ 已实现（Phase 3） |
@@ -312,14 +332,14 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 | `packages/paper-highlight/skills/global-read.md`（更新） | 领域定位改走 `read_field_map` + 定位增量记录（D4） | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/skills/propose.md`（更新） | `read_field_map` 按需注入（D4） | ✅ 已实现（Phase 2） |
 | `packages/paper-highlight/skills/reflect.md`（更新） | 论文级反思步骤 + `paper-reflection.md` 落盘（D5） | ✅ 已实现（Phase 3） |
-| `packages/paper-highlight/client/render-body.js`（扩展） | `keyAction` + 导出对话框 + 审查进度条/继续上次（D6） | 待实施（Phase 4） |
-| `packages/paper-highlight/scripts/gen-client.js`（扩展） | 导出 `keyAction` 等新纯函数；bundle 重新生成 | 待实施（Phase 4） |
+| `packages/paper-highlight/client/render-body.js`（扩展） | `keyAction` + 导出对话框 + 审查进度条（D6；「继续上次」滚动导航与图例 hover 已按精简授权裁剪，`n 新增` 键因无键盘目标裁剪） | ✅ 已实现（Phase 4） |
+| `packages/paper-highlight/scripts/gen-client.js`（扩展） | 导出 `keyAction`/`reviewProgress`/`buildExportUrl`；bundle 重新生成 | ✅ 已实现（Phase 4） |
 | `packages/paper-highlight/scripts/step8-export-e2e.js` | 导出端到端验收驱动（html+md 产物校验 + 论文级反思断言） | 待实施（Phase 5） |
 | `packages/paper-highlight/scripts/verify-http.js`（扩展） | `/paper-hl/export` live 探针 | ✅ 已实现（Phase 1） |
 | `packages/paper-highlight/test/run-export.js` | 导出层单测（渲染矩阵 + 自包含断言 + 模板矩阵） | ✅ 已实现（Phase 0） |
 | `packages/paper-highlight/test/run-reflect-paper.js` | 论文级反思模板单测（空/全接受/混合 diff/画像行/逐节表） | ✅ 已实现（Phase 3） |
-| `packages/paper-highlight/test/{run-tools,run-plugin}.js`（扩展） | `export_paper` 工具 + `/export` 路由断言（Phase 1 ✅）；`read_field_map` 断言（Phase 2 ✅）；快捷键/进度断言（Phase 4 待做） | 部分（Phase 1+2 ✅ / Phase 4 待做） |
-| `packages/paper-highlight/scripts/simulate-render.js`（扩展） | P4 快捷键/导出对话框/进度条交互注入 | 待实施（Phase 4） |
+| `packages/paper-highlight/test/{run-tools,run-plugin,run-render}.js`（扩展） | `export_paper` 工具 + `/export` 路由断言（Phase 1 ✅）；`read_field_map` 断言（Phase 2 ✅）；`keyAction`/`reviewProgress`/`buildExportUrl` 矩阵（Phase 4 ✅，run-render） | ✅ 已实现（Phase 1/2/4） |
+| `packages/paper-highlight/scripts/simulate-render.js`（扩展） | P4 快捷键（真实 keydown 分派）/导出对话框/进度条交互注入（reactShim 升级 useRef/useEffect-deps/useCallback 记忆化 + window 键注册表） | ✅ 已实现（Phase 4，SIMULATION PASS） |
 | 文档：设计文档 §8/§10 + README + one-pager | v0.4 完成标注 + 布局/状态更新 | 待实施（Phase 5） |
 
 ## 10. 里程碑检查点
@@ -330,5 +350,5 @@ node D:\aa\packages\paper-highlight\scripts\step8-export-e2e.js   # v0.4 Phase 5
 | M1 | Phase 1 完成 | ✅ `/paper-hl/export` 路由矩阵 + `export_paper` 工具断言 + verify-http PASS + **live 3081 冒烟 PASS**（用户已重启：200 text/html + md + download 附件头 + 负例 400/404） |
 | M2 | Phase 2 完成 | ✅ `field-map.md` 落盘（领域主线+三篇定位+里程碑/范式转移+空白区）+ `read_field_map` 工具（存在/缺失提示/root 解析）+ 技能注入（global-read/propose）+ 本地全绿 + 真实数据离线冒烟 PASS（live 工具行待用户重启 3081） |
 | M3 | Phase 3 完成 | ✅ `paperReflectionTemplate` 矩阵 PASS（run-reflect-paper）+ `reflect_paper` 工具断言 + **实跑一篇留盘样例**（`p-bahdanau` paper-reflection.md，6/6 全接受） |
-| M4 | Phase 4 完成 | `keyAction`/进度矩阵 + simulate-render P4 交互 PASS；浏览器走查待用户 |
+| M4 | Phase 4 完成 | ✅ `keyAction`/`reviewProgress`/`buildExportUrl` 矩阵 PASS（run-render）+ simulate-render P4 交互 PASS（进度条/导出对话框/键盘 `d`→reject、`3`→recolor blue、Esc、输入态忽略）+ 本地回归全绿（无 host 改动，3081 无需重启）；浏览器走查待用户 |
 | M5 | Phase 5 完成（**v0.4 验收**） | `step8-export-e2e.js` PASS（端到端稳定）+ 导出 HTML 浏览器/笔记软件打开正常、图例完整（人工）+ 文档更新 + 归档 `v0.4.0` |

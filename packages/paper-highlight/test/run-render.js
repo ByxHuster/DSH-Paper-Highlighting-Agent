@@ -56,6 +56,7 @@ const {
   buildBlockSegments, buildSegmentMap, mapSelection,
   nodeOffsetToSeg, blockChildToSeg, selectionToNorm,
   sectionList, currentSectionId,
+  keyAction, reviewProgress, buildExportUrl,
   profilePanelModel, profilePanelColors, profileSavePayload,
   proposalCardModel, buildApplyDecisions,
 } = require('../client/render-body')
@@ -574,6 +575,58 @@ function main() {
     assert(currentSectionId(withEmpty, tops2, 2000, 600) === 's4', 'currentSectionId: empty section never current')
     assert(currentSectionId(null, curTops, 0, 600) === null && currentSectionId([], curTops, 0, 600) === null, 'currentSectionId: null/empty input → null')
 
+    // ══════════════════ v0.4 Phase 4: keyAction ══════════════════
+    const ev = (key, extra) => Object.assign({ key, target: { tagName: 'BODY' }, ctrlKey: false, metaKey: false, altKey: false }, extra || {})
+    const paperState = {
+      panelView: 'paper', menuOpen: true, activeSpanId: 's-001',
+      addDraft: null, rescueTarget: null, currentSection: 's3',
+      sectionItems: [{ id: 's2' }, { id: 's3' }, { id: 's4' }],
+    }
+    const palette5 = ['yellow', 'red', 'blue', 'green', 'purple']
+    assert(keyAction(ev('a'), paperState, { palette: palette5 }).type === 'accept'
+      && keyAction(ev('a'), paperState, { palette: palette5 }).span_id === 's-001', 'keyAction: a → accept active span')
+    assert(keyAction(ev('d'), paperState, { palette: palette5 }).type === 'reject', 'keyAction: d → reject')
+    assert(keyAction(ev('r'), paperState, { palette: palette5 }).type === 'rescope', 'keyAction: r → rescope mode')
+    assert(keyAction(ev('3'), paperState, { palette: palette5 }).type === 'recolor'
+      && keyAction(ev('3'), paperState, { palette: palette5 }).color === 'blue', 'keyAction: 3 → recolor to palette[2]=blue')
+    assert(keyAction(ev('e'), paperState, { palette: palette5 }).type === 'toggleExport', 'keyAction: e → toggle export dialog')
+    assert(keyAction(ev('Escape'), paperState, { palette: palette5 }).type === 'cancel', 'keyAction: Escape → cancel')
+    const ctrlEnter = ev('Enter', { ctrlKey: true })
+    const kaMark = keyAction(ctrlEnter, paperState, { palette: palette5 })
+    assert(kaMark.type === 'markSectionReviewed' && kaMark.section === 's3', 'keyAction: Ctrl+Enter → mark current section reviewed')
+    // no active span (menu closed) → a/d/r/1-5 no-op
+    const noSpan = Object.assign({}, paperState, { menuOpen: false })
+    assert(keyAction(ev('a'), noSpan, { palette: palette5 }) === null, 'keyAction: no active span → a ignored')
+    assert(keyAction(ev('1'), noSpan, { palette: palette5 }) === null, 'keyAction: no active span → 1 ignored')
+    // palette index out of range / non-paper view / input focus / modifier
+    assert(keyAction(ev('5'), paperState, { palette: ['yellow', 'red'] }) === null, 'keyAction: digit beyond palette length ignored')
+    const profView = Object.assign({}, paperState, { panelView: 'profile' })
+    assert(keyAction(ev('a'), profView, { palette: palette5 }) === null, 'keyAction: profile panel view → ignored')
+    const inputEv = ev('a', { target: { tagName: 'INPUT' } })
+    assert(keyAction(inputEv, paperState, { palette: palette5 }) === null, 'keyAction: input focus → ignored')
+    const altEv = ev('a', { altKey: true })
+    assert(keyAction(altEv, paperState, { palette: palette5 }) === null, 'keyAction: alt-modified → ignored')
+    assert(keyAction(null, paperState, { palette: palette5 }) === null, 'keyAction: null event → null')
+
+    // ══════════════════ v0.4 Phase 4: reviewProgress ══════════════════
+    const progItems = [
+      { id: 's2', reviewed: true }, { id: 's3', reviewed: false }, { id: 's4', reviewed: true }, { id: 's5', reviewed: false },
+    ]
+    const p1 = reviewProgress(progItems)
+    assert(p1.total === 4 && p1.done === 2 && p1.ratio === 50 && p1.nextId === 's3', 'reviewProgress: partial reviewed → score + first unreviewed')
+    const p2 = reviewProgress([{ id: 's2', reviewed: true }, { id: 's3', reviewed: true }])
+    assert(p2.done === 2 && p2.ratio === 100 && p2.nextId === null, 'reviewProgress: all reviewed → ratio 100, no next')
+    const p3 = reviewProgress([{ id: 's2', status: 'reviewed' }, { id: 's3', status: 'pending', skip: true }, { id: 's4', status: 'pending' }])
+    assert(p3.total === 2 && p3.done === 1 && p3.nextId === 's4', 'reviewProgress: plan.sections entries honored + skip excluded from total/next')
+    assert(reviewProgress(null).total === 0 && reviewProgress(null).done === 0 && reviewProgress(null).ratio === 0 && reviewProgress(null).nextId === null, 'reviewProgress: null/empty → all-zero fallback')
+    assert(reviewProgress([]).ratio === 0 && reviewProgress([]).nextId === null, 'reviewProgress: empty list → zero')
+
+    // ══════════════════ v0.4 Phase 4: buildExportUrl ══════════════════
+    assert(buildExportUrl('p-1', 'html', true, true) === '/paper-hl/export?paperId=p-1&format=html&include_pending=1&download=1', 'buildExportUrl: full params')
+    assert(buildExportUrl('p-1', 'md', false, true) === '/paper-hl/export?paperId=p-1&format=md&download=1', 'buildExportUrl: md + download, no include_pending')
+    assert(buildExportUrl('p-1', '', false, false) === '/paper-hl/export?paperId=p-1', 'buildExportUrl: minimal (paperId only)')
+    assert(buildExportUrl('p x/y', 'html', true, true).indexOf('p%20x%2Fy') >= 0, 'buildExportUrl: paperId encoded')
+
     console.log(JSON.stringify({
       step: 'render-helpers',
       result: 'PASS',
@@ -587,6 +640,7 @@ function main() {
       v03p1: 'callProfile (GET/POST/ok:false/no-transport) + colorLegend (null/custom/partial/empty/unknown fallbacks) + markStyle(colors 4th arg) + renderText(opts.colors) — colors.yml-driven palette',
       v03p3: 'profilePanelModel/profilePanelColors (null fallback + profile mapping) + profileSavePayload (flat rows → {name:{color,label}} map, absent layers omitted)',
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
+      v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape/Ctrl+Enter; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
     }, null, 2))
     return null
   })
