@@ -103,4 +103,6 @@ module.exports = {
   readMeta,
   readHighlights,
   writeHighlights,
+  atomicWriteJson,
+  atomicWriteText,
 }

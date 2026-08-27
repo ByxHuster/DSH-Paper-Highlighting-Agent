@@ -19,6 +19,18 @@ const { processPdf, paperIdFromPdfPath } = require('./pipeline')
 const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, paperDir } = require('./store')
 const { buildSections } = require('./sections')
 const { summarizeDiff } = require('./diff')
+const {
+  profileDir,
+  profileExists,
+  ensureProfile,
+  readProfile,
+  writeProfile,
+  buildProfileSummary,
+  applyProposal,
+  readReflections,
+  writeReflections,
+  listPendingProposals,
+} = require('./profile')
 
 /** Default data root: the process cwd (dsh launched from the workspace root). */
 function defaultRoot() {
@@ -137,7 +149,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -309,4 +321,104 @@ function summarizeSectionDiffTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, allTools }
+/** read_profile tool definition (v0.3 Phase 0). */
+function readProfileTool() {
+  return {
+    name: 'read_profile',
+    description:
+      'Read the user highlight profile (design §4.3): the four layers under <root>/highlight-profile/ ' +
+      '(colors.yml / rules.json / exemplars.json / stats.json / reflection-notes.md) plus the compact ' +
+      'propose-time summary (L1 colors + L2 top-k enabled rules + L3 top-k exemplars + one-line L4 stats) ' +
+      'and the count of pending confirmation proposals across papers. When no profile exists yet (cold ' +
+      'start), summary falls back to the built-in defaults so propose still works. Read-only.',
+    parameters: {
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const has = await profileExists(root)
+      let profile = null
+      let summary = null
+      if (has) {
+        profile = await readProfile(root)
+        summary = buildProfileSummary(profile)
+      } else {
+        summary = buildProfileSummary(null)
+      }
+      const pending = await listPendingProposals(root)
+      return {
+        ok: true,
+        has_profile: has,
+        profile_dir: profileDir(root),
+        profile,
+        summary,
+        pending_proposals: pending.length,
+      }
+    },
+  }
+}
+
+/** confirm_proposal tool definition (v0.3 Phase 0/2). */
+function confirmProposalTool() {
+  return {
+    name: 'confirm_proposal',
+    description:
+      'Confirm (or reject) a pending profile-update proposal carried by data/<paper_id>/reflections.json ' +
+      '(produced by the paper-hl-reflect skill). decisions: { accept: "all" | string[], reject: "all" | ' +
+      'string[] } where ids are proposal-relative "rule-<i>" / "exemplar-<i>" (or a rule\'s own id). ' +
+      'The HOST merges accepted items into the four-layer profile (low-confidence rules land disabled as ' +
+      'candidates), records reflections.confirmation (append-only, one-shot — a second confirm is rejected), ' +
+      'and returns the applied summary. The agent never writes rules directly (design §6 防污染).',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id whose reflections.json proposal is being confirmed' },
+      decisions: {
+        type: 'object',
+        additionalProperties: true,
+        required: true,
+        description: '{ accept: "all" | string[], reject: "all" | string[] } — per-item or blanket confirmation',
+      },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      const ref = await readReflections(root, args.paper_id)
+      if (!ref) {
+        return { ok: false, paper_id: args.paper_id, error: 'no reflections.json (no pending proposal) for this paper' }
+      }
+      if (ref.confirmation != null) {
+        return { ok: false, paper_id: args.paper_id, error: 'proposal already confirmed (confirmation recorded, append-only)' }
+      }
+      const has = await profileExists(root)
+      if (!has) await ensureProfile(root) // confirm implies cold-start defaults when needed
+      const profile = await readProfile(root)
+      let highlights = null
+      try {
+        highlights = await readHighlights(root, args.paper_id)
+      } catch {
+        highlights = null
+      }
+      const decisions = args.decisions || {}
+      const result = applyProposal(profile, ref, decisions, highlights)
+      await writeProfile(root, result.profile)
+      const accepted = result.applied.rules + result.applied.exemplars > 0
+      ref.confirmation = { accepted, at: new Date().toISOString(), decisions }
+      await writeReflections(root, args.paper_id, ref)
+      return {
+        ok: true,
+        paper_id: args.paper_id,
+        applied: result.applied,
+        confirmation: ref.confirmation,
+      }
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, allTools }

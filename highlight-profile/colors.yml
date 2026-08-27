@@ -1,0 +1,18 @@
+# 颜色语义（L1，用户固定指定）
+# <color>: { color: <hex>, label: <语义> }
+colors:
+  red:
+    color: #ff9c94
+    label: 核心洞见/贡献
+  yellow:
+    color: #fff3a0
+    label: 关键定义/方法
+  blue:
+    color: #8fd0f7
+    label: 局限/风险
+  green:
+    color: #b0e3a8
+    label: 可借鉴/启发
+  purple:
+    color: #d9b8f2
+    label: 待深挖/存疑

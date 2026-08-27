@@ -74,8 +74,7 @@ function validateAnchors(anchors) {
 }
 
 /** Validate a highlights document. Throws on the first problem. */
-function validateHighlights(h) {
-  if (typeof h !== 'object' || h === null) throw new Error('highlights must be an object')
+function validateHighlights(h) {  if (typeof h !== 'object' || h === null) throw new Error('highlights must be an object')
   if (typeof h.paper !== 'object' || h.paper === null) throw new Error('highlights.paper must be an object')
   if (typeof h.paper.id !== 'string' || h.paper.id.length === 0) throw new Error('highlights.paper.id must be a non-empty string')
   validateAnchors(h.anchors)
@@ -140,6 +139,30 @@ function validateHighlights(h) {
   return true
 }
 
+/**
+ * Validate a reflections.json document (v0.2 Phase 5 reflect output + v0.3
+ * Phase 0 confirmation). Lenient: only the shape that the confirm flow relies
+ * on is enforced — paper_id, optional profile_proposal object, and an
+ * append-only confirmation (null | { accepted, at?, decisions? }).
+ */
+function validateReflections(r) {
+  if (typeof r !== 'object' || r === null) throw new Error('reflections must be an object')
+  if (typeof r.paper_id !== 'string' || r.paper_id.length === 0) throw new Error('reflections.paper_id must be a non-empty string')
+  if (r.profile_proposal !== undefined && (typeof r.profile_proposal !== 'object' || r.profile_proposal === null)) {
+    throw new Error('reflections.profile_proposal must be an object when present')
+  }
+  if (r.confirmation !== undefined && r.confirmation !== null) {
+    const c = r.confirmation
+    if (typeof c !== 'object' || c === null) throw new Error('reflections.confirmation must be null or an object')
+    if (typeof c.accepted !== 'boolean') throw new Error('reflections.confirmation.accepted must be a boolean')
+    if (c.at !== undefined && typeof c.at !== 'string') throw new Error('reflections.confirmation.at must be a string when present')
+    if (c.decisions !== undefined && (typeof c.decisions !== 'object' || c.decisions === null)) {
+      throw new Error('reflections.confirmation.decisions must be an object when present')
+    }
+  }
+  return true
+}
+
 module.exports = {
   ANCHOR_ID_RE,
   SPAN_STATUSES,
@@ -148,4 +171,5 @@ module.exports = {
   newHighlightsSkeleton,
   validateAnchors,
   validateHighlights,
+  validateReflections,
 }

@@ -57,6 +57,18 @@ function generateBundle() {
   lines.push(`\t\t\tif (!res.ok) throw new Error("POST " + url + " -> " + res.status);`)
   lines.push(`\t\t\treturn res.json();`)
   lines.push(`\t\t};`)
+  // v0.3 Phase 1: profile transport. `callProfile(method, url, body)` inside
+  // the shared BODY posts/gets /paper-hl/profile* (read / init / apply). Only
+  // the durable bundle wires this; the dynamic half stays read-only (callProfile
+  // rejects cleanly, exactly like callWrite).
+  lines.push(`\t\tconst profileData = async (method, url, body) => {`)
+  lines.push(`\t\t\tconst headers = { Accept: "application/json" };`)
+  lines.push(`\t\t\tconst opts = { method, headers };`)
+  lines.push(`\t\t\tif (method !== "GET" && body != null) { headers["Content-Type"] = "application/json"; opts.body = body; }`)
+  lines.push(`\t\t\tconst res = await fetch(url, opts);`)
+  lines.push(`\t\t\tif (!res.ok) throw new Error(method + " " + url + " -> " + res.status);`)
+  lines.push(`\t\t\treturn res.json();`)
+  lines.push(`\t\t};`)
   for (const line of BODY.split('\n')) lines.push('\t\t' + line)
   lines.push(`\t\texports.apply = apply;`)
   lines.push(`\t\texports.inject = inject;`)
@@ -71,6 +83,9 @@ function generateBundle() {
   // P2-e: section-status + current-section helpers for headless tests.
   lines.push(`\t\texports.sectionList = sectionList;`)
   lines.push(`\t\texports.currentSectionId = currentSectionId;`)
+  // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
+  lines.push(`\t\texports.colorLegend = colorLegend;`)
+  lines.push(`\t\texports.callProfile = callProfile;`)
   lines.push(`\t\treturn module.exports;`)
   lines.push(`\t}`)
   lines.push(`});`)

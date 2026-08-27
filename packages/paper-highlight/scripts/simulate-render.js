@@ -92,6 +92,31 @@ function makeRequire() {
 // ── fetch shim → REAL GET /paper-hl/read + MOCKED POST /paper-hl/write ─────
 const API_ORIGIN = 'http://127.0.0.1:3081'
 
+// v0.3 Phase 1: profile endpoint is MOCKED (the running 3081 may not have the
+// new host route until the user restarts). Two scenarios are driven:
+//   has_profile=false → cold-start onboarding panel → POST /init → view switches
+//   has_profile=true  → legend / swatches / marks driven by the profile colors
+const profileState = { has_profile: false, colors: null }
+const profileCapture = []
+const CUSTOM_COLORS = {
+  red: { color: '#ff0000', label: '红核心' },
+  yellow: { color: '#fff3a0', label: '关键定义/方法' },
+  blue: { color: '#8fd0f7', label: '局限/风险' },
+  green: { color: '#b0e3a8', label: '可借鉴/启发' },
+  purple: { color: '#d9b8f2', label: '待深挖/存疑' },
+}
+function mockProfileHandler(url, opts) {
+  if (opts && opts.method === 'POST') {
+    profileCapture.push({ url, payload: JSON.parse(opts.body || '{}') })
+    // init/apply answer ok; the subsequent GET re-read reflects the new state
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, has_profile: true }) })
+  }
+  const res = profileState.has_profile
+    ? { ok: true, has_profile: true, profile: { colors: profileState.colors }, summary: { colors: profileState.colors } }
+    : { ok: true, has_profile: false, profile: null, summary: null, pending_proposals: [] }
+  return Promise.resolve({ ok: true, status: 200, json: async () => res })
+}
+
 // P2-c: capture every write payload the client would POST, and answer with a
 // plausible server response WITHOUT mutating the real data (the mock derives
 // the full mutated span from a read-only /read fetch, mirroring host applyAction).
@@ -156,6 +181,9 @@ function mockWriteHandler(url, body) {
 
 function fetchShim(url, opts) {
   const target = url.startsWith('/') ? API_ORIGIN + url : url
+  if (url.indexOf('/paper-hl/profile') === 0) {
+    return mockProfileHandler(url, opts)
+  }
   if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/write') === 0) {
     return mockWriteHandler(url, opts.body)
   }
@@ -212,11 +240,16 @@ const p2e = ['sectionList', 'currentSectionId', 'review_section', '标记本节�
 for (const needle of p2e) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-e review-complete plumbing: ${needle}`)
 }
+const p1 = ['colorLegend', 'callProfile', 'profileData', '/paper-hl/profile', '初始化画像', 'phl-onb', 'defaultOnboardDraft', 'has_profile']
+for (const needle of p1) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 1 profile plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
 console.log('bundle selection→add/rescope (P2-d):', p2d.join(', '))
 console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
+console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -302,7 +335,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   console.log('pass2 node:', tree.type)
 
   // assertions
-  const fullText = textOf(tree)
+  let fullText = textOf(tree)
 
   const assert = (cond, msg) => {
     if (!cond) throw new Error('ASSERT FAILED: ' + msg)
@@ -317,6 +350,37 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
     byType = view.byType
     return view
   }
+
+  // ══════════════ v0.3 Phase 1: cold-start onboarding (profile MOCKED) ══════════════
+  // The profile mock starts with has_profile:false → the mount loadProfile()
+  // already switched the view to the onboarding panel (pass 2).
+  assert(byType.h1 === undefined || byType.h1.length === 0, 'P1: paper body NOT rendered while onboarding (no h1)')
+  const onb = byType.div.find((d) => (d.props.className || '') === 'phl-onb')
+  assert(onb !== undefined, 'P1: onboarding panel (.phl-onb) rendered when no profile exists')
+  assert(textOf(onb).includes('初始化高亮画像'), 'P1: onboarding panel carries the title')
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb-row').length === 5, 'P1: onboarding has 5 color rows (default palette)')
+  assert(byType.select.filter((s) => (s.props.className || '') === 'phl-onb-select').length === 2, 'P1: onboarding has density + granularity selects')
+
+  // click 初始化画像 → POST /paper-hl/profile/init with the edited colors +
+  // density/granularity baseline rules; the mock then reports has_profile:true
+  // so loadProfile() switches the view to the paper body.
+  const initBtn = collectButtons(onb).find((b) => textOf(b) === '初始化画像')
+  assert(initBtn !== undefined, 'P1: onboarding has the 初始化画像 button')
+  profileState.has_profile = true
+  profileState.colors = CUSTOM_COLORS
+  profileCapture.length = 0
+  initBtn.props.onClick()
+  assert(profileCapture.length === 1 && profileCapture[0].url === '/paper-hl/profile/init', 'P1: init POST targets /paper-hl/profile/init')
+  const initPayload = profileCapture[0].payload
+  assert(initPayload.colors && Object.keys(initPayload.colors).length === 5, 'P1: init payload carries the 5 colors')
+  assert(Array.isArray(initPayload.rules) && initPayload.rules.length === 2 &&
+    initPayload.rules[0].rule.indexOf('density_per_section') === 0 && initPayload.rules[1].rule.indexOf('granularity') === 0,
+    'P1: init payload carries density + granularity baseline rules')
+  await new Promise((r) => setTimeout(r, 200)) // flush loadProfile re-fetch
+  rerender()
+  fullText = textOf(tree) // recompute after the view switched back to the paper body
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb').length === 0, 'P1: onboarding panel dismissed after init')
+  assert(byType.h1 && byType.h1.length === 1, 'P1: paper body renders again after onboarding (h1 present)')
 
   assert(!fullText.includes('加载论文'), 'loading state cleared (data loaded)')
   assert(byType.h1 && byType.h1.length === 1, 'exactly one h1 heading')
@@ -344,6 +408,14 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(expectedSpans > 0, 'live /paper-hl/read serves spans (got ' + expectedSpans + ')')
   assert(spanMarks.length === expectedSpans, spanMarks.length + ' highlight marks match live span count (' + expectedSpans + ')')
 
+  // v0.3 Phase 1: mark chips resolve the profile palette (colors.yml-driven)
+  const liveSpansP1 = await fetchShim('/paper-hl/read').then((r) => r.json()).then((j) => (j.ok ? j.highlights.spans : []))
+  const redLive = liveSpansP1.find((s) => s.color === 'red' && s.status !== 'rejected')
+  if (redLive) {
+    const redMarkP1 = spanMarks.find((m) => m.props.key === redLive.id)
+    assert(redMarkP1 && redMarkP1.props.style.background === '#ff0000', 'P1: a red-span mark renders with the profile color #ff0000 (not the built-in #ff9c94)')
+  }
+
   const colors = {}
   for (const m of spanMarks) colors[m.props.style.background] = (colors[m.props.style.background] || 0) + 1
   console.log('  span mark colors:', JSON.stringify(colors))
@@ -352,7 +424,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(byType.select && byType.select.length === 1, 'paper selector present')
   assert(byType.button && byType.button.some((b) => textOf(b).includes('刷新')), 'refresh button present')
 
-  assert(byType.mark && fullText.includes('关键定义/方法') && fullText.includes('待深挖/存疑'), 'legend with color semantics present')
+  assert(byType.mark && fullText.includes('红核心') && fullText.includes('待深挖/存疑'), 'legend driven by the profile colors (custom red label 红核心 present)')
 
   // ══════════════ P2-c: review interaction (mark click → action bar → accept/recolor) ══════════════
   const GREEN = '#b0e3a8'
@@ -591,7 +663,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const doneChip = chipsAfterReview.find((c) => c.props['data-phl-sec'] === expectedCurrent)
   assert(doneChip !== undefined && (doneChip.props.className || '').indexOf('phl-section-done') >= 0, 'P2-e: reviewed section chip shows the done state (✓)')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete (section list / current-section / review_section POST) driven (write mocked, real data untouched)`)
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete driven (write + profile mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

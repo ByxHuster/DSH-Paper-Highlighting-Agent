@@ -30,6 +30,19 @@ const path = require('node:path')
 const { readPaperMd, readAnchors, readHighlights, writeHighlights } = require('./store')
 const { buildSections } = require('./sections')
 const { applyAction } = require('./actions')
+const {
+  profileDir,
+  profileExists,
+  ensureProfile,
+  readProfile,
+  writeProfile,
+  buildProfileSummary,
+  nextRuleId,
+  applyProposal,
+  readReflections,
+  writeReflections,
+  listPendingProposals,
+} = require('./profile')
 
 const name = 'paper-highlight'
 const inject = ['webServer']
@@ -146,6 +159,109 @@ function sendJson(res, status, value) {
   res.end(body)
 }
 
+// ── v0.3 Phase 0: /paper-hl/profile routes (profile read / cold-start init /
+//    proposal confirmation) ───────────────────────────────────────────────────
+
+async function handleProfileGet(root) {
+  const has = await profileExists(root)
+  let profile = null
+  if (has) profile = await readProfile(root)
+  const pending = await listPendingProposals(root)
+  return {
+    ok: true,
+    has_profile: has,
+    profile_dir: profileDir(root),
+    profile,
+    summary: buildProfileSummary(profile),
+    pending_proposals: pending,
+  }
+}
+
+/** POST /paper-hl/profile/init — cold start: create defaults, then merge an
+ *  optional { colors, rules } from the onboarding form (D6). */
+async function handleProfileInit(root, req, res, send) {
+  let body = {}
+  try {
+    body = JSON.parse((await readBody(req)) || '{}')
+  } catch {
+    send(res, 400, { ok: false, error: 'request body must be valid JSON' })
+    return
+  }
+  try {
+    const { created, dir } = await ensureProfile(root)
+    const profile = await readProfile(root)
+    if (body.colors && typeof body.colors === 'object' && !Array.isArray(body.colors)) {
+      for (const [name, c] of Object.entries(body.colors)) {
+        if (c && typeof c === 'object' && typeof c.color === 'string' && c.color.length > 0) {
+          profile.colors[name] = { color: c.color, label: (c && c.label) || name }
+        }
+      }
+    }
+    if (Array.isArray(body.rules)) {
+      for (const r of body.rules) {
+        if (!r || typeof r.rule !== 'string' || r.rule.length === 0) continue
+        profile.rules.push({
+          id: nextRuleId(profile),
+          rule: r.rule,
+          confidence: r.confidence || null,
+          source: r.source || 'user-cold-start',
+          enabled: r.enabled !== false,
+        })
+      }
+    }
+    await writeProfile(root, profile)
+    send(res, 200, { ok: true, created, profile_dir: dir, colors: Object.keys(profile.colors).length, rules: profile.rules.length })
+  } catch (err) {
+    send(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
+/** POST /paper-hl/profile/apply?paperId=<id> — GUI confirmation channel (D5):
+ *  body { decisions } mirrors the confirm_proposal tool (host-only merge). */
+async function handleProfileApply(root, url, req, res, send) {
+  const paperId = url.searchParams.get('paperId')
+  if (!paperId) {
+    send(res, 400, { ok: false, error: 'missing paperId query param' })
+    return
+  }
+  let body = {}
+  try {
+    body = JSON.parse((await readBody(req)) || '{}')
+  } catch {
+    send(res, 400, { ok: false, error: 'request body must be valid JSON' })
+    return
+  }
+  try {
+    const ref = await readReflections(root, paperId)
+    if (!ref) {
+      send(res, 400, { ok: false, error: `no reflections.json (no pending proposal) for paperId ${paperId}` })
+      return
+    }
+    if (ref.confirmation != null) {
+      send(res, 400, { ok: false, error: 'proposal already confirmed (confirmation recorded, append-only)' })
+      return
+    }
+    const has = await profileExists(root)
+    if (!has) await ensureProfile(root)
+    const profile = await readProfile(root)
+    let highlights = null
+    try {
+      highlights = await readHighlights(root, paperId)
+    } catch {
+      highlights = null
+    }
+    const decisions = body.decisions || {}
+    const result = applyProposal(profile, ref, decisions, highlights)
+    await writeProfile(root, result.profile)
+    const accepted = result.applied.rules + result.applied.exemplars > 0
+    ref.confirmation = { accepted, at: new Date().toISOString(), decisions }
+    await writeReflections(root, paperId, ref)
+    send(res, 200, { ok: true, paper_id: paperId, applied: result.applied, confirmation: ref.confirmation })
+  } catch (err) {
+    send(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
 function apply(ctx, config) {
   const root = workspaceRoot(config)
   const route = {
@@ -164,6 +280,19 @@ function apply(ctx, config) {
           await handleWrite(root, url, req, res, sendJson)
           return
         }
+        if (url.pathname === '/paper-hl/profile' && (req.method === 'GET' || req.method === undefined)) {
+          const payload = await handleProfileGet(root)
+          sendJson(res, payload.ok ? 200 : 500, payload)
+          return
+        }
+        if (url.pathname === '/paper-hl/profile/init' && req.method === 'POST') {
+          await handleProfileInit(root, req, res, sendJson)
+          return
+        }
+        if (url.pathname === '/paper-hl/profile/apply' && req.method === 'POST') {
+          await handleProfileApply(root, url, req, res, sendJson)
+          return
+        }
         sendJson(res, 404, { ok: false, error: 'not found' })
       } catch (err) {
         sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
@@ -173,4 +302,4 @@ function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register(route), 'paper-highlight: /paper-hl route')
 }
 
-module.exports = { name, inject, apply, handleRead, listPaperIds, buildSections, mergePlanStatus }
+module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, listPaperIds, buildSections, mergePlanStatus }

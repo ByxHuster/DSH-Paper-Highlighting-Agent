@@ -294,18 +294,60 @@ async function main() {
   }
   assert(dupThrew2, 'duplicates: non-array repeats_at rejected')
 
+  // 10) profile tools (v0.3 Phase 0): read_profile + confirm_proposal
+  const { readProfileTool, confirmProposalTool } = require('../host/tools')
+  const { writeReflections } = require('../host/profile')
+  const pDefs = [readProfileTool(), confirmProposalTool()].map(defineTool)
+  for (const d of pDefs) {
+    assert(typeof d.name === 'string' && d.name.length > 0, `profile tool name missing: ${JSON.stringify(d)}`)
+    assert(d.parameters && d.parameters.type === 'object', `profile tool ${d.name}: parameters convert to object JSON schema`)
+    assert(d.output && typeof d.output.render === 'function', `profile tool ${d.name}: output.render must be a function`)
+  }
+  const profRead = await readProfileTool().execute({ root })
+  assert(profRead.ok === true && profRead.has_profile === false, 'read_profile: no profile yet (cold start)')
+  assert(profRead.summary && profRead.summary.has_profile === false && Object.keys(profRead.summary.colors).length === 5,
+    'read_profile: pre-onboarding summary falls back to the 5 built-in color defaults')
+  assert(profRead.pending_proposals === 0, 'read_profile: no pending proposals before any reflections')
+  assertLosslessJson(profRead, 'read_profile output')
+
+  // confirm_proposal: cold-start creates the profile, applies the proposal once
+  const profProposal = {
+    paper_id: paperId,
+    updated_at: '2026-08-27T00:00:00.000Z',
+    sections: [{ section_id: 's1', counts: { accepted: 1, rejected: 0, recolored: 0, rescoped: 0, user_added: 0, pending: 0 } }],
+    profile_proposal: {
+      rules: [{ rule: 'granularity: 短语级短片段', confidence: 'medium', from: 's-001 rescope' }],
+      exemplars: [{ span_id: 's-001', suggested: { color: 'red' }, user_decision: { action: 'accepted' }, section: 's1', note: 'x' }],
+      stats: { sections_reviewed: 1 },
+    },
+  }
+  await writeReflections(root, paperId, profProposal)
+  const profConfirm = await confirmProposalTool().execute({ paper_id: paperId, decisions: { accept: 'all' }, root })
+  assert(profConfirm.ok === true && profConfirm.applied.rules === 1 && profConfirm.applied.exemplars === 1,
+    'confirm_proposal: proposal applied (1 rule + 1 exemplar)')
+  assert(profConfirm.confirmation && profConfirm.confirmation.accepted === true, 'confirm_proposal: confirmation recorded')
+  assertLosslessJson(profConfirm, 'confirm_proposal output')
+  const profConfirm2 = await confirmProposalTool().execute({ paper_id: paperId, decisions: { accept: 'all' }, root })
+  assert(profConfirm2.ok === false && /already confirmed/.test(profConfirm2.error), 'confirm_proposal: second confirm rejected (one-shot)')
+  const profRead2 = await readProfileTool().execute({ root })
+  assert(profRead2.ok === true && profRead2.has_profile === true, 'read_profile: profile now exists (cold-start created by confirm)')
+  assert(profRead2.profile.rules.length === 1 && profRead2.profile.exemplars.length === 1, 'read_profile: merged rules + exemplars visible')
+  assert(profRead2.summary.rules.length === 1 && profRead2.pending_proposals === 0, 'read_profile: summary carries the rule; proposal consumed')
+  assertLosslessJson(profRead2, 'read_profile after confirm output')
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
-    lossless_output: 'parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff all lossless JSON',
+    lossless_output: 'parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff / read_profile / confirm_proposal all lossless JSON',
     append_mode: 'write_highlights preserves existing spans + decisions when adding',
     section_tools: 'list_sections (index + plan/span merge) + read_section (body text + filtered spans, unknown -> ok:false)',
     diff_tool: 'summarize_section_diff — decisions[]-driven classification (accepted/rejected/recolored/rescoped/added/pending) + counts/accept_rate + samples (Phase 4)',
     duplicates_contract: 'schema validates duplicates entries (claim non-empty, repeats_at string array); append-only registration (Phase 4)',
+    profile_tools: 'read_profile (has_profile/summary/pending, cold-start defaults) + confirm_proposal (one-shot host merge: rules/exemplars applied, confirmation append-only, double-confirm rejected) (v0.3 Phase 0)',
   }, null, 2))
 }
 

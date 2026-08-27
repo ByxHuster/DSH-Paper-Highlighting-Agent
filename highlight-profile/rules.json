@@ -1,0 +1,16 @@
+[
+  {
+    "id": "rule-1",
+    "rule": "density_per_section: 每节 3-5 处",
+    "confidence": "medium",
+    "source": "default-cold-start",
+    "enabled": true
+  },
+  {
+    "id": "rule-2",
+    "rule": "granularity: 句子级",
+    "confidence": "medium",
+    "source": "default-cold-start",
+    "enabled": true
+  }
+]

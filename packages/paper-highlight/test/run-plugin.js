@@ -26,6 +26,7 @@ const path = require('node:path')
 const plugin = require('../host/plugin')
 const { writePaper, writeHighlights, readHighlights } = require('../host/store')
 const { newHighlightsSkeleton } = require('../host/schema')
+const { writeReflections, readReflections, profileDir } = require('../host/profile')
 const { assert } = require('./verify')
 
 const ROOT = path.join(__dirname, '..', '..', '..') // D:\aa
@@ -191,7 +192,81 @@ async function main() {
   const final = await readHighlights(fx.root, fx.paperId)
   assert(final.spans.length === 2 && final.spans[0].status === 'accepted', 'document intact after negative matrix')
 
-  // cleanup fixture
+  // ══════════════════ v0.3 Phase 0: /paper-hl/profile routes ══════════════════
+  // GET /profile: no profile yet → has_profile:false (cold start signal for the
+  // GUI onboarding); POST /init creates defaults (optionally merged colors +
+  // cold-start rules); POST /apply?paperId confirms a reflections proposal.
+  const g0 = await invoke(wroute.handler, { url: '/paper-hl/profile' })
+  const jg0 = JSON.parse(g0.body)
+  assert(g0.status === 200 && jg0.ok === true && jg0.has_profile === false, 'GET /paper-hl/profile: no profile yet (cold start)')
+  assert(Array.isArray(jg0.pending_proposals) && jg0.pending_proposals.length === 0, 'GET /profile: no pending proposals yet')
+
+  const init = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/init', body: '{}' })
+  const jinit = JSON.parse(init.body)
+  assert(init.status === 200 && jinit.ok === true && jinit.created === true, 'POST /profile/init: creates the default profile')
+  assert(jinit.colors === 5 && jinit.rules === 0, 'POST /profile/init: 5 default colors, no rules yet')
+
+  const g1 = await invoke(wroute.handler, { url: '/paper-hl/profile' })
+  const jg1 = JSON.parse(g1.body)
+  assert(g1.status === 200 && jg1.has_profile === true, 'GET /profile: profile exists after init')
+  assert(jg1.summary && jg1.summary.has_profile === true && Object.keys(jg1.summary.colors).length === 5, 'GET /profile: summary served')
+
+  // init with onboarding body: custom colors + density/granularity baseline rules
+  const init2 = await invoke(wroute.handler, {
+    method: 'POST',
+    url: '/paper-hl/profile/init',
+    body: JSON.stringify({
+      colors: { red: { color: '#ff9c94', label: '核心洞见' }, teal: { color: '#7fe0d0', label: '新颜色' } },
+      rules: [
+        { rule: 'density_per_section: 每节 3-5 处', enabled: true },
+        { rule: 'granularity: 句子级', enabled: true },
+      ],
+    }),
+  })
+  const jinit2 = JSON.parse(init2.body)
+  assert(init2.status === 200 && jinit2.ok === true, 'POST /profile/init: onboarding body accepted')
+  const g2 = await invoke(wroute.handler, { url: '/paper-hl/profile' })
+  const jg2 = JSON.parse(g2.body)
+  assert(jg2.profile.colors.teal !== undefined && jg2.profile.colors.red.label === '核心洞见', 'init merged custom colors')
+  assert(jg2.profile.rules.length === 2 && jg2.summary.density !== null && jg2.summary.granularity !== null, 'init stored cold-start baseline rules + summary extraction')
+
+  // apply: confirm a proposal via the GUI channel (mirrors confirm_proposal tool)
+  await writeReflections(fx.root, fx.paperId, {
+    paper_id: fx.paperId,
+    updated_at: '2026-08-27T00:00:00.000Z',
+    sections: [{ section_id: 's2', counts: { accepted: 1, rejected: 0, recolored: 0, rescoped: 0, user_added: 0, pending: 0 } }],
+    profile_proposal: {
+      rules: [{ rule: 'value/density: 背景铺垫类句子不高亮', confidence: 'medium' }],
+      exemplars: [],
+      stats: { sections_reviewed: 1 },
+    },
+  })
+  const apply = await invoke(wroute.handler, {
+    method: 'POST',
+    url: '/paper-hl/profile/apply?paperId=' + fx.paperId,
+    body: JSON.stringify({ decisions: { accept: 'all' } }),
+  })
+  const japply = JSON.parse(apply.body)
+  assert(apply.status === 200 && japply.ok === true && japply.applied.rules === 1, 'POST /profile/apply: proposal confirmed (1 rule)')
+  assert(japply.confirmation && japply.confirmation.accepted === true, 'POST /profile/apply: confirmation recorded')
+  const refOnDisk = await readReflections(fx.root, fx.paperId)
+  assert(refOnDisk && refOnDisk.confirmation && refOnDisk.confirmation.accepted === true, 'apply persisted reflections.confirmation')
+  const g3 = await invoke(wroute.handler, { url: '/paper-hl/profile' })
+  const jg3 = JSON.parse(g3.body)
+  assert(jg3.pending_proposals.length === 0, 'GET /profile: confirmed proposal no longer pending')
+
+  // apply negatives
+  const applyNoPaper = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/apply', body: JSON.stringify({ decisions: { accept: 'all' } }) })
+  assert(applyNoPaper.status === 400 && /missing paperId/.test(JSON.parse(applyNoPaper.body).error), 'apply without paperId -> 400')
+  const applyUnknown = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/apply?paperId=ghost', body: JSON.stringify({ decisions: { accept: 'all' } }) })
+  assert(applyUnknown.status === 400 && /no reflections/.test(JSON.parse(applyUnknown.body).error), 'apply for paper without reflections -> 400')
+  const applyTwice = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/apply?paperId=' + fx.paperId, body: JSON.stringify({ decisions: { accept: 'all' } }) })
+  assert(applyTwice.status === 400 && /already confirmed/.test(JSON.parse(applyTwice.body).error), 'apply twice -> 400 (append-only confirmation)')
+  const initBad = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/init', body: 'not-json' })
+  assert(initBad.status === 400 && /JSON/.test(JSON.parse(initBad.body).error), 'init with malformed body -> 400')
+
+  // cleanup fixture (profile + paper)
+  await fsp.rm(profileDir(fx.root), { recursive: true, force: true })
   await fsp.rm(fx.root, { recursive: true, force: true })
 
   console.log(JSON.stringify({
@@ -201,6 +276,7 @@ async function main() {
     read: '/paper-hl/read -> 200, 80 anchors, 5+ spans (original demo intact, user walkthrough may add), 22 sections (References empty)',
     write: 'POST /paper-hl/write: accept/recolor/add/review_section applied + persisted; review status merged into read',
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
+    profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + negatives',
     fallback: 'unknown paperId -> first paper; missing root -> 500 JSON',
   }, null, 2))
 }

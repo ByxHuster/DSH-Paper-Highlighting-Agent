@@ -50,6 +50,7 @@
 const {
   clampRange, sortAnchorIds, buildBlocks, renderText,
   buildWriteUrl, encodeWriteBody, callWrite,
+  callProfile, colorLegend,
   excludeRejected, localApplySpans, spanActiveStyle,
   markStyle, reconcileSpan,
   buildBlockSegments, buildSegmentMap, mapSelection,
@@ -165,6 +166,71 @@ function main() {
       () => { throw new Error('callWrite without transport should reject') },
       (err) => assert(/write transport not available/.test(err.message), 'callWrite without transport rejects cleanly'),
     )
+  }).then(() => {
+    // ══════════════════ v0.3 Phase 1: callProfile (profile transport) ══════════════════
+    const profCalls = []
+    const okProfileTransport = async (method, url, body) => { profCalls.push({ method, url, body }); return { ok: true, has_profile: true } }
+    return callProfile('GET', '', null, okProfileTransport).then((res) => {
+      assert(res && res.ok === true && res.has_profile === true, 'callProfile resolves the ok transport response')
+      assert(profCalls.length === 1 && profCalls[0].method === 'GET' && profCalls[0].url === '/paper-hl/profile' && profCalls[0].body === null,
+        'callProfile GET uses /paper-hl/profile with no body')
+    }).then(() => {
+      return callProfile('POST', '/init', { colors: {} }, okProfileTransport).then((res) => {
+        assert(res.ok === true, 'callProfile POST resolves ok')
+        assert(profCalls[1].method === 'POST' && profCalls[1].url === '/paper-hl/profile/init' && JSON.parse(profCalls[1].body).colors !== undefined,
+          'callProfile POST /init sends the JSON payload')
+      })
+    }).then(() => {
+      return callProfile('GET', '', null, async () => ({ ok: false, error: 'no profile route' })).then(
+        () => { throw new Error('callProfile should reject on ok:false') },
+        (err) => assert(/no profile route/.test(err.message), 'callProfile rejects an ok:false payload with its error'),
+      )
+    }).then(() => {
+      return callProfile('GET', '').then(
+        () => { throw new Error('callProfile without transport should reject') },
+        (err) => assert(/profile transport not available/.test(err.message), 'callProfile without transport rejects cleanly'),
+      )
+    })
+  }).then(() => {
+    // ══════════════════ v0.3 Phase 1: colorLegend (colors.yml-driven palette) ══════════════════
+    const defLegend = colorLegend(null)
+    assert(defLegend.length === 5, 'colorLegend(null): falls back to the 5 built-in colors')
+    assert(defLegend[0].name === 'yellow' && defLegend[0].color === '#fff3a0' && defLegend[0].label === '关键定义/方法',
+      'colorLegend(null): first entry matches the built-in COLOR_MAP/LABELS order')
+    const custom = colorLegend({ red: { color: '#ff0000', label: '红' }, teal: { color: '#7fe0d0', label: '新颜色' } })
+    assert(custom.length === 2 && custom[0].name === 'red' && custom[0].color === '#ff0000' && custom[0].label === '红',
+      'colorLegend(custom): resolves custom colors/labels in map order')
+    const partial = colorLegend({ blue: { color: '#123456' } })
+    assert(partial.length === 1 && partial[0].color === '#123456' && partial[0].label === '局限/风险',
+      'colorLegend(partial): missing label falls back to the built-in label')
+    const empty = colorLegend({})
+    assert(empty.length === 5 && empty[0].color === '#fff3a0', 'colorLegend({}): empty map falls back to the defaults')
+    const unknown = colorLegend({ x: {} })
+    assert(unknown.length === 1 && unknown[0].color === '#cccccc' && unknown[0].label === 'x',
+      'colorLegend: unknown color name + missing data → neutral chip + name label')
+    assert(colorLegend(undefined).length === 5 && colorLegend(null).length === 5, 'colorLegend: null/undefined → defaults')
+
+    // markStyle resolves the chip background through the profile colors (4th arg)
+    const ms1 = markStyle({ id: 's-1', color: 'red', status: 'proposed' }, false, false, { red: { color: '#ff0000', label: '红' } })
+    assert(ms1.background === '#ff0000', 'markStyle(colors): chip background resolved via the profile color map')
+    const ms2 = markStyle({ id: 's-1', color: 'red', status: 'proposed' }, false, false, null)
+    assert(ms2.background === '#ff9c94', 'markStyle(colors=null): falls back to the built-in COLOR_MAP')
+    const ms3 = markStyle({ id: 's-1', color: 'teal', status: 'accepted' }, true, true, { teal: { color: '#7fe0d0', label: '新颜色' } })
+    assert(ms3.background === '#7fe0d0' && ms3.opacity === 1 && ms3.outline !== undefined, 'markStyle(colors): custom color + status style + outline')
+    const ms4 = markStyle({ id: 's-1', color: 'nope', status: 'proposed' }, false, false, { red: { color: '#ff0000' } })
+    assert(ms4.background === 'nope', 'markStyle(colors): unknown span color renders its literal value (no crash)')
+
+    // renderText passes opts.colors through to markStyle
+    const coloredOut = renderText('hello world', [
+      { id: 's-1', anchor: 'a-1', char_start: 0, char_end: 5, color: 'red', status: 'proposed' },
+    ], { colors: { red: { color: '#ff0000', label: '红' } } })
+    const cMark = coloredOut.find((n) => n && n.type === 'mark')
+    assert(cMark && cMark.props.style.background === '#ff0000', 'renderText(opts.colors): mark background from the profile palette')
+    const defaultOut = renderText('hello world', [
+      { id: 's-1', anchor: 'a-1', char_start: 0, char_end: 5, color: 'red', status: 'proposed' },
+    ])
+    const dMark = defaultOut.find((n) => n && n.type === 'mark')
+    assert(dMark && dMark.props.style.background === '#ff9c94', 'renderText without opts.colors: built-in color (backward compat)')
   }).then(() => {
     // ══════════════════ P2-b: excludeRejected ══════════════════
     const mixed = [
@@ -450,6 +516,7 @@ function main() {
       p2c: 'markStyle (color chip + status + selected outline) + renderText(opts) onClick/active + reconcileSpan (server-confirmed merge, immutability)',
       p2d: 'buildBlockSegments/buildSegmentMap (flat segment map) + mapSelection matrix (same/cross-segment, reverse, out-of-range, empty, cross-anchor) + nodeOffsetToSeg/selectionToNorm DOM-ish resolution + renderText(withSegments) data-phl-seg wrapping + reconcileSpan clientId match',
       p2e: 'sectionList (reviewable filter + plan/override status merge) + currentSectionId (viewport-middle rule, paper_title/empty excluded, missing blockTop skipped)',
+      v03p1: 'callProfile (GET/POST/ok:false/no-transport) + colorLegend (null/custom/partial/empty/unknown fallbacks) + markStyle(colors 4th arg) + renderText(opts.colors) — colors.yml-driven palette',
     }, null, 2))
     return null
   })

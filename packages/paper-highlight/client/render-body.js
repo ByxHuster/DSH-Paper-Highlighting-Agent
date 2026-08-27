@@ -41,6 +41,31 @@ const COLOR_LABELS = {
 }
 
 /**
+ * v0.3 Phase 1 · colors.yml-driven palette (design §4.3 L1).
+ *
+ * Resolve the profile color map (name → { color, label }) into a flat legend
+ * list [{name, color, label}]. Null / empty / partial maps fall back to the
+ * built-in five colors (COLOR_MAP / COLOR_LABELS), so the UI keeps working
+ * before onboarding and when a custom color lacks a label. This single pure
+ * function drives the legend, the recolor swatches and the add-popup palette.
+ */
+function colorLegend(colors) {
+  const src = colors && typeof colors === 'object' ? colors : null
+  let names = src ? Object.keys(src) : []
+  if (names.length === 0) names = Object.keys(COLOR_MAP)
+  const list = []
+  for (const name of names) {
+    const c = src && src[name]
+    list.push({
+      name,
+      color: (c && c.color) || COLOR_MAP[name] || '#cccccc',
+      label: (c && c.label) || COLOR_LABELS[name] || name,
+    })
+  }
+  return list
+}
+
+/**
  * Clamp a 0-based half-open span range to [0, len]. Tolerates whitespace /
  * normalization drift between anchors.json and the rendered text (design §10
  * #4): a slightly out-of-range span still renders instead of throwing mid-slice.
@@ -90,10 +115,21 @@ function buildBlocks(anchors, spans, sections) {
 /**
  * Merge the visual style for one highlight mark (P2-c): base color chip + the
  * status style (spanActiveStyle) + the selected outline when active. Pure.
+ * v0.3 Phase 1: `colors` (optional) is the profile color map (name →
+ * {color,label}); when present the chip background resolves through it
+ * (colors.yml-driven), otherwise the built-in COLOR_MAP is used.
  */
-function markStyle(span, isActive, clickable) {
+function markStyle(span, isActive, clickable, colors) {
+  const legend = colorLegend(colors)
+  let background = span.color
+  for (const l of legend) {
+    if (l.name === span.color) {
+      background = l.color
+      break
+    }
+  }
   const style = Object.assign(
-    { background: COLOR_MAP[span.color] || span.color, padding: '1px 0', borderRadius: 2, cursor: clickable ? 'pointer' : 'help' },
+    { background, padding: '1px 0', borderRadius: 2, cursor: clickable ? 'pointer' : 'help' },
     spanActiveStyle(span.status)
   )
   if (isActive) {
@@ -139,7 +175,7 @@ function renderText(text, spans, opts) {
     if (end > start) {
       const props = {
         key: s.id,
-        style: markStyle(s, s.id === activeSpanId, !!onMarkClick),
+        style: markStyle(s, s.id === activeSpanId, !!onMarkClick, opts && opts.colors),
         title: (s.rationale || s.color) + (s.status ? ' [' + s.status + ']' : '')
       }
       if (withSeg) Object.assign(props, segProps(si))
@@ -195,6 +231,27 @@ function callWrite(action, paperId, transport) {
   if (!t) return Promise.reject(new Error('paper-highlight: write transport not available'))
   return Promise.resolve(t(url, body)).then((res) => {
     if (!res || res.ok !== true) throw new Error((res && res.error) || ('write ' + url + ' failed'))
+    return res
+  })
+}
+
+/**
+ * v0.3 Phase 1 · profile data function. Sends one request to the profile
+ * routes: callProfile('GET', '') → GET /paper-hl/profile; callProfile('POST',
+ * '/init', payload) → POST /paper-hl/profile/init; callProfile('POST',
+ * '/apply', payload) → POST /paper-hl/profile/apply. Resolves with the parsed
+ * JSON response ({ok:true,…}), rejecting on ok:false or transport failure.
+ * `transport` is injected by the embedding code (durable bundle: profileData
+ * fetch; dynamic half: not wired → clean rejection, like callWrite).
+ */
+function callProfile(method, path, payload, transport) {
+  const url = '/paper-hl/profile' + (path || '')
+  const body = payload ? JSON.stringify(payload) : null
+  const m = method || 'GET'
+  const t = transport || (typeof profileData === 'function' ? profileData : null)
+  if (!t) return Promise.reject(new Error('paper-highlight: profile transport not available'))
+  return Promise.resolve(t(m, url, body)).then((res) => {
+    if (!res || res.ok !== true) throw new Error((res && res.error) || ('profile ' + m + ' ' + url + ' failed'))
     return res
   })
 }
@@ -499,6 +556,10 @@ ${encodeWriteBody.toString()}
 
 ${callWrite.toString()}
 
+${callProfile.toString()}
+
+${colorLegend.toString()}
+
 ${excludeRejected.toString()}
 
 ${localApplySpans.toString()}
@@ -525,6 +586,13 @@ ${sectionList.toString()}
 
 ${currentSectionId.toString()}
 
+function defaultOnboardDraft(colors) {
+  const legend = colorLegend(colors)
+  const c = {}
+  for (const l of legend) c[l.name] = { color: l.color, label: l.label }
+  return { colors: c, density: '每节 3-5 处', granularity: '句子级' }
+}
+
 function PaperView() {
   const [state, setState] = React.useState({ phase: 'loading', error: null, data: null, papers: [], paperId: null })
   // v0.2 Phase 2 interaction state:
@@ -545,6 +613,20 @@ function PaperView() {
   // ({status, reviewed_at}); currentSection = id of the section in view.
   const [sectionOverrides, setSectionOverrides] = React.useState({})
   const [currentSection, setCurrentSection] = React.useState(null)
+  // v0.3 Phase 1: profileState = { loading, has_profile, colors } from
+  // /paper-hl/profile (colors.yml-driven palette, D6); onboard = the cold-start
+  // onboarding form draft (null unless no profile exists yet).
+  const [profileState, setProfileState] = React.useState({ loading: true, has_profile: true, colors: null })
+  const [onboard, setOnboard] = React.useState(null)
+  const loadProfile = React.useCallback(() => {
+    callProfile('GET', '').then((res) => {
+      setProfileState({ loading: false, has_profile: !!res.has_profile, colors: (res.summary && res.summary.colors) || null })
+      if (!res.has_profile) setOnboard(defaultOnboardDraft(null))
+    }).catch(() => {
+      // host without the profile route (or offline) → fall back to defaults
+      setProfileState({ loading: false, has_profile: true, colors: null })
+    })
+  }, [])
   const load = React.useCallback((id) => {
     setState((s) => ({ ...s, phase: 'loading', error: null }))
     setSpansOverride(null)
@@ -560,7 +642,7 @@ function PaperView() {
       setState((s) => ({ ...s, phase: 'error', error: String((err && err.message) || err) }))
     })
   }, [])
-  React.useEffect(() => { load(null) }, [load])
+  React.useEffect(() => { loadProfile(); load(null) }, [loadProfile, load])
 
   if (state.phase === 'loading') {
     return React.createElement('div', { className: 'phl-wrap' },
@@ -580,6 +662,8 @@ function PaperView() {
   const spans = spansOverride || excludeRejected(highlights.spans || [])
   const blocks = buildBlocks(data.anchors || {}, spans, data.sections)
   const metaTitle = (highlights.paper && highlights.paper.title) || ''
+  // v0.3 Phase 1: the colors.yml-driven palette (legend / swatches / marks).
+  const palette = colorLegend(profileState.colors)
 
   // P2-d: the flat segment map drives selection→anchor mapping. segBaseOf maps
   // each block id to the index of its first segment in the flat list (absent
@@ -703,20 +787,20 @@ function PaperView() {
   const activeSpan = menuOpen && activeSpanId ? spans.find((s) => s.id === activeSpanId) || null : null
 
   const renderActionBar = (span) => {
-    const swatches = Object.keys(COLOR_MAP).map((c) =>
+    const swatches = palette.map((l) =>
       React.createElement('button', {
-        key: c,
-        className: 'phl-ab-swatch' + (c === span.color ? ' phl-ab-swatch-on' : ''),
-        style: { background: COLOR_MAP[c] },
-        title: COLOR_LABELS[c] || c,
-        onClick: () => applyAction({ action: 'recolor', span_id: span.id, color: c })
+        key: l.name,
+        className: 'phl-ab-swatch' + (l.name === span.color ? ' phl-ab-swatch-on' : ''),
+        style: { background: l.color },
+        title: l.label,
+        onClick: () => applyAction({ action: 'recolor', span_id: span.id, color: l.name })
       }, '')
     )
     const noteValue = drafts[span.id] !== undefined ? drafts[span.id] : (span.note || '')
     return React.createElement('div', { className: 'phl-ab' },
       React.createElement('div', { className: 'phl-ab-head' },
         React.createElement('span', { className: 'phl-ab-title' },
-          span.id + ' · ' + (COLOR_LABELS[span.color] || span.color) + (span.status ? ' [' + span.status + ']' : '')),
+          span.id + ' · ' + ((palette.find((l) => l.name === span.color) || {}).label || span.color) + (span.status ? ' [' + span.status + ']' : '')),
         React.createElement('button', { className: 'phl-ab-close', onClick: () => setMenuOpen(false) }, '×')
       ),
       React.createElement('div', { className: 'phl-ab-actions' },
@@ -769,9 +853,9 @@ function PaperView() {
   )
   const legend = React.createElement('div', { className: 'phl-legend' },
     React.createElement('span', { className: 'phl-count' }, blocks.length + ' 段 · ' + spans.length + ' 处高亮'),
-    Object.keys(COLOR_MAP).map((c) => React.createElement('span', { key: c, className: 'phl-legend-item' },
-      React.createElement('mark', { style: { background: COLOR_MAP[c] } }, ' '),
-      ' ' + (COLOR_LABELS[c] || c)
+    palette.map((l) => React.createElement('span', { key: l.name, className: 'phl-legend-item' },
+      React.createElement('mark', { style: { background: l.color } }, ' '),
+      ' ' + l.label
     ))
   )
   // P2-e: reviewable section bar (✓ on reviewed, highlight on the section in view).
@@ -791,7 +875,7 @@ function PaperView() {
   const body = React.createElement('div', { className: 'phl-body', onMouseUp: onBodyMouseUp, onScroll: onBodyScroll },
     blocks.map((b) => {
       const segBase = segBaseOf[b.id]
-      const kids = renderText(b.anchor.text, b.spans, { onMarkClick, activeSpanId, withSegments: segBase !== undefined, segBase: segBase || 0, anchorId: b.id })
+      const kids = renderText(b.anchor.text, b.spans, { onMarkClick, activeSpanId, withSegments: segBase !== undefined, segBase: segBase || 0, anchorId: b.id, colors: profileState.colors })
       const blockProps = { key: b.id, 'data-phl-anchor': b.id }
       if (b.anchor.type === 'title') {
         return React.createElement(b.isFirstTitle ? 'h1' : 'h2', Object.assign(blockProps, { className: 'phl-heading' }), ...kids)
@@ -815,13 +899,13 @@ function PaperView() {
           React.createElement('span', { className: 'phl-add-title' }, '新增高亮'),
           React.createElement('button', { className: 'phl-ab-close', onClick: () => setAddDraft(null) }, '×')
         ),
-        React.createElement('div', { className: 'phl-add-colors' }, ...Object.keys(COLOR_MAP).map((c) =>
+        React.createElement('div', { className: 'phl-add-colors' }, ...palette.map((l) =>
           React.createElement('button', {
-            key: c,
-            className: 'phl-add-swatch' + (c === addDraft.color ? ' phl-ab-swatch-on' : ''),
-            style: { background: COLOR_MAP[c] },
-            title: COLOR_LABELS[c] || c,
-            onClick: () => setAddDraft((d) => Object.assign({}, d, { color: c }))
+            key: l.name,
+            className: 'phl-add-swatch' + (l.name === addDraft.color ? ' phl-ab-swatch-on' : ''),
+            style: { background: l.color },
+            title: l.label,
+            onClick: () => setAddDraft((d) => Object.assign({}, d, { color: l.name }))
           }, '')
         )),
         React.createElement('input', {
@@ -844,7 +928,89 @@ function PaperView() {
       )
     : null
 
+  // v0.3 Phase 1: cold-start onboarding (D6) — shown only when no profile
+  // exists yet. Collects color semantics + density/granularity baseline and
+  // POSTs /paper-hl/profile/init to create colors.yml + initial rules.json.
+  const confirmInit = () => {
+    const d = onboard || defaultOnboardDraft(null)
+    callProfile('POST', '/init', {
+      colors: d.colors,
+      rules: [
+        { rule: 'density_per_section: ' + d.density, enabled: true },
+        { rule: 'granularity: ' + d.granularity, enabled: true },
+      ],
+    }).then(() => {
+      setFlash({ kind: 'info', text: '画像初始化完成' })
+      loadProfile()
+    }).catch((err) => {
+      setFlash({ kind: 'error', text: '初始化失败：' + String((err && err.message) || err) })
+    })
+  }
+  const renderOnboarding = () => {
+    const draft = onboard || defaultOnboardDraft(null)
+    const patchColor = (name, field, value) => {
+      setOnboard((d) => {
+        const cur = d || defaultOnboardDraft(null)
+        return Object.assign({}, cur, { colors: Object.assign({}, cur.colors, { [name]: Object.assign({}, cur.colors[name], { [field]: value }) }) })
+      })
+    }
+    const patchMeta = (field, value) => setOnboard((d) => Object.assign({}, d || defaultOnboardDraft(null), { [field]: value }))
+    const colorRows = Object.keys(draft.colors).map((name) => {
+      const c = draft.colors[name]
+      return React.createElement('div', { key: name, className: 'phl-onb-row' },
+        React.createElement('span', { className: 'phl-onb-name' }, name),
+        React.createElement('input', { className: 'phl-onb-hex', value: c.color, onChange: (e) => patchColor(name, 'color', e.target.value) }),
+        React.createElement('input', { className: 'phl-onb-label', value: c.label, onChange: (e) => patchColor(name, 'label', e.target.value) })
+      )
+    })
+    return React.createElement('div', { className: 'phl-onb' },
+      React.createElement('h2', { className: 'phl-onb-title' }, '初始化高亮画像'),
+      React.createElement('p', { className: 'phl-onb-desc' }, '先声明你的颜色语义与密度/粒度基线，之后 Agent 的 propose 将按此收敛；可在「画像」面板随时修改。'),
+      React.createElement('div', { className: 'phl-onb-colors' },
+        React.createElement('div', { className: 'phl-onb-colors-head' },
+          React.createElement('span', { className: 'phl-onb-name' }, '颜色'),
+          React.createElement('span', { className: 'phl-onb-hex' }, '色值'),
+          React.createElement('span', { className: 'phl-onb-label' }, '语义')
+        ),
+        ...colorRows
+      ),
+      React.createElement('div', { className: 'phl-onb-meta' },
+        React.createElement('label', { className: 'phl-onb-field' },
+          React.createElement('span', null, '每节密度基线'),
+          React.createElement('select', {
+            className: 'phl-onb-select',
+            value: draft.density,
+            onChange: (e) => patchMeta('density', e.target.value)
+          },
+            React.createElement('option', { value: '每节 2-4 处' }, '每节 2-4 处'),
+            React.createElement('option', { value: '每节 3-5 处' }, '每节 3-5 处'),
+            React.createElement('option', { value: '每节 4-6 处' }, '每节 4-6 处')
+          )
+        ),
+        React.createElement('label', { className: 'phl-onb-field' },
+          React.createElement('span', null, '高亮粒度'),
+          React.createElement('select', {
+            className: 'phl-onb-select',
+            value: draft.granularity,
+            onChange: (e) => patchMeta('granularity', e.target.value)
+          },
+            React.createElement('option', { value: '短语级' }, '短语级'),
+            React.createElement('option', { value: '句子级' }, '句子级'),
+            React.createElement('option', { value: '段落级' }, '段落级')
+          )
+        )
+      ),
+      React.createElement('div', { className: 'phl-onb-actions' },
+        React.createElement('button', { className: 'phl-onb-btn phl-onb-confirm', onClick: confirmInit }, '初始化画像')
+      )
+    )
+  }
+
   const actionBar = activeSpan ? renderActionBar(activeSpan) : null
+  // v0.3 Phase 1: cold start → onboarding panel replaces the paper view.
+  if (!profileState.loading && !profileState.has_profile) {
+    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderOnboarding())
+  }
   return React.createElement('div', { className: 'phl-wrap' }, header, legend, sectionBar, flashEl, rescueHint, addPopup, actionBar, body)
 }
 
@@ -905,7 +1071,22 @@ function apply(ctx) {
       '.phl-section-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.phl-section-check{font-weight:700;flex:0 0 auto}',
       '.phl-section-done{border-color:rgba(120,220,130,.6);color:rgba(160,230,170,.95);background:rgba(120,220,130,.08)}',
-      '.phl-section-curr{border-color:rgba(150,190,255,.7);color:#dce8ff;background:rgba(150,190,255,.12)}'
+      '.phl-section-curr{border-color:rgba(150,190,255,.7);color:#dce8ff;background:rgba(150,190,255,.12)}',
+      '.phl-onb{max-width:560px;margin:40px auto 0;padding:20px 24px;border-radius:10px;border:1px solid rgba(128,128,128,.35);background:rgba(128,128,128,.06)}',
+      '.phl-onb-title{margin:0 0 6px;font-size:16px}',
+      '.phl-onb-desc{margin:0 0 14px;color:rgba(128,128,128,.9);font-size:12px}',
+      '.phl-onb-colors{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}',
+      '.phl-onb-colors-head{display:grid;grid-template-columns:90px 120px 1fr;gap:8px;font-size:11px;color:rgba(128,128,128,.8)}',
+      '.phl-onb-row{display:grid;grid-template-columns:90px 120px 1fr;gap:8px;align-items:center}',
+      '.phl-onb-name{font-size:12px;font-weight:600}',
+      '.phl-onb-hex{padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px;font-family:monospace}',
+      '.phl-onb-label{padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
+      '.phl-onb-meta{display:flex;gap:16px;margin-bottom:16px}',
+      '.phl-onb-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:rgba(128,128,128,.9)}',
+      '.phl-onb-select{padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
+      '.phl-onb-actions{display:flex;justify-content:flex-end}',
+      '.phl-onb-btn{padding:5px 14px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+      '.phl-onb-btn:hover{background:rgba(120,220,130,.14)}'
     ].join(''))
   }, 'paper-highlight: styles')
 
@@ -928,6 +1109,8 @@ module.exports = {
   buildWriteUrl,
   encodeWriteBody,
   callWrite,
+  callProfile,
+  colorLegend,
   excludeRejected,
   localApplySpans,
   spanActiveStyle,
