@@ -386,10 +386,34 @@ async function main() {
   assertLosslessJson(fmRead, 'read_field_map output')
   await fsp.rm(fmRoot, { recursive: true, force: true })
 
+  // 13) reflect_paper (v0.4 Phase 3, D5): paper-level reflection scaffold —
+  //     inline content + stats + lossless + file write + unknown paper.
+  const { reflectPaperTool } = require('../host/tools')
+  const rp = await reflectPaperTool().execute({ paper_id: secPaperId, root: secRoot })
+  assert(rp.ok === true && rp.title === 'Title' && typeof rp.content === 'string' && rp.content.startsWith('# 论文级反思 — Title'),
+    'reflect_paper: inline scaffold with title')
+  assert(rp.stats.total === 6 && rp.stats.decided === 5 && rp.stats.pending === 1, 'reflect_paper: stats from whole-paper diff')
+  assert(rp.content.includes('整篇差异汇总') && rp.content.includes('认可率（accepted/decided）'), 'reflect_paper: diff summary section')
+  assert(rp.content.includes('| s2 |') && rp.content.includes('| s3 |'), 'reflect_paper: per-section table rows')
+  assert(rp.content.includes('画像现状：'), 'reflect_paper: profile line rendered')
+  assert(rp.content.includes('领域地图增补点') && rp.content.includes('导出状态'), 'reflect_paper: field-map + export sections')
+  assertLosslessJson(rp, 'reflect_paper inline output')
+
+  const rpFile = await reflectPaperTool().execute({ paper_id: secPaperId, output: 'file', root: secRoot })
+  assert(rpFile.ok === true && rpFile.output === 'file' && typeof rpFile.file === 'string' && /paper-reflection\.md$/.test(rpFile.file),
+    'reflect_paper: file output returns paper-reflection.md path')
+  assert(rpFile.content === null && typeof rpFile.content_chars === 'number', 'reflect_paper: file output omits inline content')
+  const rpText = await fsp.readFile(rpFile.file, 'utf8')
+  assert(rpText.startsWith('# 论文级反思 — Title'), 'reflect_paper: written file readable')
+  assertLosslessJson(rpFile, 'reflect_paper file output')
+
+  const rpGhost = await reflectPaperTool().execute({ paper_id: 'p-ghost', root: secRoot })
+  assert(rpGhost.ok === false && typeof rpGhost.error === 'string', 'reflect_paper: unknown paper ok:false')
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper', 'read_field_map'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper', 'read_field_map', 'reflect_paper'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
@@ -401,6 +425,7 @@ async function main() {
     profile_tools: 'read_profile (has_profile/summary/pending, cold-start defaults) + confirm_proposal (one-shot host merge: rules/exemplars applied, confirmation append-only, double-confirm rejected) (v0.3 Phase 0)',
     export_tool: 'export_paper — inline (content + stats, lossless) / file (data/<paper_id>/export/<paper_id>.<ext>), format html|md, include_pending effect (4→5 marks), unknown format/paper ok:false (v0.4 Phase 1)',
     field_map_tool: 'read_field_map — read-only domain-map injection (content+path+chars), missing -> ok:false with create-hint, root resolution, lossless (v0.4 Phase 2)',
+    reflect_paper_tool: 'reflect_paper — paper-level reflection scaffold (D5): whole-paper diff stats + per-section table + profile line + field-map/export sections; inline/file output, lossless, unknown paper ok:false (v0.4 Phase 3)',
   }, null, 2))
 }
 

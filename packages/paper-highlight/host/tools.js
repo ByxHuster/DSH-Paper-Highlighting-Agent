@@ -21,6 +21,7 @@ const { readHighlights, writeHighlights, readPaperMd, readAnchors, readMeta, pap
 const { buildSections } = require('./sections')
 const { summarizeDiff } = require('./diff')
 const { buildExport, normalizeFormat, writeExport } = require('./export')
+const { paperReflectionTemplate, writePaperReflection } = require('./reflection')
 const {
   profileDir,
   profileExists,
@@ -151,7 +152,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool(), readFieldMapTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool(), readFieldMapTool(), reflectPaperTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -534,4 +535,67 @@ function readFieldMapTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, readFieldMapTool, allTools }
+/** reflect_paper tool definition (v0.4 Phase 3, D5): paper-level reflection scaffold. */
+function reflectPaperTool() {
+  return {
+    name: 'reflect_paper',
+    description:
+      'Generate the structured paper-level reflection scaffold for a paper at wrap-up ' +
+      '(all reviewable sections reviewed, or the user says "论文完毕"). Reads the paper ' +
+      'highlights + L1 profile + whole-paper diff (summarizeDiff, no section) and renders ' +
+      'paperReflectionTemplate markdown (D5): overview / review-progress table / diff summary ' +
+      '/ inferred preferences / field-map augmentation / future work / export status. ' +
+      'output: "inline" returns the scaffold (default) | "file" writes ' +
+      'data/<paper_id>/paper-reflection.md and returns the path. The agent then fills the ' +
+      'natural-language placeholders via file tools; preference updates still go through ' +
+      'profile_proposal (user confirmation) — this tool never writes rules.',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: 'Paper id (from parse_pdf)' },
+      output: { type: 'string', description: '"inline" returns scaffold (default) | "file" writes data/<paper_id>/paper-reflection.md' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      let highlights
+      try {
+        highlights = await readHighlights(root, args.paper_id)
+      } catch (err) {
+        return { ok: false, paper_id: args.paper_id, error: String(err && err.message ? err.message : err) }
+      }
+      const has = await profileExists(root)
+      const profile = has ? await readProfile(root) : null
+      const [paperMd, anchors] = await Promise.all([
+        readPaperMd(root, args.paper_id).catch(() => null),
+        readAnchors(root, args.paper_id).catch(() => null),
+      ])
+      const sections = paperMd && anchors ? buildSections({ paperMd, anchors }) : null
+      const diff = summarizeDiff(highlights.spans)
+      const content = paperReflectionTemplate({
+        highlights,
+        diff,
+        profileSummary: buildProfileSummary(profile),
+        sections,
+      })
+      const base = {
+        ok: true,
+        paper_id: args.paper_id,
+        title: (highlights.paper && highlights.paper.title) || '',
+        stats: { total: diff.total, decided: diff.decided, pending: diff.pending, accept_rate: diff.accept_rate },
+        output: 'inline',
+        content,
+        file: null,
+      }
+      if (args.output === 'file') {
+        const file = await writePaperReflection(root, args.paper_id, content)
+        return { ...base, output: 'file', content: null, content_chars: content.length, file }
+      }
+      return base
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, readFieldMapTool, reflectPaperTool, allTools }

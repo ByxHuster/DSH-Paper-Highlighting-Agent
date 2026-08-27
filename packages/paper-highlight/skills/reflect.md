@@ -69,3 +69,29 @@ description: 论文审查后反思（章节反思）——重读 paper.highlight
 ## 输出
 
 该节差异摘要（接受/删除/改色/新增计数 + 接受率）、推断出的模式、画像更新提案要点；等待用户「确认 / 否决」。
+
+---
+
+# 论文级反思（收尾，v0.4 Phase 3，D5）
+
+用途：整篇论文审查完的「收尾」动作 —— 把逐节反思汇总为**可交付、可沉淀**的论文级总结，并落盘 `data/<paper_id>/paper-reflection.md`。
+
+## 触发
+
+全部可审查节 `status:'reviewed'`，**或**用户说「论文完毕 / 收尾」。
+
+## 步骤
+
+1. **整篇差异汇总**：调用 `summarize_section_diff`（paper_id，**省略 section 参数**）→ 整篇分类计数 + 认可率 + 样例。
+2. **生成反思脚手架**：调用 `reflect_paper` 工具（paper_id, root）→ 返回 `paperReflectionTemplate` 结构化模板（论文概述 / 审查进度表 / 整篇差异汇总 / 沉淀偏好 / 领域地图增补点 / 未来工作方向 / 导出状态），其中数据派生部分已填（节表、diff 计数、画像现状、导出候选数）。
+3. **填充自然语言**（用 `write` / `edit` 工具落到 `data/<paper_id>/paper-reflection.md`，可先 `reflect_paper output:'file'` 写脚手架再编辑）：
+   - 论文概述：一段话概括本文贡献 + 领域定位 + 高亮策略要点（对照 `read_field_map`，见 global-read 步骤 3）。
+   - 沉淀偏好：把 diff 样例映射为「推断信号」（接受=偏好稳、删除=价值/密度收紧、改色=颜色-语义修正、改范围=粒度偏好、新增=关注点）；**偏好仍走 `profile_proposal`（需用户确认）**，Agent 不直接写 rules.json。
+   - 领域地图增补点：本论文在领域主线的定位增量 / 提议增补 `field-map.md` 的条目（field-map 不存在则提议初建；增补用文件工具 append-only）。
+   - 未来工作方向：purple 类主张 / 值得继续深挖或存疑的方向。
+4. **呈报并收尾**：向用户汇报论文级反思要点 + 导出可用性（`export_paper` html|md）→ 可进入导出（用户决定时机）。
+
+## 完成标志
+
+- `data/<paper_id>/paper-reflection.md` 已落盘（含 7 个结构化小节，自然语言部分已填充）。
+- 已向用户呈报论文级反思摘要与下一步（导出 / 下一论文）。
