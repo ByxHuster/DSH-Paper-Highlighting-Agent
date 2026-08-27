@@ -96,8 +96,11 @@ const API_ORIGIN = 'http://127.0.0.1:3081'
 // new host route until the user restarts). Two scenarios are driven:
 //   has_profile=false → cold-start onboarding panel → POST /init → view switches
 //   has_profile=true  → legend / swatches / marks driven by the profile colors
-const profileState = { has_profile: false, colors: null }
+// v0.3 Phase 3: the mock GET serves the full four-layer profile so the edit
+// panel renders; POST /save is captured (payload asserted, not applied).
+const profileState = { has_profile: false, profile: null }
 const profileCapture = []
+const profileSaveCapture = []
 const CUSTOM_COLORS = {
   red: { color: '#ff0000', label: '红核心' },
   yellow: { color: '#fff3a0', label: '关键定义/方法' },
@@ -105,14 +108,32 @@ const CUSTOM_COLORS = {
   green: { color: '#b0e3a8', label: '可借鉴/启发' },
   purple: { color: '#d9b8f2', label: '待深挖/存疑' },
 }
+const MOCK_PROFILE = {
+  colors: CUSTOM_COLORS,
+  rules: [
+    { id: 'rule-1', rule: 'density_per_section: 每节 3-5 处', confidence: 'medium', source: 'default-cold-start', enabled: true },
+    { id: 'rule-2', rule: 'granularity: 句子级', confidence: 'medium', source: 'default-cold-start', enabled: true },
+  ],
+  exemplars: [
+    { span_id: 's-009', suggested: { color: 'blue' }, user_decision: { color: 'red' }, section: 's3', note: '问题/动机类内容用户归 red' },
+    { span_id: 's-012', suggested: null, user_decision: { action: 'added', color: 'purple' }, section: 's3', note: '用户节标题 purple 标记' },
+  ],
+  stats: {
+    papers: [{ paper_id: 'p-mikolov-2013-2013-1-word2vec', sections_reviewed: 1, decided: 4, approved: 2, approve_rate: 0.5, modify_rate: 0.5, change_kinds: { accepted: 0, rejected: 1, recolored: 1, rescoped: 1, user_added: 1, pending: 1 }, color_distribution: { red: 1, blue: 1, purple: 1 } }],
+    overall: { papers_reviewed: 1, decided: 4, approved: 2, approve_rate: 0.5, modify_rate: 0.5 },
+  },
+  reflection_notes: '# 反思笔记（L4b）\n\n测试笔记',
+}
 function mockProfileHandler(url, opts) {
   if (opts && opts.method === 'POST') {
-    profileCapture.push({ url, payload: JSON.parse(opts.body || '{}') })
-    // init/apply answer ok; the subsequent GET re-read reflects the new state
+    const payload = JSON.parse(opts.body || '{}')
+    if (url.indexOf('/paper-hl/profile/save') === 0) profileSaveCapture.push({ url, payload })
+    else profileCapture.push({ url, payload })
+    // init/apply/save answer ok; the subsequent GET re-read reflects the new state
     return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, has_profile: true }) })
   }
   const res = profileState.has_profile
-    ? { ok: true, has_profile: true, profile: { colors: profileState.colors }, summary: { colors: profileState.colors } }
+    ? { ok: true, has_profile: true, profile: profileState.profile, summary: { colors: profileState.profile.colors } }
     : { ok: true, has_profile: false, profile: null, summary: null, pending_proposals: [] }
   return Promise.resolve({ ok: true, status: 200, json: async () => res })
 }
@@ -244,12 +265,17 @@ const p1 = ['colorLegend', 'callProfile', 'profileData', '/paper-hl/profile', '�
 for (const needle of p1) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 1 profile plumbing: ${needle}`)
 }
+const p3 = ['profilePanelModel', 'profileSavePayload', '/paper-hl/profile/save', '个性化画像', 'phl-pnl', '保存全部', '返回论文', '添加规则', 'data-phl-color', 'data-phl-ex']
+for (const needle of p3) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 3 profile-panel plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
 console.log('bundle selection→add/rescope (P2-d):', p2d.join(', '))
 console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
 console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
+console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -367,7 +393,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const initBtn = collectButtons(onb).find((b) => textOf(b) === '初始化画像')
   assert(initBtn !== undefined, 'P1: onboarding has the 初始化画像 button')
   profileState.has_profile = true
-  profileState.colors = CUSTOM_COLORS
+  profileState.profile = MOCK_PROFILE
   profileCapture.length = 0
   initBtn.props.onClick()
   assert(profileCapture.length === 1 && profileCapture[0].url === '/paper-hl/profile/init', 'P1: init POST targets /paper-hl/profile/init')
@@ -663,7 +689,90 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const doneChip = chipsAfterReview.find((c) => c.props['data-phl-sec'] === expectedCurrent)
   assert(doneChip !== undefined && (doneChip.props.className || '').indexOf('phl-section-done') >= 0, 'P2-e: reviewed section chip shows the done state (✓)')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete driven (write + profile mocked, real data untouched)`)
+  // ══════════════ v0.3 Phase 3: profile edit panel ══════════════
+  const saveAllBtn = () => collectButtons(tree).find((b) => textOf(b) === '保存全部')
+  const profileBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-profile-btn') === 0)
+  assert(profileBtn !== undefined, 'P3: 画像 toolbar button present')
+  profileBtn.props.onClick()
+  rerender()
+  const pnl = byType.div.find((d) => (d.props.className || '') === 'phl-pnl')
+  assert(pnl !== undefined, 'P3: profile panel (.phl-pnl) rendered after clicking 画像')
+  const pnlText = textOf(pnl)
+  assert(pnlText.includes('个性化画像') && pnlText.includes('L1') && pnlText.includes('L2') && pnlText.includes('L3') && pnlText.includes('L4a') && pnlText.includes('L4b'),
+    'P3: panel renders the four layers (L1 colors … L4b notes)')
+  assert(byType.div.filter((d) => d.props['data-phl-color'] !== undefined).length === 5, 'P3: 5 color rows')
+  assert(byType.div.filter((d) => d.props['data-phl-rule'] !== undefined).length === 2, 'P3: 2 rule rows (rule-1/rule-2)')
+  assert(byType.div.filter((d) => d.props['data-phl-ex'] !== undefined).length === 2, 'P3: 2 exemplar rows')
+  assert(byType.div.filter((d) => (d.props.className || '').indexOf('phl-pnl-stats-row') >= 0).length === 1, 'P3: 1 stats row (per-paper)')
+  const notesTa = byType.textarea ? byType.textarea.filter((t) => (t.props.className || '') === 'phl-pnl-notes') : []
+  assert(notesTa.length === 1, 'P3: notes textarea present')
+  assert(saveAllBtn() !== undefined, 'P3: 保存全部 button present')
+
+  // edit the red hex → 保存全部 → POST /profile/save with the edited color
+  profileSaveCapture.length = 0
+  const redHex = byType.input.filter((i) => (i.props.className || '') === 'phl-pnl-hex')[0]
+  redHex.props.onChange({ target: { value: '#112233' } })
+  rerender()
+  saveAllBtn().props.onClick()
+  assert(profileSaveCapture.length === 1 && profileSaveCapture[0].url === '/paper-hl/profile/save', 'P3: save POST targets /paper-hl/profile/save')
+  let savePayload = profileSaveCapture[0].payload
+  assert(savePayload.colors && savePayload.colors.red && savePayload.colors.red.color === '#112233', 'P3: save payload carries the edited red hex')
+  assert(savePayload.colors.red.label === '红核心', 'P3: save payload keeps the red label')
+  assert(savePayload.rules && savePayload.rules.length === 2, 'P3: save payload carries the full rule list')
+
+  // toggle rule-1 enabled off → save
+  profileSaveCapture.length = 0
+  const ruleOns = byType.input.filter((i) => (i.props.className || '') === 'phl-pnl-rule-on')
+  assert(ruleOns.length === 2, 'P3: 2 rule enable checkboxes')
+  ruleOns[0].props.onChange({ target: { checked: false } })
+  rerender()
+  saveAllBtn().props.onClick()
+  savePayload = profileSaveCapture[0].payload
+  assert(savePayload.rules[0].id === 'rule-1' && savePayload.rules[0].enabled === false, 'P3: save payload carries rule-1 disabled (id preserved)')
+
+  // remove the first exemplar → save
+  profileSaveCapture.length = 0
+  const exRows = byType.div.filter((d) => d.props['data-phl-ex'] !== undefined)
+  const exDel = collectButtons(exRows[0]).find((b) => (b.props.className || '').indexOf('phl-pnl-del') === 0)
+  assert(exDel !== undefined, 'P3: exemplar rows carry a delete button')
+  exDel.props.onClick()
+  rerender()
+  assert(byType.div.filter((d) => d.props['data-phl-ex'] !== undefined).length === 1, 'P3: exemplar row removed from the draft')
+  saveAllBtn().props.onClick()
+  savePayload = profileSaveCapture[0].payload
+  assert(savePayload.exemplars && savePayload.exemplars.length === 1, 'P3: save payload carries the reduced exemplar list')
+
+  // edit notes → save
+  profileSaveCapture.length = 0
+  notesTa[0].props.onChange({ target: { value: 'updated reflection note' } })
+  rerender()
+  saveAllBtn().props.onClick()
+  savePayload = profileSaveCapture[0].payload
+  assert(savePayload.reflection_notes === 'updated reflection note', 'P3: save payload carries the edited notes')
+
+  // add a new rule → row appears → save carries 3 rules
+  profileSaveCapture.length = 0
+  const newRuleInput = byType.input.filter((i) => (i.props.className || '').indexOf('phl-pnl-rule-new') >= 0)[0]
+  newRuleInput.props.onChange({ target: { value: 'value/density: 背景铺垫类句子不高亮' } })
+  rerender()
+  const addRuleBtn = collectButtons(tree).find((b) => textOf(b) === '添加规则')
+  assert(addRuleBtn !== undefined, 'P3: 添加规则 button present')
+  addRuleBtn.props.onClick()
+  rerender()
+  assert(byType.div.filter((d) => d.props['data-phl-rule'] !== undefined).length === 3, 'P3: new rule row appended to the draft')
+  saveAllBtn().props.onClick()
+  savePayload = profileSaveCapture[0].payload
+  assert(savePayload.rules.length === 3 && savePayload.rules[2].rule === 'value/density: 背景铺垫类句子不高亮', 'P3: save payload carries the new rule (no id → host assigns)')
+
+  // back to the paper view
+  const backBtn = collectButtons(tree).find((b) => textOf(b) === '← 返回论文')
+  assert(backBtn !== undefined, 'P3: 返回论文 button present')
+  backBtn.props.onClick()
+  rerender()
+  assert(byType.h1 && byType.h1.length === 1, 'P3: paper view restored after closing the panel')
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-pnl').length === 0, 'P3: panel dismissed')
+
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) driven (write + profile mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

@@ -265,6 +265,37 @@ async function main() {
   const initBad = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/init', body: 'not-json' })
   assert(initBad.status === 400 && /JSON/.test(JSON.parse(initBad.body).error), 'init with malformed body -> 400')
 
+  // ══════════════════ v0.3 Phase 3: POST /paper-hl/profile/save ══════════════════
+  // GUI edit-panel write: partial update {colors?, rules?, exemplars?, reflection_notes?}
+  // merged by applyProfileUpdate (stats NOT editable) → atomic write.
+  const save = await invoke(wroute.handler, {
+    method: 'POST',
+    url: '/paper-hl/profile/save',
+    body: JSON.stringify({
+      colors: { red: { color: '#ff0000', label: '红核心' } },
+      rules: [
+        { id: 'rule-1', rule: 'density_per_section: 每节 3-5 处', confidence: 'medium', enabled: true },
+        { rule: 'granularity: 短语级', confidence: 'low', enabled: false },
+      ],
+      exemplars: [{ span_id: 's-001', note: 'keep' }],
+      reflection_notes: '# 新笔记',
+    }),
+  })
+  const jsave = JSON.parse(save.body)
+  assert(save.status === 200 && jsave.ok === true, 'POST /profile/save -> 200 ok')
+  assert(jsave.applied.colors === 1 && jsave.applied.rules === 2 && jsave.applied.exemplars === 1 && jsave.applied.reflection_notes === true,
+    'save applied summary covers all four editable layers')
+  const gSave = await invoke(wroute.handler, { url: '/paper-hl/profile' })
+  const jgSave = JSON.parse(gSave.body)
+  assert(jgSave.profile.colors.red.color === '#ff0000' && jgSave.profile.colors.red.label === '红核心', 'save persisted the color edit')
+  assert(jgSave.profile.rules.length === 2 && jgSave.profile.rules[0].id === 'rule-1' && jgSave.profile.rules[1].rule.indexOf('短语级') >= 0 && jgSave.profile.rules[1].enabled === false,
+    'save persisted the rule edits (kept id + new rule disabled)')
+  assert(jgSave.profile.exemplars.length === 1 && jgSave.profile.reflection_notes === '# 新笔记', 'save persisted exemplars + notes')
+  const saveBad = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/save', body: JSON.stringify({ colors: { red: { color: 'red' } } }) })
+  assert(saveBad.status === 400 && /hex/.test(JSON.parse(saveBad.body).error), 'save with invalid hex -> 400')
+  const saveBadJson = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/profile/save', body: 'nope' })
+  assert(saveBadJson.status === 400 && /JSON/.test(JSON.parse(saveBadJson.body).error), 'save with malformed body -> 400')
+
   // cleanup fixture (profile + paper)
   await fsp.rm(profileDir(fx.root), { recursive: true, force: true })
   await fsp.rm(fx.root, { recursive: true, force: true })
@@ -276,7 +307,7 @@ async function main() {
     read: '/paper-hl/read -> 200, 80 anchors, 5+ spans (original demo intact, user walkthrough may add), 22 sections (References empty)',
     write: 'POST /paper-hl/write: accept/recolor/add/review_section applied + persisted; review status merged into read',
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
-    profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + negatives',
+    profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + POST /save (edit-panel partial update: colors/rules/exemplars/notes, stats read-only) + negatives',
     fallback: 'unknown paperId -> first paper; missing root -> 500 JSON',
   }, null, 2))
 }

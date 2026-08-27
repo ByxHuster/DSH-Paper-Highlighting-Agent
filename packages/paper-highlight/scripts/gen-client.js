@@ -86,6 +86,10 @@ function generateBundle() {
   // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
   lines.push(`\t\texports.colorLegend = colorLegend;`)
   lines.push(`\t\texports.callProfile = callProfile;`)
+  // v0.3 Phase 3: profile edit-panel model + save payload builders.
+  lines.push(`\t\texports.profilePanelModel = profilePanelModel;`)
+  lines.push(`\t\texports.profilePanelColors = profilePanelColors;`)
+  lines.push(`\t\texports.profileSavePayload = profileSavePayload;`)
   lines.push(`\t\treturn module.exports;`)
   lines.push(`\t}`)
   lines.push(`});`)

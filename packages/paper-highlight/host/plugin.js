@@ -39,6 +39,7 @@ const {
   buildProfileSummary,
   nextRuleId,
   applyProposal,
+  applyProfileUpdate,
   readReflections,
   writeReflections,
   listPendingProposals,
@@ -146,6 +147,27 @@ async function handleWrite(root, url, req, res, sendJson) {
   } catch (err) {
     // validation / unknown-id / range errors → 400 (client bug, not a crash)
     sendJson(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
+/** POST /paper-hl/profile/save — GUI edit-panel write (v0.3 Phase 3):
+ *  body { colors?, rules?, exemplars?, reflection_notes? } → applyProfileUpdate
+ *  (pure merge, stats NOT editable) → atomic write → applied summary. */
+async function handleProfileSave(root, req, res, send) {
+  let body = {}
+  try {
+    body = JSON.parse((await readBody(req)) || '{}')
+  } catch {
+    send(res, 400, { ok: false, error: 'request body must be valid JSON' })
+    return
+  }
+  try {
+    const profile = await readProfile(root)
+    const result = applyProfileUpdate(profile, body)
+    await writeProfile(root, result.profile)
+    send(res, 200, { ok: true, applied: result.applied })
+  } catch (err) {
+    send(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
   }
 }
 
@@ -289,6 +311,10 @@ function apply(ctx, config) {
           await handleProfileInit(root, req, res, sendJson)
           return
         }
+        if (url.pathname === '/paper-hl/profile/save' && req.method === 'POST') {
+          await handleProfileSave(root, req, res, sendJson)
+          return
+        }
         if (url.pathname === '/paper-hl/profile/apply' && req.method === 'POST') {
           await handleProfileApply(root, url, req, res, sendJson)
           return
@@ -302,4 +328,4 @@ function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register(route), 'paper-highlight: /paper-hl route')
 }
 
-module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, listPaperIds, buildSections, mergePlanStatus }
+module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, listPaperIds, buildSections, mergePlanStatus }

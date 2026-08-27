@@ -56,6 +56,7 @@ const {
   buildBlockSegments, buildSegmentMap, mapSelection,
   nodeOffsetToSeg, blockChildToSeg, selectionToNorm,
   sectionList, currentSectionId,
+  profilePanelModel, profilePanelColors, profileSavePayload,
 } = require('../client/render-body')
 const { assert } = require('./verify')
 
@@ -231,6 +232,42 @@ function main() {
     ])
     const dMark = defaultOut.find((n) => n && n.type === 'mark')
     assert(dMark && dMark.props.style.background === '#ff9c94', 'renderText without opts.colors: built-in color (backward compat)')
+  }).then(() => {
+    // ══════════════════ v0.3 Phase 3: profile edit-panel model + save payload ══════════════════
+    const pnlNull = profilePanelModel(null)
+    assert(pnlNull.colors.length === 5 && pnlNull.colors[0].name === 'yellow', 'profilePanelModel(null): 5 default color rows')
+    assert(pnlNull.rules.length === 0 && pnlNull.exemplars.length === 0 && pnlNull.notes === '', 'profilePanelModel(null): empty rules/exemplars/notes fallback')
+    assert(pnlNull.stats && Array.isArray(pnlNull.stats.papers), 'profilePanelModel(null): stats skeleton present')
+
+    const prof = {
+      colors: { red: { color: '#ff0000', label: '红核心' }, blue: { color: '#8fd0f7', label: '局限/风险' } },
+      rules: [{ id: 'rule-1', rule: 'density: 3-5', enabled: true }, { id: 'rule-2', rule: 'granularity: 句子级', enabled: false }],
+      exemplars: [{ span_id: 's-001', note: 'x' }],
+      stats: { papers: [{ paper_id: 'p-1', approve_rate: 0.5, modify_rate: 0.5, change_kinds: { accepted: 1 } }], overall: { papers_reviewed: 1, approve_rate: 0.5, modify_rate: 0.5 } },
+      reflection_notes: '# 笔记',
+    }
+    const pnl = profilePanelModel(prof)
+    assert(pnl.colors.length === 2 && pnl.colors[0].name === 'red' && pnl.colors[0].color === '#ff0000' && pnl.colors[0].label === '红核心',
+      'profilePanelModel(profile): flat color rows from the profile map')
+    assert(pnl.rules.length === 2 && pnl.rules[0].id === 'rule-1', 'profilePanelModel(profile): rules passed through')
+    assert(pnl.exemplars.length === 1 && pnl.notes === '# 笔记', 'profilePanelModel(profile): exemplars + notes passed through')
+    assert(profilePanelColors(prof).length === 2, 'profilePanelColors: color rows only')
+
+    const drafts = {
+      colors: [{ name: 'red', color: '#ff0000', label: '红核心' }, { name: 'blue', color: '#001122', label: '蓝' }],
+      rules: [{ id: 'rule-1', rule: 'density: 2-4', enabled: true }],
+      exemplars: [{ span_id: 's-001' }],
+      notes: '新笔记',
+    }
+    const payload = profileSavePayload(drafts)
+    assert(payload.colors.red.color === '#ff0000' && payload.colors.red.label === '红核心' && payload.colors.blue.color === '#001122',
+      'profileSavePayload: flat rows re-encoded into the {name:{color,label}} map')
+    assert(payload.rules.length === 1 && payload.rules[0].rule === 'density: 2-4', 'profileSavePayload: rules passed through')
+    assert(payload.exemplars.length === 1 && payload.reflection_notes === '新笔记', 'profileSavePayload: exemplars + notes')
+    const partial = profileSavePayload({ colors: [{ name: 'red', color: '#ff0000', label: 'r' }] })
+    assert(partial.colors && partial.rules === undefined && partial.exemplars === undefined && partial.reflection_notes === undefined,
+      'profileSavePayload: absent draft layers omitted from the payload')
+    assert(JSON.stringify(profileSavePayload({})) === '{}', 'profileSavePayload: empty drafts → empty payload')
   }).then(() => {
     // ══════════════════ P2-b: excludeRejected ══════════════════
     const mixed = [
@@ -517,6 +554,7 @@ function main() {
       p2d: 'buildBlockSegments/buildSegmentMap (flat segment map) + mapSelection matrix (same/cross-segment, reverse, out-of-range, empty, cross-anchor) + nodeOffsetToSeg/selectionToNorm DOM-ish resolution + renderText(withSegments) data-phl-seg wrapping + reconcileSpan clientId match',
       p2e: 'sectionList (reviewable filter + plan/override status merge) + currentSectionId (viewport-middle rule, paper_title/empty excluded, missing blockTop skipped)',
       v03p1: 'callProfile (GET/POST/ok:false/no-transport) + colorLegend (null/custom/partial/empty/unknown fallbacks) + markStyle(colors 4th arg) + renderText(opts.colors) — colors.yml-driven palette',
+      v03p3: 'profilePanelModel/profilePanelColors (null fallback + profile mapping) + profileSavePayload (flat rows → {name:{color,label}} map, absent layers omitted)',
     }, null, 2))
     return null
   })

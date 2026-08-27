@@ -66,6 +66,49 @@ function colorLegend(colors) {
 }
 
 /**
+ * v0.3 Phase 3 · profile edit panel model (design §4.3).
+ *
+ * Turn the host profile object into the panel's draft shape:
+ *   { colors: [{name,color,label}], rules: [...], exemplars: [...],
+ *     stats: {overall, papers}, notes }
+ * profile=null (host without the profile route / offline) falls back to the
+ * built-in five colors + empty layers so the panel still opens.
+ */
+function profilePanelModel(profile) {
+  const colors = profilePanelColors(profile)
+  const rules = profile && Array.isArray(profile.rules) ? profile.rules : []
+  const exemplars = profile && Array.isArray(profile.exemplars) ? profile.exemplars : []
+  const stats = profile && profile.stats && typeof profile.stats === 'object' ? profile.stats : { papers: [], overall: null }
+  const notes = profile && typeof profile.reflection_notes === 'string' ? profile.reflection_notes : ''
+  return { colors, rules, exemplars, stats, notes }
+}
+
+/** colors layer of the panel model: flat [{name,color,label}] rows. */
+function profilePanelColors(profile) {
+  return colorLegend(profile && profile.colors ? profile.colors : null)
+}
+
+/**
+ * Build the POST /paper-hl/profile/save payload from the panel drafts.
+ * Only fields present in the draft are included; colors is re-encoded from the
+ * flat row list back into the {name: {color, label}} map the host expects.
+ */
+function profileSavePayload(drafts) {
+  const out = {}
+  if (drafts && Array.isArray(drafts.colors)) {
+    const colors = {}
+    for (const row of drafts.colors) {
+      if (row && row.name) colors[row.name] = { color: row.color || '', label: row.label || row.name }
+    }
+    out.colors = colors
+  }
+  if (drafts && Array.isArray(drafts.rules)) out.rules = drafts.rules
+  if (drafts && Array.isArray(drafts.exemplars)) out.exemplars = drafts.exemplars
+  if (drafts && typeof drafts.notes === 'string') out.reflection_notes = drafts.notes
+  return out
+}
+
+/**
  * Clamp a 0-based half-open span range to [0, len]. Tolerates whitespace /
  * normalization drift between anchors.json and the rendered text (design §10
  * #4): a slightly out-of-range span still renders instead of throwing mid-slice.
@@ -560,6 +603,12 @@ ${callProfile.toString()}
 
 ${colorLegend.toString()}
 
+${profilePanelModel.toString()}
+
+${profilePanelColors.toString()}
+
+${profileSavePayload.toString()}
+
 ${excludeRejected.toString()}
 
 ${localApplySpans.toString()}
@@ -613,18 +662,24 @@ function PaperView() {
   // ({status, reviewed_at}); currentSection = id of the section in view.
   const [sectionOverrides, setSectionOverrides] = React.useState({})
   const [currentSection, setCurrentSection] = React.useState(null)
-  // v0.3 Phase 1: profileState = { loading, has_profile, colors } from
-  // /paper-hl/profile (colors.yml-driven palette, D6); onboard = the cold-start
-  // onboarding form draft (null unless no profile exists yet).
-  const [profileState, setProfileState] = React.useState({ loading: true, has_profile: true, colors: null })
+  // v0.3 Phase 1: profileState = { loading, has_profile, profile } from
+  // /paper-hl/profile (full four-layer profile, colors.yml-driven palette);
+  // onboard = the cold-start onboarding form draft (null unless no profile
+  // exists yet). v0.3 Phase 3: panelView ('paper' | 'profile') switches to the
+  // profile edit panel; panelDrafts holds its unsaved edits; newRuleText is the
+  // add-rule input draft.
+  const [profileState, setProfileState] = React.useState({ loading: true, has_profile: true, profile: null })
   const [onboard, setOnboard] = React.useState(null)
+  const [panelView, setPanelView] = React.useState('paper')
+  const [panelDrafts, setPanelDrafts] = React.useState(null)
+  const [newRuleText, setNewRuleText] = React.useState('')
   const loadProfile = React.useCallback(() => {
     callProfile('GET', '').then((res) => {
-      setProfileState({ loading: false, has_profile: !!res.has_profile, colors: (res.summary && res.summary.colors) || null })
+      setProfileState({ loading: false, has_profile: !!res.has_profile, profile: res.profile || null })
       if (!res.has_profile) setOnboard(defaultOnboardDraft(null))
     }).catch(() => {
       // host without the profile route (or offline) → fall back to defaults
-      setProfileState({ loading: false, has_profile: true, colors: null })
+      setProfileState({ loading: false, has_profile: true, profile: null })
     })
   }, [])
   const load = React.useCallback((id) => {
@@ -663,7 +718,7 @@ function PaperView() {
   const blocks = buildBlocks(data.anchors || {}, spans, data.sections)
   const metaTitle = (highlights.paper && highlights.paper.title) || ''
   // v0.3 Phase 1: the colors.yml-driven palette (legend / swatches / marks).
-  const palette = colorLegend(profileState.colors)
+  const palette = colorLegend(profileState.profile ? profileState.profile.colors : null)
 
   // P2-d: the flat segment map drives selection→anchor mapping. segBaseOf maps
   // each block id to the index of its first segment in the flat list (absent
@@ -842,6 +897,11 @@ function PaperView() {
       }, (state.papers || []).map((p) => React.createElement('option', { key: p, value: p }, p))),
       React.createElement('button', { className: 'phl-refresh', onClick: () => load(state.paperId) }, '刷新'),
       React.createElement('button', {
+        className: 'phl-profile-btn',
+        onClick: () => { setPanelDrafts(profilePanelModel(profileState.profile)); setPanelView('profile') },
+        title: '查看 / 编辑个性化画像（四层）'
+      }, '画像'),
+      React.createElement('button', {
         className: 'phl-review-btn',
         onClick: markCurrentReviewed,
         disabled: !currentSection && !(sectionItems[0]),
@@ -875,7 +935,7 @@ function PaperView() {
   const body = React.createElement('div', { className: 'phl-body', onMouseUp: onBodyMouseUp, onScroll: onBodyScroll },
     blocks.map((b) => {
       const segBase = segBaseOf[b.id]
-      const kids = renderText(b.anchor.text, b.spans, { onMarkClick, activeSpanId, withSegments: segBase !== undefined, segBase: segBase || 0, anchorId: b.id, colors: profileState.colors })
+      const kids = renderText(b.anchor.text, b.spans, { onMarkClick, activeSpanId, withSegments: segBase !== undefined, segBase: segBase || 0, anchorId: b.id, colors: profileState.profile ? profileState.profile.colors : null })
       const blockProps = { key: b.id, 'data-phl-anchor': b.id }
       if (b.anchor.type === 'title') {
         return React.createElement(b.isFirstTitle ? 'h1' : 'h2', Object.assign(blockProps, { className: 'phl-heading' }), ...kids)
@@ -1006,10 +1066,159 @@ function PaperView() {
     )
   }
 
+  // v0.3 Phase 3: profile edit panel — four layers viewable/editable
+  // (stats read-only). Drafts are local; 保存全部 POSTs /paper-hl/profile/save
+  // (profileSavePayload) and re-reads the profile (optimistic + calibrate).
+  const confirmProfileSave = () => {
+    const d = panelDrafts
+    if (!d) return
+    callProfile('POST', '/save', profileSavePayload(d)).then(() => {
+      setFlash({ kind: 'info', text: '画像已保存' })
+      loadProfile()
+    }).catch((err) => {
+      setFlash({ kind: 'error', text: '保存失败：' + String((err && err.message) || err) })
+    })
+  }
+  const renderProfilePanel = () => {
+    const d = panelDrafts || profilePanelModel(profileState.profile)
+    const patchColors = (name, field, value) => setPanelDrafts((p) => {
+      const cur = p || profilePanelModel(profileState.profile)
+      return Object.assign({}, cur, { colors: cur.colors.map((r) => (r.name === name ? Object.assign({}, r, { [field]: value }) : r)) })
+    })
+    const patchRule = (i, field, value) => setPanelDrafts((p) => {
+      const cur = p || profilePanelModel(profileState.profile)
+      const rules = cur.rules.slice()
+      rules[i] = Object.assign({}, rules[i], { [field]: value })
+      return Object.assign({}, cur, { rules })
+    })
+    const removeRule = (i) => setPanelDrafts((p) => {
+      const cur = p || profilePanelModel(profileState.profile)
+      return Object.assign({}, cur, { rules: cur.rules.filter((_, j) => j !== i) })
+    })
+    const addRule = () => {
+      const text = newRuleText.trim()
+      if (!text) return
+      setPanelDrafts((p) => {
+        const cur = p || profilePanelModel(profileState.profile)
+        return Object.assign({}, cur, { rules: cur.rules.concat([{ rule: text, confidence: 'medium', enabled: true, source: 'user-edit' }]) })
+      })
+      setNewRuleText('')
+    }
+    const removeExemplar = (i) => setPanelDrafts((p) => {
+      const cur = p || profilePanelModel(profileState.profile)
+      return Object.assign({}, cur, { exemplars: cur.exemplars.filter((_, j) => j !== i) })
+    })
+
+    const colorRows = d.colors.map((c) =>
+      React.createElement('div', { key: c.name, className: 'phl-pnl-row', 'data-phl-color': c.name },
+        React.createElement('span', { className: 'phl-pnl-name' }, c.name),
+        React.createElement('input', { className: 'phl-pnl-hex', value: c.color, onChange: (e) => patchColors(c.name, 'color', e.target.value) }),
+        React.createElement('input', { className: 'phl-pnl-label', value: c.label, onChange: (e) => patchColors(c.name, 'label', e.target.value) })
+      )
+    )
+
+    const ruleRows = d.rules.map((r, i) =>
+      React.createElement('div', { key: r.id || ('new-' + i), className: 'phl-pnl-row', 'data-phl-rule': r.id || '' },
+        React.createElement('input', {
+          type: 'checkbox',
+          className: 'phl-pnl-rule-on',
+          checked: r.enabled !== false,
+          onChange: (e) => patchRule(i, 'enabled', e.target.checked),
+          title: '启用/禁用'
+        }),
+        React.createElement('input', { className: 'phl-pnl-rule-text', value: r.rule, onChange: (e) => patchRule(i, 'rule', e.target.value) }),
+        React.createElement('select', {
+          className: 'phl-pnl-conf',
+          value: r.confidence || 'medium',
+          onChange: (e) => patchRule(i, 'confidence', e.target.value)
+        },
+          React.createElement('option', { value: 'low' }, 'low'),
+          React.createElement('option', { value: 'medium' }, 'medium'),
+          React.createElement('option', { value: 'high' }, 'high')
+        ),
+        React.createElement('button', { className: 'phl-pnl-del', onClick: () => removeRule(i), title: '删除规则' }, '×')
+      )
+    )
+
+    const exemplarRows = d.exemplars.length === 0
+      ? React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无示例，确认提案后自动入库）')
+      : d.exemplars.map((e, i) =>
+          React.createElement('div', { key: i, className: 'phl-pnl-row', 'data-phl-ex': String(i) },
+            React.createElement('span', { className: 'phl-pnl-ex-summary' },
+              (e.span_id || '?') + ' · ' + ((e.user_decision && (e.user_decision.color || e.user_decision.action)) || '?') + (e.note ? ' — ' + e.note : '')),
+            React.createElement('button', { className: 'phl-pnl-del', onClick: () => removeExemplar(i), title: '删除示例' }, '×')
+          )
+        )
+
+    const stats = d.stats || { papers: [], overall: null }
+    const statsOverall = stats.overall
+      ? React.createElement('div', { className: 'phl-pnl-stats-overall' },
+          '累计：' + stats.overall.papers_reviewed + ' 篇 · 认可率 ' + Math.round(stats.overall.approve_rate * 100) + '% · 修改率 ' + Math.round(stats.overall.modify_rate * 100) + '%')
+      : React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无统计）')
+    const statsRows = (stats.papers || []).map((p) =>
+      React.createElement('div', { key: p.paper_id, className: 'phl-pnl-row phl-pnl-stats-row' },
+        React.createElement('span', { className: 'phl-pnl-stats-paper' }, p.paper_id),
+        React.createElement('span', null, '认可率 ' + Math.round((p.approve_rate || 0) * 100) + '%'),
+        React.createElement('span', null, '修改率 ' + Math.round((p.modify_rate || 0) * 100) + '%'),
+        React.createElement('span', { className: 'phl-pnl-stats-kinds' },
+          'acc ' + ((p.change_kinds && p.change_kinds.accepted) || 0) + ' / rej ' + ((p.change_kinds && p.change_kinds.rejected) || 0) +
+          ' / rec ' + ((p.change_kinds && p.change_kinds.recolored) || 0) + ' / res ' + ((p.change_kinds && p.change_kinds.rescoped) || 0))
+      )
+    )
+
+    return React.createElement('div', { className: 'phl-pnl' },
+      React.createElement('div', { className: 'phl-pnl-head' },
+        React.createElement('h2', { className: 'phl-pnl-title' }, '个性化画像（四层）'),
+        React.createElement('button', { className: 'phl-refresh', onClick: () => setPanelView('paper') }, '← 返回论文')
+      ),
+      React.createElement('section', { className: 'phl-pnl-sec' },
+        React.createElement('h3', { className: 'phl-pnl-sec-title' }, 'L1 · 颜色语义（colors.yml）'),
+        React.createElement('div', { className: 'phl-pnl-row phl-pnl-headrow' },
+          React.createElement('span', { className: 'phl-pnl-name' }, '颜色'),
+          React.createElement('span', { className: 'phl-pnl-hex' }, '色值'),
+          React.createElement('span', { className: 'phl-pnl-label' }, '语义')
+        ),
+        ...colorRows
+      ),
+      React.createElement('section', { className: 'phl-pnl-sec' },
+        React.createElement('h3', { className: 'phl-pnl-sec-title' }, 'L2 · 规则（rules.json，仅用户确认的规则在此）'),
+        ...ruleRows,
+        React.createElement('div', { className: 'phl-pnl-addrule' },
+          React.createElement('input', { className: 'phl-pnl-rule-text phl-pnl-rule-new', value: newRuleText, placeholder: '新规则文本…', onChange: (e) => setNewRuleText(e.target.value) }),
+          React.createElement('button', { className: 'phl-pnl-addrule-btn', onClick: addRule }, '添加规则')
+        )
+      ),
+      React.createElement('section', { className: 'phl-pnl-sec' },
+        React.createElement('h3', { className: 'phl-pnl-sec-title' }, 'L3 · 示例库（exemplars.json，仅参考信号）'),
+        ...exemplarRows
+      ),
+      React.createElement('section', { className: 'phl-pnl-sec' },
+        React.createElement('h3', { className: 'phl-pnl-sec-title' }, 'L4a · 统计（stats.json，只读）'),
+        statsOverall,
+        ...statsRows
+      ),
+      React.createElement('section', { className: 'phl-pnl-sec' },
+        React.createElement('h3', { className: 'phl-pnl-sec-title' }, 'L4b · 反思笔记（reflection-notes.md）'),
+        React.createElement('textarea', {
+          className: 'phl-pnl-notes',
+          value: d.notes,
+          onChange: (e) => setPanelDrafts((p) => Object.assign({}, p || profilePanelModel(profileState.profile), { notes: e.target.value }))
+        })
+      ),
+      React.createElement('div', { className: 'phl-pnl-actions' },
+        React.createElement('button', { className: 'phl-pnl-save', onClick: confirmProfileSave }, '保存全部')
+      )
+    )
+  }
+
   const actionBar = activeSpan ? renderActionBar(activeSpan) : null
   // v0.3 Phase 1: cold start → onboarding panel replaces the paper view.
   if (!profileState.loading && !profileState.has_profile) {
     return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderOnboarding())
+  }
+  // v0.3 Phase 3: profile edit panel view.
+  if (panelView === 'profile') {
+    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProfilePanel())
   }
   return React.createElement('div', { className: 'phl-wrap' }, header, legend, sectionBar, flashEl, rescueHint, addPopup, actionBar, body)
 }
@@ -1086,7 +1295,37 @@ function apply(ctx) {
       '.phl-onb-select{padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
       '.phl-onb-actions{display:flex;justify-content:flex-end}',
       '.phl-onb-btn{padding:5px 14px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
-      '.phl-onb-btn:hover{background:rgba(120,220,130,.14)}'
+      '.phl-onb-btn:hover{background:rgba(120,220,130,.14)}',
+      '.phl-profile-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(150,190,255,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+      '.phl-profile-btn:hover{background:rgba(150,190,255,.14)}',
+      '.phl-pnl{max-width:720px;margin:0 auto;padding:8px 4px 20px;overflow-y:auto;flex:1;min-height:0}',
+      '.phl-pnl-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}',
+      '.phl-pnl-title{margin:0;font-size:16px}',
+      '.phl-pnl-sec{margin-bottom:14px;padding:10px 12px;border-radius:8px;border:1px solid rgba(128,128,128,.25);background:rgba(128,128,128,.04)}',
+      '.phl-pnl-sec-title{margin:0 0 8px;font-size:13px;color:rgba(128,128,128,.9)}',
+      '.phl-pnl-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}',
+      '.phl-pnl-headrow{font-size:11px;color:rgba(128,128,128,.8);margin-bottom:4px}',
+      '.phl-pnl-name{width:70px;flex:0 0 auto;font-size:12px;font-weight:600}',
+      '.phl-pnl-hex{width:110px;flex:0 0 auto;padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px;font-family:monospace}',
+      '.phl-pnl-label{flex:1;min-width:0;padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
+      '.phl-pnl-rule-on{flex:0 0 auto}',
+      '.phl-pnl-rule-text{flex:1;min-width:0;padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
+      '.phl-pnl-conf{width:90px;flex:0 0 auto;padding:3px 6px;border-radius:5px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
+      '.phl-pnl-del{flex:0 0 auto;border:none;background:transparent;color:#e08585;font-size:15px;cursor:pointer;padding:0 2px;line-height:1}',
+      '.phl-pnl-del:hover{color:#ff6b6b}',
+      '.phl-pnl-addrule{display:flex;gap:8px;margin-top:8px}',
+      '.phl-pnl-rule-new{flex:1}',
+      '.phl-pnl-addrule-btn{padding:3px 10px;border-radius:5px;border:1px solid rgba(150,190,255,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+      '.phl-pnl-addrule-btn:hover{background:rgba(150,190,255,.14)}',
+      '.phl-pnl-ex-summary{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.phl-pnl-empty{font-size:12px;color:rgba(128,128,128,.75);padding:4px 0}',
+      '.phl-pnl-stats-overall{font-size:12px;font-weight:600;margin-bottom:6px}',
+      '.phl-pnl-stats-paper{font-family:monospace;font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.phl-pnl-stats-kinds{font-size:11px;color:rgba(128,128,128,.8)}',
+      '.phl-pnl-notes{width:100%;box-sizing:border-box;min-height:90px;padding:6px 8px;border-radius:6px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px;font-family:inherit;resize:vertical}',
+      '.phl-pnl-actions{display:flex;justify-content:flex-end}',
+      '.phl-pnl-save{padding:5px 16px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+      '.phl-pnl-save:hover{background:rgba(120,220,130,.14)}'
     ].join(''))
   }, 'paper-highlight: styles')
 
@@ -1124,4 +1363,7 @@ module.exports = {
   selectionToNorm,
   sectionList,
   currentSectionId,
+  profilePanelModel,
+  profilePanelColors,
+  profileSavePayload,
 }

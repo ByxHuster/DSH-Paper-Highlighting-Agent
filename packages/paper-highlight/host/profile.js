@@ -386,6 +386,95 @@ function applyProposal(profile, proposal, decisions, highlights) {
   return { applied, profile: next }
 }
 
+/**
+ * Pure partial update of the profile from the GUI edit panel (v0.3 Phase 3).
+ * update: {
+ *   colors?:           {name: {color, label}}  — merge over the existing map
+ *                      (hex + label validated; unknown names are added)
+ *   rules?:            [entries]               — replaces the WHOLE rule list;
+ *                      entries keep their id when present, fresh ids are
+ *                      allocated for new entries (id collisions deduped)
+ *   exemplars?:        [entries]               — replaces the whole list (the
+ *                      panel deletes by removing entries)
+ *   reflection_notes?: string                  — replaces the notes text
+ * }
+ * Never mutates the input profile — returns { applied, profile: next } that the
+ * caller persists with writeProfile. stats is NOT editable from the panel.
+ */
+function applyProfileUpdate(profile, update) {
+  if (typeof update !== 'object' || update === null) throw new Error('applyProfileUpdate: update must be an object')
+  const next = {
+    colors: JSON.parse(JSON.stringify(profile.colors)),
+    rules: (profile.rules || []).slice(),
+    exemplars: (profile.exemplars || []).slice(),
+    stats: JSON.parse(JSON.stringify(profile.stats || JSON.parse(JSON.stringify(DEFAULT_STATS)))),
+    reflection_notes: profile.reflection_notes || '',
+  }
+  const applied = { colors: 0, rules: 0, exemplars: 0, reflection_notes: false }
+
+  if (update.colors && typeof update.colors === 'object' && !Array.isArray(update.colors)) {
+    for (const [name, c] of Object.entries(update.colors)) {
+      if (typeof c !== 'object' || c === null) continue
+      const color = typeof c.color === 'string' ? c.color.trim() : ''
+      const label = typeof c.label === 'string' ? c.label : ''
+      if (!/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new Error(`applyProfileUpdate: colors.${name} must be a hex color like #ff9c94`)
+      next.colors[name] = { color, label }
+      applied.colors++
+    }
+  }
+
+  if (Array.isArray(update.rules)) {
+    // Two passes: first derive the max numeric id among the SUBMITTED list
+    // (the panel posts the whole edited list, so existing ids are authoritative
+    // and must not collide with fresh ids for new rules), then rebuild.
+    let maxNum = 0
+    for (const r of update.rules) {
+      if (!r || typeof r !== 'object') continue
+      const m = /^rule-(\d+)$/.exec(typeof r.id === 'string' ? r.id : '')
+      if (m) maxNum = Math.max(maxNum, Number(m[1]))
+    }
+    let seq = maxNum + 1
+    const seen = new Set()
+    const cleaned = []
+    for (const r of update.rules) {
+      if (!r || typeof r !== 'object') continue
+      const rule = typeof r.rule === 'string' ? r.rule.trim() : ''
+      if (!rule) continue
+      const explicit = typeof r.id === 'string' && r.id.length > 0
+      if (explicit && seen.has(r.id)) continue // duplicate explicit id in one submission → keep the first
+      let id = explicit ? r.id : 'rule-' + seq
+      while (seen.has(id)) {
+        seq++
+        id = 'rule-' + seq
+      }
+      seen.add(id)
+      cleaned.push({
+        id,
+        rule,
+        confidence: typeof r.confidence === 'string' ? r.confidence : null,
+        source: typeof r.source === 'string' ? r.source : 'user-edit',
+        enabled: r.enabled !== false,
+      })
+      seq++
+      applied.rules++
+    }
+    next.rules = cleaned
+  }
+
+  if (Array.isArray(update.exemplars)) {
+    next.exemplars = update.exemplars.filter((e) => e && typeof e === 'object' && !Array.isArray(e))
+    applied.exemplars = next.exemplars.length
+  }
+
+  if (typeof update.reflection_notes === 'string') {
+    next.reflection_notes = update.reflection_notes
+    applied.reflection_notes = true
+  }
+
+  validateProfile(next)
+  return { applied, profile: next }
+}
+
 // ── reflections.json (per-paper proposal + confirmation) ────────────────────
 
 async function readReflections(root, paperId) {
@@ -451,6 +540,7 @@ module.exports = {
   deriveColorDistribution,
   recomputeOverall,
   applyProposal,
+  applyProfileUpdate,
   readReflections,
   writeReflections,
   listPendingProposals,

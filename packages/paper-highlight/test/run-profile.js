@@ -32,6 +32,7 @@ const {
   writeProfile,
   buildProfileSummary,
   applyProposal,
+  applyProfileUpdate,
   derivePaperMetrics,
   recomputeOverall,
   readReflections,
@@ -234,6 +235,60 @@ async function main() {
   assert(pThrew, 'applyProposal rejects a proposal without profile_proposal')
   lossless(full, 'applyProposal full result')
   lossless(partial, 'applyProposal partial result')
+
+  // ── 7b) applyProfileUpdate matrix (v0.3 Phase 3 GUI edit panel) ────────────
+  const editBase = await readProfile(ROOT) // 5 colors + rules.json may be empty at this point
+  const editSnapshot = JSON.stringify(editBase)
+  // colors: merge over the map (edit + add), invalid hex rejected
+  const colorUpd = applyProfileUpdate(editBase, { colors: { red: { color: '#ff0000', label: '红核心' }, teal: { color: '#7fe0d0', label: '新颜色' } } })
+  assert(colorUpd.applied.colors === 2, 'applyProfileUpdate: 2 colors applied (1 edit + 1 add)')
+  assert(colorUpd.profile.colors.red.color === '#ff0000' && colorUpd.profile.colors.red.label === '红核心', 'applyProfileUpdate: color edited')
+  assert(colorUpd.profile.colors.teal.color === '#7fe0d0', 'applyProfileUpdate: new color added')
+  assert(colorUpd.profile.colors.yellow.color === '#fff3a0', 'applyProfileUpdate: untouched colors preserved')
+  assert(JSON.stringify(editBase) === editSnapshot, 'applyProfileUpdate never mutates the input profile')
+  let hexThrew = false
+  try { applyProfileUpdate(editBase, { colors: { red: { color: 'red' } } }) } catch (err) { hexThrew = true; assert(/hex/.test(err.message), `hex rejection: ${err.message}`) }
+  assert(hexThrew, 'applyProfileUpdate rejects a non-hex color edit')
+
+  // rules: whole-list replace; kept ids preserved; new entries get fresh ids
+  const rulesUpd = applyProfileUpdate(editBase, {
+    rules: [
+      { id: 'rule-1', rule: 'density_per_section: 每节 2-4 处', confidence: 'medium', source: 'user-edit', enabled: true },
+      { rule: 'value/density: 背景铺垫类句子不高亮', confidence: 'high' },
+      { rule: 'granularity: 短语级', confidence: 'low', enabled: false },
+    ],
+  })
+  assert(rulesUpd.applied.rules === 3, 'applyProfileUpdate: 3 rules written (1 edited + 2 new)')
+  assert(rulesUpd.profile.rules[0].id === 'rule-1' && rulesUpd.profile.rules[0].rule.indexOf('每节 2-4 处') >= 0, 'applyProfileUpdate: existing rule id preserved + text edited')
+  const newIds = rulesUpd.profile.rules.slice(1).map((r) => r.id)
+  assert(newIds.every((id) => /^rule-\d+$/.test(id)) && new Set(newIds).size === 2, 'applyProfileUpdate: new rules allocated unique fresh ids')
+  const disabledNew = rulesUpd.profile.rules.find((r) => r.rule.indexOf('短语级') >= 0)
+  assert(disabledNew && disabledNew.enabled === false, 'applyProfileUpdate: enabled:false respected for new rules')
+  // dedupe: repeated id in the submitted list is collapsed
+  const dupUpd = applyProfileUpdate(editBase, { rules: [{ id: 'rule-9', rule: 'a', enabled: true }, { id: 'rule-9', rule: 'b', enabled: true }] })
+  assert(dupUpd.applied.rules === 1, 'applyProfileUpdate: duplicate submitted id collapsed (kept the first)')
+  // empty rule text dropped
+  const emptyUpd = applyProfileUpdate(editBase, { rules: [{ rule: '   ' }, { rule: 'ok', enabled: true }] })
+  assert(emptyUpd.applied.rules === 1 && emptyUpd.profile.rules[0].rule === 'ok', 'applyProfileUpdate: blank rule text dropped')
+
+  // exemplars: whole-list replace (panel deletes by removing entries)
+  const exUpd = applyProfileUpdate(editBase, { exemplars: [{ span_id: 's-001', note: 'keep' }] })
+  assert(exUpd.applied.exemplars === 1 && exUpd.profile.exemplars.length === 1 && exUpd.profile.exemplars[0].span_id === 's-001', 'applyProfileUpdate: exemplars replaced')
+  const exEmpty = applyProfileUpdate(editBase, { exemplars: [] })
+  assert(exEmpty.applied.exemplars === 0 && exEmpty.profile.exemplars.length === 0, 'applyProfileUpdate: empty exemplars list clears the layer')
+
+  // reflection_notes: string replace
+  const notesUpd = applyProfileUpdate(editBase, { reflection_notes: '# 新笔记' })
+  assert(notesUpd.applied.reflection_notes === true && notesUpd.profile.reflection_notes === '# 新笔记', 'applyProfileUpdate: notes replaced')
+
+  // empty update → nothing applied, profile shape valid
+  const noop = applyProfileUpdate(editBase, {})
+  assert(noop.applied.colors === 0 && noop.applied.rules === 0 && noop.applied.exemplars === 0 && noop.applied.reflection_notes === false, 'applyProfileUpdate: empty update is a no-op')
+  assert(JSON.stringify(noop.profile) === editSnapshot, 'applyProfileUpdate: no-op keeps the profile identical')
+  let updThrew = false
+  try { applyProfileUpdate(editBase, null) } catch (err) { updThrew = true; assert(/update must be an object/.test(err.message), `null update rejection: ${err.message}`) }
+  assert(updThrew, 'applyProfileUpdate rejects a null update')
+  lossless(rulesUpd, 'applyProfileUpdate rules result')
 
   // ── 8) schema.validateReflections (confirmation contract) ──────────────────
   assert(validateReflections({ paper_id: 'p', profile_proposal: {}, confirmation: null }) === true, 'reflections: null confirmation valid')
