@@ -36,6 +36,11 @@ window.__ModuleLoader__.load({
 			if (!res.ok) throw new Error(method + " " + url + " -> " + res.status);
 			return res.json();
 		};
+		const formatData = async (body) => {
+			const res = await fetch("/paper-hl/format", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });
+			if (!res.ok) throw new Error("POST /paper-hl/format -> " + res.status);
+			return res.json();
+		};
 		
 		const COLOR_MAP = {"yellow":"#fff3a0","red":"#ff9c94","blue":"#8fd0f7","green":"#b0e3a8","purple":"#d9b8f2"};
 		const COLOR_LABELS = {"yellow":"关键定义/方法","red":"核心洞见/贡献","blue":"局限/风险","green":"可借鉴/启发","purple":"待深挖/存疑"};
@@ -148,6 +153,16 @@ window.__ModuleLoader__.load({
 		  if (!t) return Promise.reject(new Error('paper-highlight: profile transport not available'))
 		  return Promise.resolve(t(m, url, body)).then((res) => {
 		    if (!res || res.ok !== true) throw new Error((res && res.error) || ('profile ' + m + ' ' + url + ' failed'))
+		    return res
+		  })
+		}
+		
+		function callFormat(payload, transport) {
+		  const body = payload ? JSON.stringify(payload) : '{}'
+		  const t = transport || (typeof formatData === 'function' ? formatData : null)
+		  if (!t) return Promise.reject(new Error('paper-highlight: format transport not available'))
+		  return Promise.resolve(t(body)).then((res) => {
+		    if (!res || res.ok !== true) throw new Error((res && res.error) || 'format failed')
 		    return res
 		  })
 		}
@@ -519,6 +534,9 @@ window.__ModuleLoader__.load({
 		  const [exportOpen, setExportOpen] = React.useState(false)
 		  const [exportFormat, setExportFormat] = React.useState('html')
 		  const [exportPending, setExportPending] = React.useState(false)
+		  // v0.5: one-click format (一键格式化) dialog state — open + in-flight.
+		  const [formatOpen, setFormatOpen] = React.useState(false)
+		  const [formatBusy, setFormatBusy] = React.useState(false)
 		  // v0.4 Phase 4 (D6): render-time actions/hints are published into this ref
 		  // (set in the ready path) so the keydown effect — declared BEFORE the early
 		  // returns to keep React hook order stable across the loading→ready
@@ -557,6 +575,7 @@ window.__ModuleLoader__.load({
 		    setSectionOverrides({})
 		    setCurrentSection(null)
 		    setExportOpen(false)
+		    setFormatOpen(false)
 		    callData({ paperId: id }).then((res) => {
 		      if (!res || res.ok !== true) throw new Error((res && res.error) || 'paper.read failed')
 		      setState({ phase: 'ready', error: null, data: res, papers: res.papers || [], paperId: res.paperId })
@@ -587,7 +606,7 @@ window.__ModuleLoader__.load({
 		      }, { palette: d.palette || [] })
 		      if (!act) return
 		      if (act.type === 'cancel') {
-		        setMenuOpen(false); setAddDraft(null); setRescueTarget(null); setExportOpen(false)
+		        setMenuOpen(false); setAddDraft(null); setRescueTarget(null); setExportOpen(false); setFormatOpen(false)
 		      } else if (act.type === 'accept') d.applyAction({ action: 'accept', span_id: act.span_id })
 		      else if (act.type === 'reject') d.applyAction({ action: 'reject', span_id: act.span_id })
 		      else if (act.type === 'rescope') { setRescueTarget(act.span_id); setMenuOpen(false) }
@@ -811,6 +830,11 @@ window.__ModuleLoader__.load({
 		        title: '导出高亮（HTML / Markdown，下载）'
 		      }, '导出'),
 		      React.createElement('button', {
+		        className: 'phl-format-btn',
+		        onClick: () => setFormatOpen(true),
+		        title: '一键格式化：清除所有论文高亮记录与个性化画像（危险操作，需二次确认）'
+		      }, '格式化'),
+		      React.createElement('button', {
 		        className: 'phl-profile-btn',
 		        onClick: () => { setPanelDrafts(profilePanelModel(profileState.profile)); setPanelView('profile') },
 		        title: '查看 / 编辑个性化画像（四层）'
@@ -889,6 +913,47 @@ window.__ModuleLoader__.load({
 		            onClick: () => setExportOpen(false),
 		            'data-phl-export-url': buildExportUrl(state.paperId, exportFormat, exportPending, true)
 		          }, '下载')
+		        )
+		      )
+		    : null
+		  // v0.5: one-click format (一键格式化) dialog — a deliberate danger action.
+		  // The dialog itself is the confirmation step; 确认格式化 POSTs
+		  // /paper-hl/format with {confirm:true, scope:'all'} (the host rejects any
+		  // request without confirm:true). On success the paper + profile reload so
+		  // the GUI returns to a factory-fresh state (cold-start onboarding).
+		  const confirmFormat = () => {
+		    setFormatBusy(true)
+		    setFlash(null)
+		    callFormat({ confirm: true, scope: 'all' }).then(() => {
+		      setFormatOpen(false)
+		      setFormatBusy(false)
+		      setFlash({ kind: 'info', text: '已格式化：论文高亮记录与个性化画像已清除，可重新开始高亮' })
+		      loadProfile()
+		      load(state.paperId)
+		    }).catch((err) => {
+		      setFormatBusy(false)
+		      setFlash({ kind: 'error', text: '格式化失败：' + String((err && err.message) || err) })
+		    })
+		  }
+		  const formatDialog = formatOpen
+		    ? React.createElement('div', { className: 'phl-fmt', 'data-phl-format': '1' },
+		        React.createElement('div', { className: 'phl-fmt-head' },
+		          React.createElement('span', { className: 'phl-fmt-title' }, '一键格式化（危险操作）'),
+		          React.createElement('button', { className: 'phl-ab-close', onClick: () => setFormatOpen(false) }, '×')
+		        ),
+		        React.createElement('p', { className: 'phl-fmt-warn' }, '将清除：'),
+		        React.createElement('ul', { className: 'phl-fmt-list' },
+		          React.createElement('li', null, '所有论文的高亮记录（spans / 计划 / 去重 / reflections 提案 / 导出产物 / 论文级反思）'),
+		          React.createElement('li', null, '个性化画像（highlight-profile/，之后将回到冷启动引导）')
+		        ),
+		        React.createElement('p', { className: 'phl-fmt-note' }, '已解析的论文正文（paper.md / anchors）会保留，可立即重新高亮。此操作不可撤销。'),
+		        React.createElement('div', { className: 'phl-fmt-actions' },
+		          React.createElement('button', { className: 'phl-fmt-btn', onClick: () => setFormatOpen(false) }, '取消'),
+		          React.createElement('button', {
+		            className: 'phl-fmt-btn phl-fmt-danger',
+		            disabled: formatBusy,
+		            onClick: confirmFormat
+		          }, formatBusy ? '格式化中…' : '确认格式化')
 		        )
 		      )
 		    : null
@@ -1288,7 +1353,7 @@ window.__ModuleLoader__.load({
 		  if (panelView === 'proposals') {
 		    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProposalsPanel())
 		  }
-		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, actionBar, body)
+		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, formatDialog, actionBar, body)
 		}
 		
 		const inject = ['slots']
@@ -1323,6 +1388,21 @@ window.__ModuleLoader__.load({
 		      '.phl-exp-btn{padding:4px 12px;border-radius:6px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:12px;cursor:pointer;text-decoration:none}',
 		      '.phl-exp-btn:hover{background:rgba(128,128,128,.12)}',
 		      '.phl-exp-download{border-color:rgba(120,220,130,.8)}',
+		      '.phl-format-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(240,120,120,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+		      '.phl-format-btn:hover{background:rgba(240,120,120,.14)}',
+		      '.phl-fmt{position:fixed;top:60px;right:12px;z-index:23;width:320px;padding:10px 12px;border-radius:8px;background:rgba(40,24,24,.96);color:#f5f5f5;border:1px solid rgba(240,120,120,.6);box-shadow:0 4px 14px rgba(0,0,0,.4);font-size:12px;line-height:1.5}',
+		      '.phl-fmt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}',
+		      '.phl-fmt-title{font-weight:600;color:#ffb3b3}',
+		      '.phl-fmt-warn{margin:0 0 4px;font-weight:600}',
+		      '.phl-fmt-list{margin:0 0 8px;padding-left:18px}',
+		      '.phl-fmt-list li{margin-bottom:3px}',
+		      '.phl-fmt-note{margin:0 0 10px;color:rgba(235,200,200,.85)}',
+		      '.phl-fmt-actions{display:flex;gap:8px;justify-content:flex-end}',
+		      '.phl-fmt-btn{padding:4px 12px;border-radius:6px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+		      '.phl-fmt-btn:hover{background:rgba(128,128,128,.12)}',
+		      '.phl-fmt-danger{border-color:rgba(240,120,120,.85);color:#ffb3b3}',
+		      '.phl-fmt-danger:hover:not(:disabled){background:rgba(240,120,120,.16)}',
+		      '.phl-fmt-danger:disabled{opacity:.5;cursor:not-allowed}',
 		      '.phl-legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',
 		      '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
 		      '.phl-count{margin-right:auto;opacity:.8}',
@@ -1457,6 +1537,7 @@ window.__ModuleLoader__.load({
 		exports.buildExportUrl = buildExportUrl;
 		exports.colorLegend = colorLegend;
 		exports.callProfile = callProfile;
+		exports.callFormat = callFormat;
 		exports.profilePanelModel = profilePanelModel;
 		exports.profilePanelColors = profilePanelColors;
 		exports.profileSavePayload = profileSavePayload;

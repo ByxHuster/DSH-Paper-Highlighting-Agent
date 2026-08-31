@@ -296,7 +296,7 @@ async function main() {
 
   // 10) profile tools (v0.3 Phase 0): read_profile + confirm_proposal
   const { readProfileTool, confirmProposalTool } = require('../host/tools')
-  const { writeReflections } = require('../host/profile')
+  const { writeReflections, ensureProfile, writeProfile } = require('../host/profile')
   const pDefs = [readProfileTool(), confirmProposalTool()].map(defineTool)
   for (const d of pDefs) {
     assert(typeof d.name === 'string' && d.name.length > 0, `profile tool name missing: ${JSON.stringify(d)}`)
@@ -410,10 +410,53 @@ async function main() {
   const rpGhost = await reflectPaperTool().execute({ paper_id: 'p-ghost', root: secRoot })
   assert(rpGhost.ok === false && typeof rpGhost.error === 'string', 'reflect_paper: unknown paper ok:false')
 
+  // 14) format_all (v0.5): one-click factory reset tool — confirm guard +
+  //     clears spans/plan + deletes reflections/paper-reflection/export + the
+  //     profile. secRoot state at this point: p-sections 6 spans, a written
+  //     paper-reflection.md (from rpFile), no profile / reflections yet.
+  const { formatAllTool } = require('../host/tools')
+  const fDef = defineTool(formatAllTool())
+  assert(fDef.name === 'format_all' && fDef.parameters.type === 'object'
+    && Array.isArray(fDef.parameters.required) && fDef.parameters.required.includes('confirm'),
+    'format_all: defineTool conversion with required confirm')
+  const fmtNo = await formatAllTool().execute({ confirm: false, root: secRoot })
+  assert(fmtNo.ok === false && /confirm: true/.test(fmtNo.error), 'format_all: without confirm -> ok:false')
+  const fmtBadScope = await formatAllTool().execute({ confirm: true, scope: 'nuke', root: secRoot })
+  assert(fmtBadScope.ok === false && /unsupported scope/.test(fmtBadScope.error), 'format_all: unknown scope -> ok:false')
+  // seed a profile + reflections, then format everything
+  await ensureProfile(secRoot)
+  await writeProfile(secRoot, {
+    colors: {
+      red: { color: '#ff9c94', label: '核心洞见/贡献' }, yellow: { color: '#fff3a0', label: '关键定义/方法' },
+      blue: { color: '#8fd0f7', label: '局限/风险' }, green: { color: '#b0e3a8', label: '可借鉴/启发' }, purple: { color: '#d9b8f2', label: '待深挖/存疑' },
+    },
+    rules: [{ id: 'rule-1', rule: 'density: 3-5', confidence: 'medium', enabled: true }],
+    exemplars: [{ span_id: 's-001', user_decision: { action: 'accepted' } }],
+    stats: { papers: [], overall: { papers_reviewed: 0, decided: 0, approved: 0, approve_rate: 0, modify_rate: 0 } },
+    reflection_notes: '# n',
+  })
+  await writeReflections(secRoot, secPaperId, {
+    paper_id: secPaperId,
+    updated_at: '2026-08-27T00:00:00.000Z',
+    profile_proposal: { rules: [{ rule: 'x' }], exemplars: [], stats: {} },
+  })
+  const fmtAll = await formatAllTool().execute({ confirm: true, scope: 'all', root: secRoot })
+  assert(fmtAll.ok === true && fmtAll.scope === 'all' && typeof fmtAll.at === 'string', 'format_all: confirm + all scope ok')
+  assert(fmtAll.papers_processed === 1 && fmtAll.spans_cleared === 6 && fmtAll.plans_cleared === 2,
+    'format_all: cleared the 6 fixture spans + 2 plan entries')
+  assert(fmtAll.reflections_removed === 1 && fmtAll.paper_reflections_removed === 1, 'format_all: removed reflections + paper-reflection.md')
+  assert(fmtAll.profile_removed === true && fmtAll.rules_cleared === 1 && fmtAll.exemplars_cleared === 1,
+    'format_all: removed the profile (1 rule + 1 exemplar counted)')
+  const fmtAfter = await readHighlightsTool().execute({ paper_id: secPaperId, root: secRoot })
+  assert(fmtAfter.ok === true && fmtAfter.spans === 0 && fmtAfter.highlights.plan.sections.length === 0,
+    'format_all: highlights reset on disk (paper + anchors kept)')
+  assertLosslessJson(fmtAll, 'format_all output')
+  assertLosslessJson(fmtNo, 'format_all no-confirm output')
+
   console.log(JSON.stringify({
     step: 'tools',
     result: 'PASS',
-    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper', 'read_field_map', 'reflect_paper'],
+    tools: [...defs.map((d) => d.name), 'list_sections', 'read_section', 'summarize_section_diff', 'read_profile', 'confirm_proposal', 'export_paper', 'read_field_map', 'reflect_paper', 'format_all'],
     defineTool_conversion: 'parameters->object json schema, output.render ok',
     read_write_round_trip: 'ok',
     invalid_span_rejected: true,
@@ -426,6 +469,7 @@ async function main() {
     export_tool: 'export_paper — inline (content + stats, lossless) / file (data/<paper_id>/export/<paper_id>.<ext>), format html|md, include_pending effect (4→5 marks), unknown format/paper ok:false (v0.4 Phase 1)',
     field_map_tool: 'read_field_map — read-only domain-map injection (content+path+chars), missing -> ok:false with create-hint, root resolution, lossless (v0.4 Phase 2)',
     reflect_paper_tool: 'reflect_paper — paper-level reflection scaffold (D5): whole-paper diff stats + per-section table + profile line + field-map/export sections; inline/file output, lossless, unknown paper ok:false (v0.4 Phase 3)',
+    format_all_tool: 'format_all — one-click factory reset (v0.5): confirm guard (ok:false without), scope all/highlights/profile, clears spans/plan + deletes reflections/paper-reflection + removes the profile (rules/exemplars counted); paper + anchors kept, lossless',
   }, null, 2))
 }
 

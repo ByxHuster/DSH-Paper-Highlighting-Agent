@@ -50,7 +50,7 @@
 const {
   clampRange, sortAnchorIds, buildBlocks, renderText,
   buildWriteUrl, encodeWriteBody, callWrite,
-  callProfile, colorLegend,
+  callProfile, callFormat, colorLegend,
   excludeRejected, localApplySpans, spanActiveStyle,
   markStyle, reconcileSpan,
   buildBlockSegments, buildSegmentMap, mapSelection,
@@ -193,6 +193,26 @@ function main() {
         () => { throw new Error('callProfile without transport should reject') },
         (err) => assert(/profile transport not available/.test(err.message), 'callProfile without transport rejects cleanly'),
       )
+    }).then(() => {
+      // ══════════════════ v0.5: callFormat (format transport) ══════════════════
+      const fmtCalls = []
+      const okFormatTransport = async (body) => { fmtCalls.push(body); return { ok: true, scope: 'all', spans_cleared: 5 } }
+      return callFormat({ confirm: true, scope: 'all' }, okFormatTransport).then((res) => {
+        assert(res && res.ok === true && res.scope === 'all' && res.spans_cleared === 5, 'callFormat resolves the ok transport response')
+        assert(fmtCalls.length === 1, 'callFormat sends exactly one POST body')
+        const sent = JSON.parse(fmtCalls[0])
+        assert(sent.confirm === true && sent.scope === 'all', 'callFormat sends {confirm:true, scope} JSON body')
+      }).then(() => {
+        return callFormat({ confirm: true }, async () => ({ ok: false, error: 'format requires confirm' })).then(
+          () => { throw new Error('callFormat should reject on ok:false') },
+          (err) => assert(/format requires confirm/.test(err.message), 'callFormat rejects an ok:false payload with its error'),
+        )
+      }).then(() => {
+        return callFormat({ confirm: true }).then(
+          () => { throw new Error('callFormat without transport should reject') },
+          (err) => assert(/format transport not available/.test(err.message), 'callFormat without transport rejects cleanly'),
+        )
+      })
     })
   }).then(() => {
     // ══════════════════ v0.3 Phase 1: colorLegend (colors.yml-driven palette) ══════════════════
@@ -641,6 +661,7 @@ function main() {
       v03p3: 'profilePanelModel/profilePanelColors (null fallback + profile mapping) + profileSavePayload (flat rows → {name:{color,label}} map, absent layers omitted)',
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
       v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape/Ctrl+Enter; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
+      v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
     }, null, 2))
     return null
   })

@@ -26,7 +26,7 @@ const path = require('node:path')
 const plugin = require('../host/plugin')
 const { writePaper, writeHighlights, readHighlights } = require('../host/store')
 const { newHighlightsSkeleton } = require('../host/schema')
-const { writeReflections, readReflections, profileDir } = require('../host/profile')
+const { writeReflections, readReflections, profileDir, profileExists } = require('../host/profile')
 const { assert } = require('./verify')
 
 const ROOT = path.join(__dirname, '..', '..', '..') // D:\aa
@@ -339,6 +339,38 @@ async function main() {
   const exUnknown = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=ghost&format=html' })
   assert(exUnknown.status === 404 && /unknown paperId/.test(JSON.parse(exUnknown.body).error), 'export unknown paperId -> 404')
 
+  // ══════════════════ v0.5: POST /paper-hl/format (一键格式化) ══════════════════
+  // One-click factory reset: confirm-guarded destructive route. Fixture state
+  // at this point: p-test spans = [s-001 accepted green, s-002 user_added
+  // yellow, s-003 proposed purple] (3), plan.sections = s2 + s3 (2 reviewed),
+  // reflections.json confirmed, profile = 2 rules + 1 exemplar (from the
+  // save/apply tests above). No export/ dir or paper-reflection.md in this
+  // fixture (export tests use the inline route, not file writes).
+  const fmtGet = await invoke(wroute.handler, { url: '/paper-hl/format' })
+  assert(fmtGet.status === 404, 'format GET -> 404 (POST-only destructive route)')
+  const fmtNoConfirm = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/format', body: JSON.stringify({ scope: 'all' }) })
+  assert(fmtNoConfirm.status === 400 && /confirm: true/.test(JSON.parse(fmtNoConfirm.body).error), 'format without confirm -> 400')
+  const fmtBadScope = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/format', body: JSON.stringify({ confirm: true, scope: 'nuke' }) })
+  assert(fmtBadScope.status === 400 && /unsupported scope/.test(JSON.parse(fmtBadScope.body).error), 'format unknown scope -> 400')
+  const fmtBadJson = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/format', body: 'nope' })
+  assert(fmtBadJson.status === 400 && /JSON/.test(JSON.parse(fmtBadJson.body).error), 'format malformed body -> 400')
+
+  const fmt = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/format', body: JSON.stringify({ confirm: true, scope: 'all' }) })
+  const jfmt = JSON.parse(fmt.body)
+  assert(fmt.status === 200 && jfmt.ok === true && jfmt.scope === 'all' && typeof jfmt.at === 'string', 'format confirm:true -> 200 ok with timestamp')
+  assert(jfmt.papers_processed === 1 && jfmt.spans_cleared === 3 && jfmt.plans_cleared === 2 && jfmt.duplicates_cleared === 0,
+    'format cleared the fixture spans (3) + plan entries (2)')
+  assert(jfmt.reflections_removed === 1 && jfmt.exports_removed === 0 && jfmt.paper_reflections_removed === 0,
+    'format removed the confirmed reflections.json (no export/ or paper-reflection in this fixture)')
+  assert(jfmt.profile_removed === true && jfmt.rules_cleared === 2 && jfmt.exemplars_cleared === 1,
+    'format removed the profile (2 rules + 1 exemplar counted)')
+  const fmtDisk = await readHighlights(fx.root, fx.paperId)
+  assert(fmtDisk.spans.length === 0 && fmtDisk.duplicates.length === 0 && fmtDisk.plan.sections.length === 0,
+    'format reset the on-disk highlights (paper + anchors kept)')
+  assert(fmtDisk.paper.id === 'p-test' && fmtDisk.anchors['a-0001-03-01'] !== undefined, 'format kept paper meta + anchors')
+  assert(await readReflections(fx.root, fx.paperId) === null, 'format deleted reflections.json')
+  assert((await profileExists(fx.root)) === false, 'format removed the profile (cold start returns)')
+
   // cleanup fixture (profile + paper)
   await fsp.rm(profileDir(fx.root), { recursive: true, force: true })
   await fsp.rm(fx.root, { recursive: true, force: true })
@@ -352,6 +384,7 @@ async function main() {
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
     profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + POST /save (edit-panel partial update: colors/rules/exemplars/notes, stats read-only) + negatives',
     export: 'GET /paper-hl/export (html|md, self-contained, Content-Type + download attachment header, include_pending effect, negatives 400/404) (v0.4 Phase 1)',
+    format: 'POST /paper-hl/format — confirm-guarded factory reset: GET 404 / missing-confirm 400 / unknown-scope 400 / malformed 400; confirm:true clears spans+plan, deletes reflections, removes profile (2 rules + 1 exemplar); paper + anchors kept (v0.5)',
     fallback: 'unknown paperId -> first paper; missing root -> 500 JSON',
   }, null, 2))
 }

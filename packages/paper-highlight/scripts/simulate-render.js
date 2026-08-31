@@ -275,6 +275,20 @@ function mockWriteHandler(url, body) {
   })
 }
 
+// v0.5 P5: the format POST is MOCKED (payload captured, ok answered). The
+// profile mock flips to has_profile:false before the confirm so the post-format
+// loadProfile re-read simulates the factory reset (profile deleted → onboarding).
+const formatCapture = []
+function mockFormatHandler(body) {
+  const payload = JSON.parse(body || '{}')
+  formatCapture.push(body)
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, scope: payload.scope || 'all', spans_cleared: 0, profile_removed: true }),
+  })
+}
+
 function fetchShim(url, opts) {
   // The paper suite now has 3 papers; the assertion corpus (spans/plan/sections
   // counts, h1 title) is pinned to p-mikolov, so a bare /paper-hl/read (which
@@ -283,6 +297,9 @@ function fetchShim(url, opts) {
   const target = url.startsWith('/') ? API_ORIGIN + url : url
   if (url.indexOf('/paper-hl/profile') === 0) {
     return mockProfileHandler(url, opts)
+  }
+  if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/format') === 0) {
+    return mockFormatHandler(opts.body)
   }
   if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/write') === 0) {
     return mockWriteHandler(url, opts.body)
@@ -362,6 +379,10 @@ const p4 = ['keyAction', 'reviewProgress', 'buildExportUrl', 'keydown', 'addEven
 for (const needle of p4) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.4 Phase 4 UX plumbing: ${needle}`)
 }
+const p5 = ['callFormat', 'formatData', '/paper-hl/format', 'phl-fmt', 'phl-format-btn', '确认格式化', '一键格式化']
+for (const needle of p5) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5 format plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
@@ -371,6 +392,7 @@ console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
 console.log('bundle keyboard/export/progress plumbing (v0.4 P4):', p4.join(', '))
+console.log('bundle one-click format plumbing (v0.5 P5):', p5.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -1031,7 +1053,47 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   inputKeydown()
   assert(writeCapture.length === 0, 'P4: input-focused a is ignored')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) driven (write + profile mocked, real data untouched)`)
+  // ══════════════ v0.5: one-click format (一键格式化) ══════════════
+  const fmtBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-format-btn') === 0)
+  assert(fmtBtn !== undefined, 'P5: 格式化 toolbar button present')
+  const fmtDiv = () => byType.div.find((d) => d.props['data-phl-format'] !== undefined)
+  assert(fmtDiv() === undefined, 'P5: format dialog closed by default')
+  fmtBtn.props.onClick()
+  rerender()
+  const fmtDlg = fmtDiv()
+  assert(fmtDlg !== undefined, 'P5: format dialog (.phl-fmt) opens after clicking 格式化')
+  const fmtText = textOf(fmtDlg)
+  assert(fmtText.includes('一键格式化') && fmtText.includes('危险操作'), 'P5: format dialog warns about the destructive operation')
+  assert(fmtText.includes('高亮记录') && fmtText.includes('个性化画像') && fmtText.includes('不可撤销'),
+    'P5: format dialog lists what will be cleared + irreversible note')
+  // 取消 closes without POST
+  formatCapture.length = 0
+  const fmtCancel = collectButtons(fmtDlg).find((b) => textOf(b) === '取消')
+  assert(fmtCancel !== undefined, 'P5: format dialog has a 取消 button')
+  fmtCancel.props.onClick()
+  rerender()
+  assert(fmtDiv() === undefined && formatCapture.length === 0, 'P5: 取消 closes the dialog without POST')
+  // confirm → POST {confirm:true, scope:'all'} → dialog closes + view returns to
+  // cold-start onboarding (the profile mock flipped to has_profile:false).
+  fmtBtn.props.onClick()
+  rerender()
+  formatCapture.length = 0
+  profileState.has_profile = false // host-side effect: the profile was deleted
+  const fmtConfirm = collectButtons(fmtDiv()).find((b) => textOf(b) === '确认格式化')
+  assert(fmtConfirm !== undefined, 'P5: format dialog has a 确认格式化 button')
+  fmtConfirm.props.onClick()
+  assert(formatCapture.length === 1, 'P5: 确认格式化 POSTs exactly once')
+  const fmtPayload = JSON.parse(formatCapture[0])
+  assert(fmtPayload.confirm === true && fmtPayload.scope === 'all', 'P5: format POST body {confirm:true, scope:"all"}')
+  await new Promise((r) => setTimeout(r, 200)) // flush loadProfile + load re-fetch
+  rerender()
+  fullText = textOf(tree)
+  assert(fmtDiv() === undefined, 'P5: format dialog closes after confirm')
+  assert(fullText.includes('已格式化'), 'P5: success flash shows 已格式化')
+  assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb').length >= 1,
+    'P5: view returns to cold-start onboarding (profile cleared, factory reset)')
+
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

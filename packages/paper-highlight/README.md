@@ -1,11 +1,12 @@
-# paper-highlight (v0.4 ✅)
+# paper-highlight (v0.5 ✅)
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
-> **用户手册**：安装 / 启动 / 使用 / 快捷键 / 导出 / FAQ 见 [`docs/paper-highlight-user-guide.md`](../../../docs/paper-highlight-user-guide.md)（面向使用者；本文件为开发者说明）。
+> **用户手册**：安装 / 启动 / 使用 / 快捷键 / 导出 / 格式化 / FAQ 见 [`docs/paper-highlight-user-guide.md`](../../../docs/paper-highlight-user-guide.md)（面向使用者；本文件为开发者说明）。
 
 > v0.1（管线打通）2026-08-26 验收通过；v0.2（审查闭环）2026-08-27 验收通过；**v0.3（画像收敛）2026-08-27 验收 PASS**：四层画像（`highlight-profile/`）+ 冷启动引导 + colors.yml 驱动图例/色板 + GUI 画像编辑面板 + propose 摘要注入（`read_profile`）+ 待确认提案面板 + 确认闭环（`confirm_proposal` / `/profile/apply`，append-only）+ 三篇同领域论文收敛验收（`step7-multi-paper.js`：认可率 50%→67%→100%，修改率 50%→33%→0%，PASS）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.3.md`。
 > **v0.4（打磨导出）2026-08-27 验收 PASS（归档 `v0.4.0`）**：HTML/MD 导出（`export_paper` 工具 + `/paper-hl/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` 只读注入 + 论文级反思（`reflect_paper` / `paper-reflection.md`）+ UX 打磨（`keyAction` 快捷键 / 审查进度条）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.4.md`（M0–M5 全达标）。
+> **v0.5（一键格式化）2026-08-27 Phase 0 完成（`v0.5.0` 待验收）**：工厂重置 —— 清空所有论文高亮记录（`paper.highlights.json` 重置 + `reflections.json`/`export/`/`paper-reflection.md` 删除，保留论文正文）+ 删除个性化画像（`highlight-profile/`，回到冷启动）。GUI「格式化」按钮 + 确认对话框（`callFormat` → `POST /paper-hl/format`）+ `format_all` 工具（confirm 门禁，scope all/highlights/profile）。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.md`。
 
 ## 布局
 
@@ -16,16 +17,17 @@ host/
   mineru.js     # MinerU 云 API 客户端：上传 → 建任务 → 轮询 → 下载 zip
   normalize.js  # MinerU zip → paper.md + anchors.json + meta.json（正文过滤 + 锚点）
   pipeline.js   # 端到端管线：parsePdf → normalize → writePaper
-  plugin.js     # (Step 3) durable host 插件：/paper-hl/read + /write + /profile + /init + /apply + /save + /export 路由
+  plugin.js     # (Step 3) durable host 插件：/paper-hl/read + /write + /profile + /init + /apply + /save + /export + /format 路由
   profile.js    # (v0.3) 画像四层：ensureProfile / buildProfileSummary / applyProposal / applyProfileUpdate 纯逻辑
   export.js     # (v0.4 Phase 0) 导出纯逻辑：buildExportSpans / renderHtml / renderMarkdown / 图例 / 自包含 HTML（设计 §4.4）
   reflection.js # (v0.4 Phase 3) 论文级反思模板：paperReflectionTemplate / writePaperReflection（设计 §5.5）
-  tools.js      # (Step 2 + Phase 1/2/3) agent 工具：parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff / read_profile / confirm_proposal / export_paper / read_field_map / reflect_paper（11 工具）
+  format.js     # (v0.5) 一键格式化纯逻辑：formatHighlights / normalizeScope / formatAll（confirm 门禁 + 三 scope + 审计统计）
+  tools.js      # (Step 2 + Phase 1/2/3 + v0.5) agent 工具：parse_pdf / read_highlights / write_highlights / list_sections / read_section / summarize_section_diff / read_profile / confirm_proposal / export_paper / read_field_map / reflect_paper / format_all（12 工具）
   tools-plugin.mjs # (Step 2) 工具行 ESM 包装（allTools() 自动注册全部工具）
   diff.js       # (Phase 4) 审查差异分析纯函数：classifySpanChange / summarizeDiff（计数+接受率+样例）
 client/
-  client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层 + 画像/提案面板 + 导出对话框 + 快捷键 + 进度条
-  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl 纯函数）
+  client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层 + 画像/提案面板 + 导出对话框 + 格式化对话框 + 快捷键 + 进度条
+  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl/callFormat 纯函数）
 scripts/
   gen-client.js # 生成 client/client.js 与 dynamic/client-half.js
   seed-demo.js  # 种子演示 spans（幂等，store 同路径）
@@ -45,12 +47,13 @@ skills/         # (Phase 3/4) agent 技能：global-read（论文地图+plan + r
                 #   运行时接线：<projectRoot>/.agents/skills → junction → 本目录（DSH skill-filesystem 按 cwd 自动发现）
 test/
   run-mock.js   # 离线 mock 验证（无网络）
-  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section + summarize_section_diff + duplicates 契约 + read_profile/confirm_proposal + export_paper + read_field_map + reflect_paper（v0.3 + v0.4 Phase 1/2/3）
-  run-plugin.js # host 插件 /paper-hl 路由回归（read/write/profile/init/apply/save/export + 负例矩阵）
-  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl）
+  run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section + summarize_section_diff + duplicates 契约 + read_profile/confirm_proposal + export_paper + read_field_map + reflect_paper + format_all（v0.3 + v0.4 + v0.5）
+  run-plugin.js # host 插件 /paper-hl 路由回归（read/write/profile/init/apply/save/export/format + 负例矩阵）
+  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl + v0.5 callFormat）
   run-profile.js# (v0.3) 画像层单测：冷启动/校验/摘要/applyProposal/applyProfileUpdate/confirm 工具矩阵
   run-export.js # (v0.4 Phase 0) 导出层单测：渲染矩阵 + 自包含断言 + 模板矩阵
   run-reflect-paper.js # (v0.4 Phase 3) 论文级反思模板单测：空/全接受/混合 diff/画像行/逐节表
+  run-format.js # (v0.5) 一键格式化单测：normalizeScope/formatHighlights/formatAll 三 scope + confirm 门禁 + 路由矩阵（GET 404 / 缺 confirm 400 / 坏 JSON 400 / 未知 scope 400 / confirm:true 200 + 审计 + 磁盘断言）
   run-real.js   # 真实 MinerU 端到端验证（需 MINERU_API）
 ```
 
@@ -76,7 +79,8 @@ node test/run-render.js
 node test/run-profile.js
 node test/run-export.js
 node test/run-reflect-paper.js
-node scripts/simulate-render.js   # live 3081，POST/profile 走 mock，真实数据零改动
+node test/run-format.js
+node scripts/simulate-render.js   # live 3081，POST/profile/format 走 mock，真实数据零改动
 node scripts/step8-export-e2e.js  # v0.4 Phase 5：真实论文导出端到端（离线，无需 3081）
 node scripts/profile-stats.js --baseline=p-mikolov-2013-2013-1-word2vec --final=p-bahdanau-2016-attention   # 收敛曲线 + 判定
 node test/run-real.js "D:\aa\<paper>.pdf"
@@ -93,7 +97,7 @@ node test/run-real.js "D:\aa\<paper>.pdf"
 ## GUI 渲染（Step 3）
 
 - 槽位：`conversation.view`（list 槽 / session 作用域）——包作为 profile bundle 时自动注册「论文」tab
-- host 路由：`GET /paper-hl/read[?paperId=]` → `{ok, paperId, paperMd, anchors, highlights, papers}`（`host/plugin.js`）
-- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例 + 刷新/选论文）
+- host 路由：`GET /paper-hl/read[?paperId=]` → `{ok, paperId, paperMd, anchors, highlights, papers}`；`POST /paper-hl/format`（v0.5 一键格式化，`{confirm:true, scope?}` → 审计统计；缺 confirm → 400；仅 POST）（`host/plugin.js`）
+- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例 + 刷新/选论文/导出/格式化）
 - 重新生成 bundle：`node scripts/gen-client.js`（改 `client/render-body.js` 后必须重跑）
 - paper profile（3081）：`dsh --profile paper --port 3081 --no-open`；数据根目录解析：组合 config `root`（profile patch 已钉 `D:\aa`）→ `PAPER_HL_ROOT` → `process.cwd()`（兜底）；从任意目录重启均不丢数据

@@ -11,6 +11,22 @@ function get(url) {
   })
 }
 
+function post(url, body) {
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(body || '{}')
+    const req = http.request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
+    }, (res) => {
+      const chunks = []
+      res.on('data', (c) => chunks.push(c))
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }))
+    })
+    req.on('error', reject)
+    req.end(data)
+  })
+}
+
 async function main() {
   const root = await get('http://127.0.0.1:3081/')
   console.log('GET / ->', root.status, 'bytes', root.body.length, '| has __DSH_BOOT__:', root.body.includes('__DSH_BOOT__'))
@@ -51,6 +67,16 @@ async function main() {
       '| marks:', (html.match(/<mark/g) || []).length,
       '| legend:', (html.match(/class="phl-legend-item"/g) || []).length)
   }
+
+  // v0.5 format probe: POST /paper-hl/format WITHOUT confirm → 400 (proves the
+  // route is live with NO side effects — a probe must never send confirm:true).
+  const fmt = await post('http://127.0.0.1:3081/paper-hl/format', JSON.stringify({ scope: 'all' }))
+  let fmtParsed = null
+  try { fmtParsed = JSON.parse(fmt.body.toString('utf8')) } catch (e) {}
+  console.log('POST /paper-hl/format (no confirm) ->', fmt.status,
+    '| ok:', fmtParsed ? fmtParsed.ok : '-',
+    '| error:', fmtParsed ? fmtParsed.error : '-',
+    fmt.status === 400 ? '| safe probe (no side effects)' : '| NOTE: old host (route not live yet — restart 3081)')
 }
 
 main().catch((e) => { console.error('FAIL', e.message); process.exit(1) })

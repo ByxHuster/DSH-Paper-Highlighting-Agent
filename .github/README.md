@@ -1,5 +1,13 @@
 # Paper Highlight Agent —— 用户指南（v0.4）
 
+## 🗺️ 路线图
+
+- **v0.4（当前版本）**：已完成核心功能，适用于论文高亮场景下的个性化学习闭环。
+- **v1.0（计划 2026.09）**：将提升稳定性与易用性，完善细节，正式发布稳定版本。
+- **v2.0（计划 2026.10）**：探索与 Zotero 文献管理工具联动，进一步提升学术工作流效率。
+
+欢迎 **Star** ⭐ 关注项目，或 **Watch** 以获取最新进展！
+
 > 面向使用者。开发者请参阅 `packages/paper-highlight/README.md`；设计细节见 `docs/paper-highlight-agent-design.md`；历史进展见 `docs/paper-highlight-progress-v0.*.md`。
 
 ## 这是什么？

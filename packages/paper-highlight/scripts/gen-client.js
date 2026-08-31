@@ -69,6 +69,15 @@ function generateBundle() {
   lines.push(`\t\t\tif (!res.ok) throw new Error(method + " " + url + " -> " + res.status);`)
   lines.push(`\t\t\treturn res.json();`)
   lines.push(`\t\t};`)
+  // v0.5: format transport. `callFormat(payload)` inside the shared BODY POSTs
+  // the one-click factory reset to /paper-hl/format with {confirm:true, scope}.
+  // Only the durable bundle wires this; the dynamic half stays read-only
+  // (callFormat rejects cleanly, exactly like callWrite / callProfile).
+  lines.push(`\t\tconst formatData = async (body) => {`)
+  lines.push(`\t\t\tconst res = await fetch("/paper-hl/format", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });`)
+  lines.push(`\t\t\tif (!res.ok) throw new Error("POST /paper-hl/format -> " + res.status);`)
+  lines.push(`\t\t\treturn res.json();`)
+  lines.push(`\t\t};`)
   for (const line of BODY.split('\n')) lines.push('\t\t' + line)
   lines.push(`\t\texports.apply = apply;`)
   lines.push(`\t\texports.inject = inject;`)
@@ -90,6 +99,8 @@ function generateBundle() {
   // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
   lines.push(`\t\texports.colorLegend = colorLegend;`)
   lines.push(`\t\texports.callProfile = callProfile;`)
+  // v0.5: one-click format data function for headless tests.
+  lines.push(`\t\texports.callFormat = callFormat;`)
   // v0.3 Phase 3: profile edit-panel model + save payload builders.
   lines.push(`\t\texports.profilePanelModel = profilePanelModel;`)
   lines.push(`\t\texports.profilePanelColors = profilePanelColors;`)

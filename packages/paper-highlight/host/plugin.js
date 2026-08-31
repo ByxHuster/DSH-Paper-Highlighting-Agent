@@ -45,6 +45,7 @@ const {
   listPendingProposals,
 } = require('./profile')
 const { buildExport, normalizeFormat, exportFileName } = require('./export')
+const { formatAll } = require('./format')
 
 const name = 'paper-highlight'
 const inject = ['webServer']
@@ -337,6 +338,31 @@ async function handleExport(root, url, res) {
   }
 }
 
+/** POST /paper-hl/format — one-click factory reset (v0.5). Destructive:
+ *  body { confirm: true, scope?: 'all'|'highlights'|'profile' } → formatAll
+ *  clears all paper highlight records and/or the personalization profile.
+ *  confirm must be exactly true, else 400 (no accidental wipes from a GET
+ *  pre-fetch or a mis-click). Returns the cleared-count audit summary. */
+async function handleFormat(root, req, res, send) {
+  let body = {}
+  try {
+    body = JSON.parse((await readBody(req)) || '{}')
+  } catch {
+    send(res, 400, { ok: false, error: 'request body must be valid JSON' })
+    return
+  }
+  if (body.confirm !== true) {
+    send(res, 400, { ok: false, error: 'format requires confirm: true (destructive operation)' })
+    return
+  }
+  try {
+    const result = await formatAll(root, { confirm: true, scope: body.scope })
+    send(res, 200, result)
+  } catch (err) {
+    send(res, 400, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
 function apply(ctx, config) {
   const root = workspaceRoot(config)
   const route = {
@@ -376,6 +402,10 @@ function apply(ctx, config) {
           await handleExport(root, url, res)
           return
         }
+        if (url.pathname === '/paper-hl/format' && req.method === 'POST') {
+          await handleFormat(root, req, res, sendJson)
+          return
+        }
         sendJson(res, 404, { ok: false, error: 'not found' })
       } catch (err) {
         sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
@@ -385,4 +415,4 @@ function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register(route), 'paper-highlight: /paper-hl route')
 }
 
-module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, handleExport, listPaperIds, buildSections, mergePlanStatus }
+module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, handleExport, handleFormat, listPaperIds, buildSections, mergePlanStatus }

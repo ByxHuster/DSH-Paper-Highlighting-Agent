@@ -22,6 +22,7 @@ const { buildSections } = require('./sections')
 const { summarizeDiff } = require('./diff')
 const { buildExport, normalizeFormat, writeExport } = require('./export')
 const { paperReflectionTemplate, writePaperReflection } = require('./reflection')
+const { formatAll } = require('./format')
 const {
   profileDir,
   profileExists,
@@ -152,7 +153,7 @@ function writeHighlightsTool() {
 
 /** All tool definitions in registration order. */
 function allTools() {
-  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool(), readFieldMapTool(), reflectPaperTool()]
+  return [parsePdfTool(), readHighlightsTool(), writeHighlightsTool(), listSectionsTool(), readSectionTool(), summarizeSectionDiffTool(), readProfileTool(), confirmProposalTool(), exportPaperTool(), readFieldMapTool(), reflectPaperTool(), formatAllTool()]
 }
 
 /** Shared read of highlights + paperMd + anchors for the section tools. */
@@ -598,4 +599,40 @@ function reflectPaperTool() {
   }
 }
 
-module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, readFieldMapTool, reflectPaperTool, allTools }
+/** format_all tool definition (v0.5): one-click factory reset (一键格式化). */
+function formatAllTool() {
+  return {
+    name: 'format_all',
+    description:
+      'One-click factory reset (一键格式化): wipe ALL paper highlight records ' +
+      '(spans / plan / duplicates / reflections.json / export/ / ' +
+      'paper-reflection.md — the parsed paper.md + anchors + meta are KEPT so ' +
+      're-proposing resumes) and/or the personalization profile ' +
+      '(highlight-profile/ deleted, GUI returns to cold-start onboarding). ' +
+      'Destructive: confirm must be true, else ok:false. scope: "all" (default) ' +
+      '| "highlights" (paper records only) | "profile" (profile only). ' +
+      'Returns the cleared-count audit summary.',
+    parameters: {
+      confirm: { type: 'boolean', required: true, description: 'Must be true — this wipes highlight records and/or the profile' },
+      scope: { type: 'string', description: '"all" (default) | "highlights" | "profile"' },
+      root: COMMON_ROOT,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: textRender,
+    },
+    async execute(args) {
+      const root = path.resolve(args.root ?? defaultRoot())
+      if (args.confirm !== true) {
+        return { ok: false, error: 'format_all requires confirm: true (destructive operation)' }
+      }
+      try {
+        return await formatAll(root, { confirm: true, scope: args.scope })
+      } catch (err) {
+        return { ok: false, error: String(err && err.message ? err.message : err) }
+      }
+    },
+  }
+}
+
+module.exports = { defaultRoot, parsePdfTool, readHighlightsTool, writeHighlightsTool, listSectionsTool, readSectionTool, summarizeSectionDiffTool, readProfileTool, confirmProposalTool, exportPaperTool, readFieldMapTool, reflectPaperTool, formatAllTool, allTools }

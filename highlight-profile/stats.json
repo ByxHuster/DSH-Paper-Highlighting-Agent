@@ -1,52 +1,10 @@
 {
-  "papers": [
-    {
-      "paper_id": "p-sutskever-2014-seq2seq",
-      "sections_reviewed": 3,
-      "decided": 9,
-      "approved": 6,
-      "approve_rate": 0.667,
-      "modify_rate": 0.333,
-      "change_kinds": {
-        "accepted": 3,
-        "rejected": 3,
-        "recolored": 3,
-        "rescoped": 0,
-        "user_added": 0,
-        "pending": 0
-      },
-      "color_distribution": {
-        "blue": 1,
-        "red": 4,
-        "yellow": 1
-      }
-    },
-    {
-      "paper_id": "p-bahdanau-2016-attention",
-      "sections_reviewed": 3,
-      "decided": 6,
-      "approved": 6,
-      "approve_rate": 1,
-      "modify_rate": 0,
-      "change_kinds": {
-        "accepted": 6,
-        "rejected": 0,
-        "recolored": 0,
-        "rescoped": 0,
-        "user_added": 0,
-        "pending": 0
-      },
-      "color_distribution": {
-        "yellow": 2,
-        "red": 4
-      }
-    }
-  ],
+  "papers": [],
   "overall": {
-    "papers_reviewed": 2,
-    "decided": 15,
-    "approved": 12,
-    "approve_rate": 0.8,
-    "modify_rate": 0.2
+    "papers_reviewed": 0,
+    "decided": 0,
+    "approved": 0,
+    "approve_rate": 0,
+    "modify_rate": 0
   }
 }
