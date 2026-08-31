@@ -1,4 +1,4 @@
-# paper-highlight (v0.5 ✅)
+# paper-highlight (v0.5.1 ✅)
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
@@ -7,6 +7,7 @@
 > v0.1（管线打通）2026-08-26 验收通过；v0.2（审查闭环）2026-08-27 验收通过；**v0.3（画像收敛）2026-08-27 验收 PASS**：四层画像（`highlight-profile/`）+ 冷启动引导 + colors.yml 驱动图例/色板 + GUI 画像编辑面板 + propose 摘要注入（`read_profile`）+ 待确认提案面板 + 确认闭环（`confirm_proposal` / `/profile/apply`，append-only）+ 三篇同领域论文收敛验收（`step7-multi-paper.js`：认可率 50%→67%→100%，修改率 50%→33%→0%，PASS）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.3.md`。
 > **v0.4（打磨导出）2026-08-27 验收 PASS（归档 `v0.4.0`）**：HTML/MD 导出（`export_paper` 工具 + `/paper-hl/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` 只读注入 + 论文级反思（`reflect_paper` / `paper-reflection.md`）+ UX 打磨（`keyAction` 快捷键 / 审查进度条）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.4.md`（M0–M5 全达标）。
 > **v0.5（一键格式化）2026-08-27 Phase 0 完成（`v0.5.0` 待验收）**：工厂重置 —— 清空所有论文高亮记录（`paper.highlights.json` 重置 + `reflections.json`/`export/`/`paper-reflection.md` 删除，保留论文正文）+ 删除个性化画像（`highlight-profile/`，回到冷启动）。GUI「格式化」按钮 + 确认对话框（`callFormat` → `POST /paper-hl/format`）+ `format_all` 工具（confirm 门禁，scope all/highlights/profile）。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.md`。
+> **v0.5.1（图例彩色语义 + 轻量公式渲染）2026-08-31 验收 PASS（归档 `v0.5.1`）**：①图例五个语义标签用对应高亮色显示（`phl-legend-label`）；②轻量（零依赖，无 KaTeX/MathJax）公式渲染 —— `render-body.js` 纯函数 `MATH_SYMBOLS`/`supScript`/`subScript`/`boldMath`/`mathClean`/`mathConvert`/`matchMathDelim`/`matchMathToken`/`splitMathPieces`/`mathPieceEl` 支持 `$…$`/`$$…$$`/`\(…\)`/`\[…\]` 定界符与 MinerU 裸 LaTeX 片段（`\times`→×、`_ { 2 }`→₂、`\mathbf{f}`→𝐟、`\bar{U}`→Ū、OCR `{ - }`→-、未知命令保留）；数学片段独立 segment + `data-phl-dlen`，`nodeOffsetToSeg` 显示末→原始末映射，**选区映射保持精确、非数学段布局与 v0.5.0 逐字节一致**（回归守卫测试）。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.1.md`。
 
 ## 布局
 
@@ -27,7 +28,7 @@ host/
   diff.js       # (Phase 4) 审查差异分析纯函数：classifySpanChange / summarizeDiff（计数+接受率+样例）
 client/
   client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层 + 画像/提案面板 + 导出对话框 + 格式化对话框 + 快捷键 + 进度条
-  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl/callFormat 纯函数）
+  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl/callFormat + v0.5.1 图例彩色语义 + 轻量公式渲染：MATH_SYMBOLS/supScript/subScript/boldMath/mathClean/mathConvert/splitMathPieces 纯函数，renderText/buildBlockSegments/nodeOffsetToSeg 数学片段支持）
 scripts/
   gen-client.js # 生成 client/client.js 与 dynamic/client-half.js
   seed-demo.js  # 种子演示 spans（幂等，store 同路径）
@@ -49,7 +50,7 @@ test/
   run-mock.js   # 离线 mock 验证（无网络）
   run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section + summarize_section_diff + duplicates 契约 + read_profile/confirm_proposal + export_paper + read_field_map + reflect_paper + format_all（v0.3 + v0.4 + v0.5）
   run-plugin.js # host 插件 /paper-hl 路由回归（read/write/profile/init/apply/save/export/format + 负例矩阵）
-  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl + v0.5 callFormat）
+  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl + v0.5 callFormat + v0.5.1 数学转换器/splitMathPieces/renderText 数学 span/选区映射/非数学布局回归守卫）
   run-profile.js# (v0.3) 画像层单测：冷启动/校验/摘要/applyProposal/applyProfileUpdate/confirm 工具矩阵
   run-export.js # (v0.4 Phase 0) 导出层单测：渲染矩阵 + 自包含断言 + 模板矩阵
   run-reflect-paper.js # (v0.4 Phase 3) 论文级反思模板单测：空/全接受/混合 diff/画像行/逐节表
@@ -98,6 +99,6 @@ node test/run-real.js "D:\aa\<paper>.pdf"
 
 - 槽位：`conversation.view`（list 槽 / session 作用域）——包作为 profile bundle 时自动注册「论文」tab
 - host 路由：`GET /paper-hl/read[?paperId=]` → `{ok, paperId, paperMd, anchors, highlights, papers}`；`POST /paper-hl/format`（v0.5 一键格式化，`{confirm:true, scope?}` → 审计统计；缺 confirm → 400；仅 POST）（`host/plugin.js`）
-- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例 + 刷新/选论文/导出/格式化）
+- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例（**v0.5.1 语义标签彩色**）+ 刷新/选论文/导出/格式化 + **v0.5.1 轻量公式渲染**（`$…$`/`$$…$$` 等定界符 + 裸 LaTeX 片段 → 衬线斜体；悬停显示原始 LaTeX；导出仍保留原始文本））
 - 重新生成 bundle：`node scripts/gen-client.js`（改 `client/render-body.js` 后必须重跑）
 - paper profile（3081）：`dsh --profile paper --port 3081 --no-open`；数据根目录解析：组合 config `root`（profile patch 已钉 `D:\aa`）→ `PAPER_HL_ROOT` → `process.cwd()`（兜底）；从任意目录重启均不丢数据

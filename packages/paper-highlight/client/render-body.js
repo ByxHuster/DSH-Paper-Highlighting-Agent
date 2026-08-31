@@ -226,6 +226,187 @@ function markStyle(span, isActive, clickable, colors) {
 }
 
 /**
+ * v0.5.1 · lightweight inline/display math rendering.
+ *
+ * No external dependency (no KaTeX / MathJax): a pure tokenizer + converter
+ * over the OCR-mangled LaTeX fragments that MinerU normalization leaves inline
+ * (e.g. "N \times D", "l o g _ { 2 } ( V )", "\mathbf { f }", "{ - }"). It
+ * supports explicit delimiters ($$…$$ / \[…\] display, $…$ / \(…\) inline) AND
+ * bare LaTeX tokens embedded in prose. Display = Unicode symbols + combining
+ * accents + CSS styling; unknown commands are preserved verbatim so nothing is
+ * ever lost. splitMathPieces keeps the raw [start,end) char ranges, so the
+ * highlight-selection machinery can subdivide segments exactly (each math
+ * piece becomes its own segment; nodeOffsetToSeg maps the display-length
+ * offset back to the raw range).
+ *
+ * These helpers never use backticks / template literals / `${` (they are
+ * embedded into the shipped bundle via toString()).
+ */
+
+const MATH_SYMBOLS = {
+  alpha: '\u03B1', beta: '\u03B2', gamma: '\u03B3', delta: '\u03B4', epsilon: '\u03B5',
+  varepsilon: '\u03F5', zeta: '\u03B6', eta: '\u03B7', theta: '\u03B8', vartheta: '\u03D1',
+  iota: '\u03B9', kappa: '\u03BA', lambda: '\u03BB', mu: '\u03BC', nu: '\u03BD',
+  xi: '\u03BE', omicron: '\u03BF', pi: '\u03C0', varpi: '\u03D6', rho: '\u03C1',
+  varrho: '\u03F1', sigma: '\u03C3', varsigma: '\u03C2', tau: '\u03C4', upsilon: '\u03C5',
+  phi: '\u03C6', varphi: '\u03D5', chi: '\u03C7', psi: '\u03C8', omega: '\u03C9',
+  Gamma: '\u0393', Delta: '\u0394', Theta: '\u0398', Lambda: '\u039B', Xi: '\u039E',
+  Pi: '\u03A0', Sigma: '\u03A3', Upsilon: '\u03A5', Phi: '\u03A6', Psi: '\u03A8', Omega: '\u03A9',
+  times: '\u00D7', cdot: '\u00B7', pm: '\u00B1', mp: '\u2213', le: '\u2264', leq: '\u2264',
+  ge: '\u2265', geq: '\u2265', ne: '\u2260', neq: '\u2260', approx: '\u2248', equiv: '\u2261',
+  propto: '\u221D', in: '\u2208', notin: '\u2209', ni: '\u220B', subset: '\u2282',
+  supset: '\u2283', subseteq: '\u2286', supseteq: '\u2287', cup: '\u222A', cap: '\u2229',
+  forall: '\u2200', exists: '\u2203', nexists: '\u2204', emptyset: '\u2205', infty: '\u221E',
+  partial: '\u2202', nabla: '\u2207', to: '\u2192', rightarrow: '\u2192', leftarrow: '\u2190',
+  leftrightarrow: '\u2194', uparrow: '\u2191', downarrow: '\u2193', Rightarrow: '\u21D2',
+  Leftarrow: '\u21D0', sum: '\u2211', prod: '\u220F', int: '\u222B', oint: '\u222E',
+  ldots: '\u2026', dots: '\u2026', cdots: '\u22EF', vdots: '\u22EE', ddots: '\u22F1',
+  prime: '\u2032', degree: '\u00B0', ast: '\u2217', star: '\u22C6', oplus: '\u2295',
+  otimes: '\u2297', ominus: '\u2296', odot: '\u2299', sqrt: '\u221A', angle: '\u2220',
+  perp: '\u22A5', parallel: '\u2225', mid: '\u2223', sim: '\u223C', simeq: '\u2243',
+  cong: '\u2245', asymp: '\u224D', ll: '\u226A', gg: '\u226B', lceil: '\u2308',
+  rceil: '\u2309', lfloor: '\u230A', rfloor: '\u230B', frac: '\u2044', colon: ':',
+  // legacy font switches (no glyph of their own) — vanish cleanly.
+  bf: '', rm: '', it: '', tt: '', cal: '', boldsymbol: '',
+}
+
+const SUP_MAP = { '0': '\u2070', '1': '\u00B9', '2': '\u00B2', '3': '\u00B3', '4': '\u2074', '5': '\u2075', '6': '\u2076', '7': '\u2077', '8': '\u2078', '9': '\u2079', '+': '\u207A', '-': '\u207B', '=': '\u207C', '(': '\u207D', ')': '\u207E', 'n': '\u207F', 'i': '\u2071', 'T': '\u1D40' }
+const SUB_MAP = { '0': '\u2080', '1': '\u2081', '2': '\u2082', '3': '\u2083', '4': '\u2084', '5': '\u2085', '6': '\u2086', '7': '\u2087', '8': '\u2088', '9': '\u2089', '+': '\u208A', '-': '\u208B', '=': '\u208C', '(': '\u208D', ')': '\u208E', 'a': '\u2090', 'e': '\u2091', 'o': '\u2092', 'x': '\u2093', 'i': '\u1D62', 'j': '\u2C7C', 'k': '\u2096', 'l': '\u2097', 'm': '\u2098', 'n': '\u2099', 'p': '\u209A', 's': '\u209B', 't': '\u209C', 'r': '\u1D63', 'h': '\u2095', 'u': '\u1D64', 'v': '\u1D65', 'f': '\u1DA0' }
+
+/** Map each char of t through the script table (fallback = the char itself). */
+function mapScript(t, map) {
+  let out = ''
+  for (const ch of String(t || '')) out += map[ch] !== undefined ? map[ch] : ch
+  return out
+}
+
+/** Unicode superscript for t (fallback = plain char). */
+function supScript(t) { return mapScript(t, SUP_MAP) }
+
+/** Unicode subscript for t (fallback = plain char). */
+function subScript(t) { return mapScript(t, SUB_MAP) }
+
+/** Unicode mathematical bold for t (a-z → 𝐚-𝐳, A-Z → 𝐀-𝐙). */
+function boldMath(t) {
+  let out = ''
+  for (const ch of String(t || '')) {
+    const c = ch.codePointAt(0)
+    if (c >= 97 && c <= 122) out += String.fromCodePoint(0x1D41A + (c - 97))
+    else if (c >= 65 && c <= 90) out += String.fromCodePoint(0x1D400 + (c - 65))
+    else out += ch
+  }
+  return out
+}
+
+/**
+ * Convert one math fragment (raw LaTeX text, delimiters stripped by
+ * mathConvert) into its display string. Pure — unknown commands stay verbatim.
+ */
+function mathClean(s) {
+  return String(s || '')
+    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (m, a, b) => mathClean(a).trim() + '\u2044' + mathClean(b).trim())
+    .replace(/\\(mathbf|boldsymbol|textbf)\s*\{([^{}]*)\}/g, (m, c, a) => boldMath(mathClean(a).trim()))
+    .replace(/\\(mathrm|mathit|text|textit|textrm)\s*\{([^{}]*)\}/g, (m, c, a) => mathClean(a).trim())
+    .replace(/\\(bar|hat|tilde|dot|acute|grave|vec|overline|check)\s*\{([^{}]*)\}/g, (m, cmd, a) => {
+      const t = mathClean(a).trim()
+      const cc = { bar: '\u0304', hat: '\u0302', tilde: '\u0303', dot: '\u0307', acute: '\u0301', grave: '\u0300', vec: '\u20D7', overline: '\u0305', check: '\u030C' }[cmd]
+      return cc ? (t + cc) : t
+    })
+    .replace(/\\sqrt\s*\{([^{}]*)\}/g, (m, a) => '\u221A' + mathClean(a).trim())
+    .replace(/([_\^])\s*\{\s*([^{}]*)\s*\}/g, (m, op, inner) => (op === '_' ? subScript(mathClean(inner).trim()) : supScript(mathClean(inner).trim())))
+    .replace(/([_\^])([A-Za-z0-9])/g, (m, op, ch) => (op === '_' ? subScript(ch) : supScript(ch)))
+    .replace(/\\[,;:!]\s*/g, ' ')
+    .replace(/\\([a-zA-Z]+)/g, (m, name) => (MATH_SYMBOLS[name] !== undefined ? MATH_SYMBOLS[name] : m))
+    .replace(/\{\s*([0-9A-Za-z+\-*/=<>()|.,;:'"~])\s*\}/g, '$1')
+}
+
+/** Strip the surrounding math delimiters, then convert. */
+function mathConvert(raw) {
+  let s = String(raw || '').trim()
+  s = s.replace(/^\$\$/, '').replace(/\$\$$/, '')
+    .replace(/^\$/, '').replace(/\$$/, '')
+    .replace(/^\\\[/, '').replace(/\\\]$/, '')
+    .replace(/^\\\(/, '').replace(/\\\)$/, '')
+  return mathClean(s)
+}
+
+/** Match one explicit delimiter at the head of rest → {len, display, block} | null. */
+function matchMathDelim(rest) {
+  let m = /^\$\$([\s\S]+?)\$\$/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
+  m = /^\\\[([\s\S]+?)\\\]/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
+  m = /^\\\(([\s\S]+?)\\\)/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]) }
+  m = /^\$([\s\S]+?)\$/.exec(rest)
+  if (m && /[\\_^{]/.test(m[1])) return { len: m[0].length, display: mathConvert(m[1]) }
+  return null
+}
+
+/** Match one bare LaTeX token at the head of rest → {len, display} | null. */
+function matchMathToken(rest) {
+  const re = /\\[a-zA-Z]+(?:\s*\{[^{}]*\}){0,2}|[_\^]\s*\{[^{}]*\}|[_\^][A-Za-z0-9]|\{\s*[^\s{}]\s*\}/g
+  re.lastIndex = 0
+  const m = re.exec(rest)
+  if (m && m.index === 0) return { len: m[0].length, display: mathConvert(m[0]) }
+  return null
+}
+
+/**
+ * PURE — split a string into contiguous pieces [{start, end, math, display,
+ * block?}] covering [0, text.length). `start/end` are offsets into `text`
+ * (RAW), `display` is the rendered form (length may differ for math pieces).
+ * Text gaps without math collapse into a single piece so non-math anchors keep
+ * the exact segment layout the selection machinery expects.
+ */
+function splitMathPieces(text) {
+  const src = String(text || '')
+  const n = src.length
+  const out = []
+  let pos = 0
+  let textStart = 0
+  const flush = (end) => {
+    if (end > textStart) out.push({ start: textStart, end, math: false, display: src.slice(textStart, end) })
+  }
+  while (pos < n) {
+    const rest = src.slice(pos)
+    const d = matchMathDelim(rest)
+    if (d) {
+      flush(pos)
+      out.push({ start: pos, end: pos + d.len, math: true, display: d.display, block: !!d.block })
+      pos += d.len
+      textStart = pos
+      continue
+    }
+    const t = matchMathToken(rest)
+    if (t) {
+      flush(pos)
+      out.push({ start: pos, end: pos + t.len, math: true, display: t.display })
+      pos += t.len
+      textStart = pos
+      continue
+    }
+    pos++
+  }
+  flush(n)
+  return out
+}
+
+/** React element for one math piece (shared by the renderText branches). */
+function mathPieceEl(piece, rawText, segIndex, withSeg, segProps) {
+  const props = {
+    key: 'seg-' + segIndex,
+    className: 'phl-math' + (piece.block ? ' phl-math-display' : ''),
+    title: rawText,
+  }
+  if (withSeg) {
+    props['data-phl-seg'] = String(segIndex)
+    props['data-phl-dlen'] = String(piece.display.length)
+  }
+  return React.createElement('span', props, piece.display)
+}
+
+/**
  * Render one paragraph's text with its spans as <mark> nodes. opts (optional)
  * enables the P2-c review interaction: { onMarkClick, activeSpanId }. When
  * onMarkClick is provided the marks become clickable (selected outline from
@@ -243,21 +424,52 @@ function renderText(text, spans, opts) {
   const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
   const anchorId = (opts && opts.anchorId) || ''
   const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-  if (!spans || spans.length === 0) {
-    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-    return [text]
+  // v0.5.1: emit one node per splitMathPieces piece for a plain run (math
+  // pieces become their own styled/segment elements). The mathPieceEl helper
+  // keeps every branch (no-span / gap / tail) emitting identical DOM.
+  const emitPlain = (run) => {
+    const pieces = splitMathPieces(run)
+    if (pieces.length === 1 && !pieces[0].math) {
+      if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), run))
+      else out.push(run)
+      si++
+      return
+    }
+    for (const p of pieces) {
+      if (!p.math) {
+        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
+        else out.push(p.display)
+      } else {
+        out.push(mathPieceEl(p, run.slice(p.start, p.end), si, withSeg, segProps))
+      }
+      si++
+    }
   }
   const out = []
   let pos = 0
   let si = segBase
   const onMarkClick = opts && opts.onMarkClick
   const activeSpanId = opts && opts.activeSpanId
-  for (const s of spans) {
-    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) {
-      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+  if (!spans || spans.length === 0) {
+    const pieces = splitMathPieces(String(text))
+    if (pieces.length === 1 && !pieces[0].math) {
+      if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
+      return [text]
+    }
+    for (const p of pieces) {
+      if (!p.math) {
+        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
+        else out.push(p.display)
+      } else {
+        out.push(mathPieceEl(p, text.slice(p.start, p.end), si, withSeg, segProps))
+      }
       si++
     }
+    return out
+  }
+  for (const s of spans) {
+    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
+    if (start > pos) emitPlain(text.slice(pos, start))
     if (end > start) {
       const props = {
         key: s.id,
@@ -276,10 +488,7 @@ function renderText(text, spans, opts) {
     }
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) {
-    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
-    si++
-  }
+  if (pos < text.length) emitPlain(text.slice(pos))
   return out
 }
 
@@ -474,18 +683,25 @@ function reconcileSpan(spans, serverSpan, payload) {
  * manual add / rescope" interaction.
  */
 
-/** Segments for ONE block (anchor). Spans are clamped + sorted by start. */
+/** Segments for ONE block (anchor). Spans are clamped + sorted by start.
+ *  v0.5.1: plain runs are subdivided by splitMathPieces so math pieces become
+ *  their own segments — exactly matching renderText's node emission. */
+function pushPlainSegs(segs, anchorId, text, from, to) {
+  const pieces = splitMathPieces(text.slice(from, to))
+  for (const p of pieces) segs.push({ anchorId, start: from + p.start, end: from + p.end, spanId: null, math: !!p.math })
+}
+
 function buildBlockSegments(anchorId, text, spans) {
   const segs = []
   const sorted = (spans || []).slice().sort((x, y) => x.char_start - y.char_start)
   let pos = 0
   for (const s of sorted) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
+    if (start > pos) pushPlainSegs(segs, anchorId, text, pos, start)
     if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
+  if (pos < text.length) pushPlainSegs(segs, anchorId, text, pos, text.length)
   return segs
 }
 
@@ -550,7 +766,21 @@ function nodeOffsetToSeg(node, offset, segments) {
       const seg = Number(attr)
       if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
       const len = segments[seg].end - segments[seg].start
-      const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
+      // v0.5.1: math pieces carry data-phl-dlen (their display length, which
+      // may be shorter than the raw LaTeX range). A display offset at/after the
+      // display end maps to the raw end (whole-token selections stay exact);
+      // partial offsets are clamped to the raw range.
+      let off
+      if (isEl) {
+        off = offset > 0 ? len : 0
+      } else {
+        off = Math.max(0, Math.min(offset, len))
+        const dlenAttr = (typeof el.getAttribute === 'function') ? el.getAttribute('data-phl-dlen') : null
+        if (dlenAttr !== null && dlenAttr !== undefined && dlenAttr !== '') {
+          const dlen = Number(dlenAttr)
+          if (Number.isFinite(dlen) && dlen < len && off >= dlen) off = len
+        }
+      }
       return { seg, offset: off }
     }
     if (isEl && el === node && typeof el.getAttribute === 'function' && el.getAttribute('data-phl-anchor') !== null) {
@@ -740,6 +970,30 @@ ${callProfile.toString()}
 ${callFormat.toString()}
 
 ${colorLegend.toString()}
+
+const MATH_SYMBOLS = ${JSON.stringify(MATH_SYMBOLS)};
+const SUP_MAP = ${JSON.stringify(SUP_MAP)};
+const SUB_MAP = ${JSON.stringify(SUB_MAP)};
+
+${mapScript.toString()}
+
+${supScript.toString()}
+
+${subScript.toString()}
+
+${boldMath.toString()}
+
+${mathClean.toString()}
+
+${mathConvert.toString()}
+
+${matchMathDelim.toString()}
+
+${matchMathToken.toString()}
+
+${splitMathPieces.toString()}
+
+${mathPieceEl.toString()}
 
 ${profilePanelModel.toString()}
 
@@ -1138,7 +1392,7 @@ function PaperView() {
     React.createElement('span', { className: 'phl-count' }, blocks.length + ' 段 · ' + spans.length + ' 处高亮'),
     palette.map((l) => React.createElement('span', { key: l.name, className: 'phl-legend-item' },
       React.createElement('mark', { style: { background: l.color } }, ' '),
-      ' ' + l.label
+      React.createElement('span', { className: 'phl-legend-label', style: { color: l.color } }, l.label)
     ))
   )
   // v0.4 Phase 4 (D6): review progress bar + next-unreviewed hint (passive; no
@@ -1685,6 +1939,11 @@ function apply(ctx) {
       '.phl-fmt-danger:disabled{opacity:.5;cursor:not-allowed}',
       '.phl-legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',
       '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
+      // v0.5.1: the semantic label renders in its own highlight color.
+      '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
+      // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
+      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#dcdcdc;padding:0 2px;border-radius:3px;background:rgba(96,130,190,.12)}',
+      '.phl-math-display{display:block;text-align:center;font-size:1.05em;margin:6px 0;padding:5px 8px;background:rgba(96,130,190,.14);border-radius:6px}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',
@@ -1836,4 +2095,11 @@ module.exports = {
   profileSavePayload,
   proposalCardModel,
   buildApplyDecisions,
+  MATH_SYMBOLS,
+  supScript,
+  subScript,
+  boldMath,
+  mathClean,
+  mathConvert,
+  splitMathPieces,
 }

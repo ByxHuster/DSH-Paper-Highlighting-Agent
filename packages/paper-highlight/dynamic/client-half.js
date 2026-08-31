@@ -44,21 +44,52 @@ function renderText(text, spans, opts) {
   const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
   const anchorId = (opts && opts.anchorId) || ''
   const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-  if (!spans || spans.length === 0) {
-    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-    return [text]
+  // v0.5.1: emit one node per splitMathPieces piece for a plain run (math
+  // pieces become their own styled/segment elements). The mathPieceEl helper
+  // keeps every branch (no-span / gap / tail) emitting identical DOM.
+  const emitPlain = (run) => {
+    const pieces = splitMathPieces(run)
+    if (pieces.length === 1 && !pieces[0].math) {
+      if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), run))
+      else out.push(run)
+      si++
+      return
+    }
+    for (const p of pieces) {
+      if (!p.math) {
+        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
+        else out.push(p.display)
+      } else {
+        out.push(mathPieceEl(p, run.slice(p.start, p.end), si, withSeg, segProps))
+      }
+      si++
+    }
   }
   const out = []
   let pos = 0
   let si = segBase
   const onMarkClick = opts && opts.onMarkClick
   const activeSpanId = opts && opts.activeSpanId
-  for (const s of spans) {
-    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) {
-      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+  if (!spans || spans.length === 0) {
+    const pieces = splitMathPieces(String(text))
+    if (pieces.length === 1 && !pieces[0].math) {
+      if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
+      return [text]
+    }
+    for (const p of pieces) {
+      if (!p.math) {
+        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
+        else out.push(p.display)
+      } else {
+        out.push(mathPieceEl(p, text.slice(p.start, p.end), si, withSeg, segProps))
+      }
       si++
     }
+    return out
+  }
+  for (const s of spans) {
+    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
+    if (start > pos) emitPlain(text.slice(pos, start))
     if (end > start) {
       const props = {
         key: s.id,
@@ -77,10 +108,7 @@ function renderText(text, spans, opts) {
     }
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) {
-    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
-    si++
-  }
+  if (pos < text.length) emitPlain(text.slice(pos))
   return out
 }
 
@@ -139,6 +167,124 @@ function colorLegend(colors) {
     })
   }
   return list
+}
+
+const MATH_SYMBOLS = {"alpha":"α","beta":"β","gamma":"γ","delta":"δ","epsilon":"ε","varepsilon":"ϵ","zeta":"ζ","eta":"η","theta":"θ","vartheta":"ϑ","iota":"ι","kappa":"κ","lambda":"λ","mu":"μ","nu":"ν","xi":"ξ","omicron":"ο","pi":"π","varpi":"ϖ","rho":"ρ","varrho":"ϱ","sigma":"σ","varsigma":"ς","tau":"τ","upsilon":"υ","phi":"φ","varphi":"ϕ","chi":"χ","psi":"ψ","omega":"ω","Gamma":"Γ","Delta":"Δ","Theta":"Θ","Lambda":"Λ","Xi":"Ξ","Pi":"Π","Sigma":"Σ","Upsilon":"Υ","Phi":"Φ","Psi":"Ψ","Omega":"Ω","times":"×","cdot":"·","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","propto":"∝","in":"∈","notin":"∉","ni":"∋","subset":"⊂","supset":"⊃","subseteq":"⊆","supseteq":"⊇","cup":"∪","cap":"∩","forall":"∀","exists":"∃","nexists":"∄","emptyset":"∅","infty":"∞","partial":"∂","nabla":"∇","to":"→","rightarrow":"→","leftarrow":"←","leftrightarrow":"↔","uparrow":"↑","downarrow":"↓","Rightarrow":"⇒","Leftarrow":"⇐","sum":"∑","prod":"∏","int":"∫","oint":"∮","ldots":"…","dots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","prime":"′","degree":"°","ast":"∗","star":"⋆","oplus":"⊕","otimes":"⊗","ominus":"⊖","odot":"⊙","sqrt":"√","angle":"∠","perp":"⊥","parallel":"∥","mid":"∣","sim":"∼","simeq":"≃","cong":"≅","asymp":"≍","ll":"≪","gg":"≫","lceil":"⌈","rceil":"⌉","lfloor":"⌊","rfloor":"⌋","frac":"⁄","colon":":","bf":"","rm":"","it":"","tt":"","cal":"","boldsymbol":""};
+const SUP_MAP = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾","n":"ⁿ","i":"ⁱ","T":"ᵀ"};
+const SUB_MAP = {"0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉","+":"₊","-":"₋","=":"₌","(":"₍",")":"₎","a":"ₐ","e":"ₑ","o":"ₒ","x":"ₓ","i":"ᵢ","j":"ⱼ","k":"ₖ","l":"ₗ","m":"ₘ","n":"ₙ","p":"ₚ","s":"ₛ","t":"ₜ","r":"ᵣ","h":"ₕ","u":"ᵤ","v":"ᵥ","f":"ᶠ"};
+
+function mapScript(t, map) {
+  let out = ''
+  for (const ch of String(t || '')) out += map[ch] !== undefined ? map[ch] : ch
+  return out
+}
+
+function supScript(t) { return mapScript(t, SUP_MAP) }
+
+function subScript(t) { return mapScript(t, SUB_MAP) }
+
+function boldMath(t) {
+  let out = ''
+  for (const ch of String(t || '')) {
+    const c = ch.codePointAt(0)
+    if (c >= 97 && c <= 122) out += String.fromCodePoint(0x1D41A + (c - 97))
+    else if (c >= 65 && c <= 90) out += String.fromCodePoint(0x1D400 + (c - 65))
+    else out += ch
+  }
+  return out
+}
+
+function mathClean(s) {
+  return String(s || '')
+    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (m, a, b) => mathClean(a).trim() + '\u2044' + mathClean(b).trim())
+    .replace(/\\(mathbf|boldsymbol|textbf)\s*\{([^{}]*)\}/g, (m, c, a) => boldMath(mathClean(a).trim()))
+    .replace(/\\(mathrm|mathit|text|textit|textrm)\s*\{([^{}]*)\}/g, (m, c, a) => mathClean(a).trim())
+    .replace(/\\(bar|hat|tilde|dot|acute|grave|vec|overline|check)\s*\{([^{}]*)\}/g, (m, cmd, a) => {
+      const t = mathClean(a).trim()
+      const cc = { bar: '\u0304', hat: '\u0302', tilde: '\u0303', dot: '\u0307', acute: '\u0301', grave: '\u0300', vec: '\u20D7', overline: '\u0305', check: '\u030C' }[cmd]
+      return cc ? (t + cc) : t
+    })
+    .replace(/\\sqrt\s*\{([^{}]*)\}/g, (m, a) => '\u221A' + mathClean(a).trim())
+    .replace(/([_\^])\s*\{\s*([^{}]*)\s*\}/g, (m, op, inner) => (op === '_' ? subScript(mathClean(inner).trim()) : supScript(mathClean(inner).trim())))
+    .replace(/([_\^])([A-Za-z0-9])/g, (m, op, ch) => (op === '_' ? subScript(ch) : supScript(ch)))
+    .replace(/\\[,;:!]\s*/g, ' ')
+    .replace(/\\([a-zA-Z]+)/g, (m, name) => (MATH_SYMBOLS[name] !== undefined ? MATH_SYMBOLS[name] : m))
+    .replace(/\{\s*([0-9A-Za-z+\-*/=<>()|.,;:'"~])\s*\}/g, '$1')
+}
+
+function mathConvert(raw) {
+  let s = String(raw || '').trim()
+  s = s.replace(/^\$\$/, '').replace(/\$\$$/, '')
+    .replace(/^\$/, '').replace(/\$$/, '')
+    .replace(/^\\\[/, '').replace(/\\\]$/, '')
+    .replace(/^\\\(/, '').replace(/\\\)$/, '')
+  return mathClean(s)
+}
+
+function matchMathDelim(rest) {
+  let m = /^\$\$([\s\S]+?)\$\$/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
+  m = /^\\\[([\s\S]+?)\\\]/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
+  m = /^\\\(([\s\S]+?)\\\)/.exec(rest)
+  if (m) return { len: m[0].length, display: mathConvert(m[1]) }
+  m = /^\$([\s\S]+?)\$/.exec(rest)
+  if (m && /[\\_^{]/.test(m[1])) return { len: m[0].length, display: mathConvert(m[1]) }
+  return null
+}
+
+function matchMathToken(rest) {
+  const re = /\\[a-zA-Z]+(?:\s*\{[^{}]*\}){0,2}|[_\^]\s*\{[^{}]*\}|[_\^][A-Za-z0-9]|\{\s*[^\s{}]\s*\}/g
+  re.lastIndex = 0
+  const m = re.exec(rest)
+  if (m && m.index === 0) return { len: m[0].length, display: mathConvert(m[0]) }
+  return null
+}
+
+function splitMathPieces(text) {
+  const src = String(text || '')
+  const n = src.length
+  const out = []
+  let pos = 0
+  let textStart = 0
+  const flush = (end) => {
+    if (end > textStart) out.push({ start: textStart, end, math: false, display: src.slice(textStart, end) })
+  }
+  while (pos < n) {
+    const rest = src.slice(pos)
+    const d = matchMathDelim(rest)
+    if (d) {
+      flush(pos)
+      out.push({ start: pos, end: pos + d.len, math: true, display: d.display, block: !!d.block })
+      pos += d.len
+      textStart = pos
+      continue
+    }
+    const t = matchMathToken(rest)
+    if (t) {
+      flush(pos)
+      out.push({ start: pos, end: pos + t.len, math: true, display: t.display })
+      pos += t.len
+      textStart = pos
+      continue
+    }
+    pos++
+  }
+  flush(n)
+  return out
+}
+
+function mathPieceEl(piece, rawText, segIndex, withSeg, segProps) {
+  const props = {
+    key: 'seg-' + segIndex,
+    className: 'phl-math' + (piece.block ? ' phl-math-display' : ''),
+    title: rawText,
+  }
+  if (withSeg) {
+    props['data-phl-seg'] = String(segIndex)
+    props['data-phl-dlen'] = String(piece.display.length)
+  }
+  return React.createElement('span', props, piece.display)
 }
 
 function profilePanelModel(profile) {
@@ -294,11 +440,11 @@ function buildBlockSegments(anchorId, text, spans) {
   let pos = 0
   for (const s of sorted) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
+    if (start > pos) pushPlainSegs(segs, anchorId, text, pos, start)
     if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
+  if (pos < text.length) pushPlainSegs(segs, anchorId, text, pos, text.length)
   return segs
 }
 
@@ -343,7 +489,21 @@ function nodeOffsetToSeg(node, offset, segments) {
       const seg = Number(attr)
       if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
       const len = segments[seg].end - segments[seg].start
-      const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
+      // v0.5.1: math pieces carry data-phl-dlen (their display length, which
+      // may be shorter than the raw LaTeX range). A display offset at/after the
+      // display end maps to the raw end (whole-token selections stay exact);
+      // partial offsets are clamped to the raw range.
+      let off
+      if (isEl) {
+        off = offset > 0 ? len : 0
+      } else {
+        off = Math.max(0, Math.min(offset, len))
+        const dlenAttr = (typeof el.getAttribute === 'function') ? el.getAttribute('data-phl-dlen') : null
+        if (dlenAttr !== null && dlenAttr !== undefined && dlenAttr !== '') {
+          const dlen = Number(dlenAttr)
+          if (Number.isFinite(dlen) && dlen < len && off >= dlen) off = len
+        }
+      }
       return { seg, offset: off }
     }
     if (isEl && el === node && typeof el.getAttribute === 'function' && el.getAttribute('data-phl-anchor') !== null) {
@@ -816,7 +976,7 @@ function PaperView() {
     React.createElement('span', { className: 'phl-count' }, blocks.length + ' 段 · ' + spans.length + ' 处高亮'),
     palette.map((l) => React.createElement('span', { key: l.name, className: 'phl-legend-item' },
       React.createElement('mark', { style: { background: l.color } }, ' '),
-      ' ' + l.label
+      React.createElement('span', { className: 'phl-legend-label', style: { color: l.color } }, l.label)
     ))
   )
   // v0.4 Phase 4 (D6): review progress bar + next-unreviewed hint (passive; no
@@ -1363,6 +1523,11 @@ function apply(ctx) {
       '.phl-fmt-danger:disabled{opacity:.5;cursor:not-allowed}',
       '.phl-legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',
       '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
+      // v0.5.1: the semantic label renders in its own highlight color.
+      '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
+      // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
+      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#dcdcdc;padding:0 2px;border-radius:3px;background:rgba(96,130,190,.12)}',
+      '.phl-math-display{display:block;text-align:center;font-size:1.05em;margin:6px 0;padding:5px 8px;background:rgba(96,130,190,.14);border-radius:6px}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',

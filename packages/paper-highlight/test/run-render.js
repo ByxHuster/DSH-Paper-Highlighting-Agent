@@ -59,6 +59,8 @@ const {
   keyAction, reviewProgress, buildExportUrl,
   profilePanelModel, profilePanelColors, profileSavePayload,
   proposalCardModel, buildApplyDecisions,
+  MATH_SYMBOLS, supScript, subScript, boldMath,
+  mathClean, mathConvert, splitMathPieces,
 } = require('../client/render-body')
 const { assert } = require('./verify')
 
@@ -647,6 +649,81 @@ function main() {
     assert(buildExportUrl('p-1', '', false, false) === '/paper-hl/export?paperId=p-1', 'buildExportUrl: minimal (paperId only)')
     assert(buildExportUrl('p x/y', 'html', true, true).indexOf('p%20x%2Fy') >= 0, 'buildExportUrl: paperId encoded')
 
+    // ══════════════════ v0.5.1: lightweight math rendering ══════════════════
+    // Unicode converters.
+    assert(MATH_SYMBOLS.times === '\u00D7' && MATH_SYMBOLS.alpha === '\u03B1' && MATH_SYMBOLS.infty === '\u221E', 'math: MATH_SYMBOLS greek/operator table')
+    assert(supScript('23') === '\u00B2\u00B3' && supScript('2n') === '\u00B2\u207F', 'math: supScript digits + n')
+    assert(subScript('2') === '\u2082' && subScript('ij') === '\u1D62\u2C7C', 'math: subScript digits + i/j')
+    assert(boldMath('fN') === '\u{1D41F}\u{1D40D}', 'math: boldMath a-z/A-Z → mathematical bold')
+    assert(boldMath('f 1') === '\u{1D41F} 1', 'math: boldMath keeps non-letters')
+
+    // mathConvert: commands, frac, accents, sub/sup, OCR braces, unknown kept.
+    assert(mathConvert('\\times') === '\u00D7', 'math: \\times → ×')
+    assert(mathConvert('\\mathbf { f }') === '\u{1D41F}', 'math: \\mathbf { f } → 𝐟')
+    assert(mathConvert('\\bar { N }') === 'N\u0304', 'math: \\bar { N } → N̄')
+    assert(mathConvert('\\frac { a } { b }') === 'a\u2044b', 'math: \\frac { a } { b } → a⁄b')
+    assert(mathConvert('\\sqrt { x }') === '\u221Ax', 'math: \\sqrt { x } → √x')
+    assert(mathConvert('l o g _ { 2 }') === 'l o g \u2082', 'math: _ { 2 } → subscript ₂ (base text untouched)')
+    assert(mathConvert('x^2') === 'x\u00B2', 'math: bare ^2 → superscript ²')
+    assert(mathConvert('1 { - } 0') === '1 - 0', 'math: OCR { - } brace noise collapses to -')
+    assert(mathConvert('\\zzzunknown') === '\\zzzunknown', 'math: unknown command preserved verbatim')
+    assert(mathConvert('$$E = mc^2$$') === 'E = mc\u00B2', 'math: $$…$$ delimiters stripped + converted')
+
+    // splitMathPieces: contiguous coverage, math flags, delimiters, no-math passthrough.
+    const cov = (pieces, srcLen) => {
+      let ok = true
+      let p = 0
+      for (const pc of pieces) {
+        if (pc.start !== p || pc.end <= pc.start) { ok = false; break }
+        p = pc.end
+      }
+      return ok && p === srcLen
+    }
+    const spPlain = splitMathPieces('plain prose only')
+    assert(spPlain.length === 1 && spPlain[0].math === false && spPlain[0].display === 'plain prose only' && cov(spPlain, 16), 'splitMathPieces: no math → single text piece covering input')
+    const spMix = splitMathPieces('N \\times D')
+    assert(spMix.length === 3 && spMix[1].math === true && spMix[1].display === '\u00D7', 'splitMathPieces: \\times splits into text/math/text')
+    assert(spMix[0].display === 'N ' && spMix[2].display === ' D' && cov(spMix, 10), 'splitMathPieces: text gaps preserved around math token')
+    const spDisp = splitMathPieces('a $$\\sum_i x_i$$ b')
+    const dispPiece = spDisp.find((p) => p.math && p.block)
+    assert(dispPiece !== undefined && dispPiece.display.indexOf('\u2211') >= 0 && cov(spDisp, 18), 'splitMathPieces: $$…$$ → block math piece')
+
+    // renderText emits phl-math spans (with and without segments) and keeps
+    // plain runs as bare strings; segment index alignment with buildBlockSegments.
+    const mathText = 'Size N \\times D, done.'
+    const rtPlain = renderText(mathText, null, {})
+    assert(rtPlain.filter((n) => n && n.props && n.props.className === 'phl-math').length === 1, 'renderText: math span emitted (no segments)')
+    const rtSeg = renderText(mathText, null, { withSegments: true, segBase: 0, anchorId: 'a1' })
+    const mathSegEls = rtSeg.filter((n) => n.props && n.props['data-phl-seg'] !== undefined && n.props.className === 'phl-math')
+    assert(mathSegEls.length === 1 && mathSegEls[0].props['data-phl-dlen'] === '1', 'renderText: math span carries data-phl-seg + data-phl-dlen')
+    const blocksM = [{ id: 'a1', anchor: { text: mathText }, spans: [] }]
+    const segMapM = buildSegmentMap(blocksM)
+    assert(segMapM.length === rtSeg.length, 'renderText/math: emitted nodes count matches buildSegmentMap segments')
+    const mathSeg = segMapM.find((s) => s.math === true)
+    assert(mathSeg !== undefined && mathSeg.start === 7 && mathSeg.end === 13, 'renderText/math: math segment keeps raw [start,end) (\\times at 7..13)')
+    // nodeOffsetToSeg: a display offset at the display end maps to the raw end.
+    const mathEl = { nodeType: 1, getAttribute: (k) => (k === 'data-phl-seg' ? '1' : k === 'data-phl-dlen' ? '1' : null), parentElement: null }
+    const mathTextNode = { nodeType: 3, parentElement: mathEl }
+    const offFull = nodeOffsetToSeg(mathTextNode, 1, segMapM)
+    assert(offFull !== null && offFull.seg === 1 && offFull.offset === 6, 'nodeOffsetToSeg: whole math token selection → raw range end (display 1 → raw 6)')
+    const offStart = nodeOffsetToSeg(mathTextNode, 0, segMapM)
+    assert(offStart.offset === 0, 'nodeOffsetToSeg: math token start → raw range start')
+    // non-math anchors: segment layout unchanged from v0.5.0 (regression guard).
+    const plainSegs = buildBlockSegments('a2', 'Abstract body text.', [{ id: 's-1', char_start: 0, char_end: 8 }])
+    assert(plainSegs.length === 2 && plainSegs[0].spanId === 's-1' && plainSegs[1].spanId === null, 'math: non-math anchor segment layout unchanged')
+    // with-spans + math: gap emission must stay aligned with the segment map.
+    const mathText2 = 'A \\times B and C.'
+    const spans2 = [{ id: 's-x', char_start: 0, char_end: 1 }]
+    const rtSeg2 = renderText(mathText2, spans2, { withSegments: true, segBase: 0, anchorId: 'a1' })
+    const segMap2 = buildSegmentMap([{ id: 'a1', anchor: { text: mathText2 }, spans: spans2 }])
+    assert(segMap2.length === rtSeg2.length, 'renderText/math: with-span node count matches segment map')
+    const spans3 = [{ id: 's-y', char_start: 0, char_end: 8 }] // mark spans over the \times token
+    const rtSeg3 = renderText(mathText2, spans3, { withSegments: true, segBase: 0, anchorId: 'a1' })
+    const segMap3 = buildSegmentMap([{ id: 'a1', anchor: { text: mathText2 }, spans: spans3 }])
+    assert(segMap3.length === rtSeg3.length && segMap3.length === 2, 'renderText/math: mark-over-math stays one segment (2 total)')
+    const markEls3 = rtSeg3.filter((n) => n.props && n.props['data-phl-seg'] !== undefined && n.type === 'mark')
+    assert(markEls3.length === 1 && markEls3[0].props['data-phl-seg'] === '0', 'renderText/math: mark keeps its segment index')
+
     console.log(JSON.stringify({
       step: 'render-helpers',
       result: 'PASS',
@@ -662,6 +739,7 @@ function main() {
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
       v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape/Ctrl+Enter; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
+      v051: 'math — supScript/subScript/boldMath/MATH_SYMBOLS converters + mathConvert (\\times/\\mathbf/\\bar/\\frac/\\sqrt/sub-sup/OCR { - }/unknown/delimiters) + splitMathPieces (coverage, math flags, block $$, no-math passthrough) + renderText phl-math spans (seg/dlen) + segment alignment + nodeOffsetToSeg raw-end mapping + non-math layout regression guard',
     }, null, 2))
     return null
   })
