@@ -81,6 +81,36 @@ async function seedFixture() {
   return { root, paperId: 'p-test' }
 }
 
+/** v0.5.1 approve_section fixture: 2 proposed spans in Abstract + 1 in References. */
+async function seedFixtureApprove() {
+  const root = path.join(__dirname, '.tmp', 'v051-approve-fixture')
+  await fsp.rm(root, { recursive: true, force: true })
+  const md = ['# Title', '', '## Abstract', '', 'Abstract body text.', '', '## References', '', 'Ref item.'].join('\n')
+  const find = (s) => md.indexOf(s)
+  const anchors = {
+    'a-0001-01-01': { page: 1, block: 1, par: 1, type: 'title', text: 'Title', md_offset: find('Title') },
+    'a-0001-02-01': { page: 1, block: 2, par: 1, type: 'title', text: 'Abstract', md_offset: find('Abstract') },
+    'a-0001-03-01': { page: 1, block: 3, par: 1, type: 'text', text: 'Abstract body text.', md_offset: find('Abstract body text.') },
+    'a-0001-04-01': { page: 1, block: 4, par: 1, type: 'title', text: 'References', md_offset: find('References') },
+    'a-0001-05-01': { page: 1, block: 5, par: 1, type: 'text', text: 'Ref item.', md_offset: find('Ref item.') },
+  }
+  await writePaper(root, 'p-test2', {
+    paperMd: md,
+    anchors,
+    meta: { id: 'p-test2', title: 'Title', source_pdf: 's.pdf', mineru_task: 'm', stats: { kept_blocks: 5 } },
+  })
+  const doc = newHighlightsSkeleton({ id: 'p-test2', title: 'Title', sourcePdf: 's.pdf', mineruTask: 'm' })
+  doc.anchors = anchors
+  doc.plan.sections = [{ id: 's2', section: 'Abstract', status: 'pending' }]
+  doc.spans = [
+    { id: 's-001', anchor: 'a-0001-03-01', char_start: 0, char_end: 7, color: 'red', rationale: 'core', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: 't0' }] },
+    { id: 's-002', anchor: 'a-0001-03-01', char_start: 9, char_end: 12, color: 'blue', rationale: 'risk', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: 't0' }] },
+    { id: 's-003', anchor: 'a-0001-05-01', char_start: 0, char_end: 4, color: 'yellow', rationale: 'ref', status: 'proposed', decisions: [{ action: 'proposed', by: 'agent', at: 't0' }] },
+  ]
+  await writeHighlights(root, 'p-test2', doc)
+  return { root, paperId: 'p-test2' }
+}
+
 async function main() {
   // ── 1) apply with an explicit config.root ──────────────────────────────────
   const ctx = fakeCtx()
@@ -177,6 +207,47 @@ async function main() {
   const rv2 = await post('paperId=p-test', { action: 'review_section', section: 's3' })
   const jrv2 = JSON.parse(rv2.body)
   assert(rv2.status === 200 && jrv2.section.id === 's3' && jrv2.section.section === 'References', 'review_section creates missing entry with title')
+
+  // 11b) v0.5.1 approve_section on the (already accepted/user_added) fixture →
+  //      empty batch (0 proposed left) but section still marked reviewed.
+  const ap0 = await post('paperId=p-test', { action: 'approve_section', section: 's2' })
+  const jap0 = JSON.parse(ap0.body)
+  assert(ap0.status === 200 && jap0.ok === true && jap0.accepted_count === 0 && jap0.section.status === 'reviewed', 'approve_section: no proposed left → 0 accepted + reviewed')
+
+  // ══════════════════ v0.5.1: approve_section route (batch accept) ══════════════════
+  const fx2 = await seedFixtureApprove()
+  const ctx4 = fakeCtx()
+  plugin.apply(ctx4, { root: fx2.root })
+  const w2 = ctx4.captured[0]
+  const post2 = (url, action) => invoke(w2.handler, {
+    method: 'POST',
+    url: '/paper-hl/write' + (url ? '?' + url : ''),
+    body: action === undefined ? '' : (typeof action === 'string' ? action : JSON.stringify(action)),
+  })
+
+  // 11c) approve_section Abstract → accepts its 2 proposed spans + reviewed.
+  const ap = await post2('paperId=p-test2', { action: 'approve_section', section: 's2' })
+  const jap = JSON.parse(ap.body)
+  assert(ap.status === 200 && jap.ok === true && jap.action === 'approve_section', 'write approve_section -> 200')
+  assert(jap.accepted_count === 2 && Array.isArray(jap.accepted) && jap.accepted.length === 2, 'approve_section accepts the 2 Abstract spans')
+  assert(jap.accepted.every((s) => s.status === 'accepted'), 'approve_section response spans are accepted')
+  assert(jap.section.status === 'reviewed', 'approve_section response section reviewed')
+  const apDisk = await readHighlights(fx2.root, fx2.paperId)
+  assert(apDisk.spans.filter((s) => s.status === 'accepted').length === 2 && apDisk.spans.find((s) => s.id === 's-003').status === 'proposed', 'approve_section persisted: Abstract accepted, References untouched')
+
+  // 11d) approve_section References → accepts its 1 proposed span.
+  const ap2 = await post2('paperId=p-test2', { action: 'approve_section', section: 's3' })
+  const jap2 = JSON.parse(ap2.body)
+  assert(jap2.accepted_count === 1 && jap2.accepted[0].id === 's-003', 'approve_section accepts the References span')
+  assert(jap2.section.status === 'reviewed', 'approve_section marks References reviewed')
+
+  // 11e) re-approving Abstract is idempotent (0 new accepts).
+  const ap3 = await post2('paperId=p-test2', { action: 'approve_section', section: 's2' })
+  assert(JSON.parse(ap3.body).accepted_count === 0, 'approve_section idempotent on re-approve')
+
+  // 11f) empty section id → 400.
+  const ap4 = await post2('paperId=p-test2', { action: 'approve_section', section: '' })
+  assert(ap4.status === 400 && /section must be/.test(JSON.parse(ap4.body).error), 'approve_section empty section -> 400')
 
   // ── negative write matrix ──
   const bad = await post('paperId=p-test', { action: 'accept', span_id: 's-999' })

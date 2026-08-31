@@ -144,6 +144,9 @@ async function handleWrite(root, url, req, res, sendJson) {
       action: action.action ?? null,
       span: result.span ?? null,
       section: result.section ?? null,
+      // v0.5.1: approve_section returns the batch-accepted spans + count.
+      accepted: result.accepted ?? null,
+      accepted_count: result.accepted_count ?? null,
       span_count: highlights.spans.length,
     })
   } catch (err) {

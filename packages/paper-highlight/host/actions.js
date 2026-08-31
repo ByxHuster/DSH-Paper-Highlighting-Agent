@@ -13,13 +13,16 @@
  *   add     { anchor, char_start, char_end, color, rationale? }
  *   note    { span_id, note }              → span.note (user comment)
  *   review_section { section }             → plan.sections[i].status='reviewed'
+ *   approve_section { section }            → accept ALL proposed spans in the
+ *                                             section's anchor_ids + mark the
+ *                                             section reviewed (v0.5.1)
  *
  * Every action appends an immutable decision (design §4.2: decisions append-
  * only, the profile-learning audit log). The caller persists the mutated
  * document with writeHighlights (which re-validates the whole schema).
  */
 
-const ACTIONS = new Set(['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section'])
+const ACTIONS = new Set(['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section'])
 
 function nowIso() {
   return new Date().toISOString()
@@ -118,9 +121,9 @@ function applyNote(doc, a) {
   return { span: s }
 }
 
-function applyReviewSection(doc, a, opts) {
-  const section = a.section
-  if (typeof section !== 'string' || section.length === 0) throw new Error('review_section: section must be a non-empty string id')
+/** Shared section-entry resolution: find the plan entry (by id or section
+ *  title) or create one; then mark it reviewed. Returns the entry. */
+function resolveReviewEntry(doc, section, opts) {
   let entry = (doc.plan.sections || []).find((e) => e.id === section || e.section === section)
   if (!entry) {
     let title = section
@@ -130,11 +133,47 @@ function applyReviewSection(doc, a, opts) {
     }
     entry = { id: section, section: title, status: 'reviewed', reviewed_at: nowIso() }
     doc.plan.sections.push(entry)
-    return { section: entry }
+    return entry
   }
   entry.status = 'reviewed'
   entry.reviewed_at = nowIso()
-  return { section: entry }
+  return entry
+}
+
+function applyReviewSection(doc, a, opts) {
+  const section = a.section
+  if (typeof section !== 'string' || section.length === 0) throw new Error('review_section: section must be a non-empty string id')
+  return { section: resolveReviewEntry(doc, section, opts) }
+}
+
+/**
+ * v0.5.1 · approve_section — one-click batch approval from the section TOC.
+ * Accepts EVERY proposed span whose anchor belongs to the section (from the
+ * built section index, opts.sections → anchor_ids), then marks the section
+ * reviewed. When the agent proposed no highlights in the section (or the
+ * section id is unknown / has no anchors) zero spans are accepted and the
+ * section is still marked reviewed — "passing" an empty section. Accepted /
+ * user_added / rejected spans are left untouched. Each accept appends an
+ * 'accepted' decision (audit log). Pure mutation of `doc`.
+ */
+function applyApproveSection(doc, a, opts) {
+  const section = a.section
+  if (typeof section !== 'string' || section.length === 0) throw new Error('approve_section: section must be a non-empty string id')
+  const anchors = new Set()
+  if (opts && Array.isArray(opts.sections)) {
+    const built = opts.sections.find((s) => s.id === section)
+    if (built && Array.isArray(built.anchor_ids)) {
+      for (const id of built.anchor_ids) anchors.add(id)
+    }
+  }
+  const accepted = []
+  for (const s of doc.spans || []) {
+    if (s.status !== 'proposed' || !anchors.has(s.anchor)) continue
+    s.status = 'accepted'
+    s.decisions.push(decision('accepted'))
+    accepted.push(s)
+  }
+  return { section: resolveReviewEntry(doc, section, opts), accepted, accepted_count: accepted.length }
 }
 
 /**
@@ -162,6 +201,8 @@ function applyAction(doc, action, opts) {
       return applyNote(doc, action)
     case 'review_section':
       return applyReviewSection(doc, action, opts)
+    case 'approve_section':
+      return applyApproveSection(doc, action, opts)
     default:
       throw new Error(`unsupported action: ${kind}`)
   }

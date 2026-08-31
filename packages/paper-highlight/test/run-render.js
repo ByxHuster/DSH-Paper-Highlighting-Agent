@@ -61,6 +61,7 @@ const {
   proposalCardModel, buildApplyDecisions,
   MATH_SYMBOLS, supScript, subScript, boldMath,
   mathClean, mathConvert, splitMathPieces,
+  localApproveSectionSpans,
   BODY,
 } = require('../client/render-body')
 const { assert } = require('./verify')
@@ -727,10 +728,29 @@ function main() {
     // v0.5.1 regression guard: every pure helper referenced by the embedded
     // functions must be embedded into BODY (a missing toString() embed would
     // only surface at runtime as a ReferenceError → blank page).
-    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'colorLegend', 'mapScript', 'supScript', 'subScript', 'boldMath', 'mathClean', 'mathConvert', 'matchMathDelim', 'matchMathToken', 'splitMathPieces', 'mathPieceEl', 'pushPlainSegs', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions']
+    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'colorLegend', 'mapScript', 'supScript', 'subScript', 'boldMath', 'mathClean', 'mathConvert', 'matchMathDelim', 'matchMathToken', 'splitMathPieces', 'mathPieceEl', 'pushPlainSegs', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans']
     for (const name of EMBED_HELPERS) {
       assert(typeof BODY === 'string' && BODY.includes('function ' + name), 'bundle embed completeness: function ' + name + ' embedded into BODY')
     }
+
+    // ══════════════════ v0.5.1: section TOC batch approve ══════════════════
+    const apSpans = [
+      { id: 's-001', anchor: 'a-x', status: 'proposed' },
+      { id: 's-002', anchor: 'a-y', status: 'proposed' },
+      { id: 's-003', anchor: 'a-x', status: 'accepted' },
+      { id: 's-004', anchor: 'a-x', status: 'user_added' },
+      { id: 's-005', anchor: 'a-x', status: 'rejected' },
+      { id: 's-006', anchor: 'a-z', status: 'proposed' },
+    ]
+    const apApproved = localApproveSectionSpans(apSpans, ['a-x', 'a-y'])
+    const apStatus = (arr, id) => arr.find((s) => s.id === id).status
+    assert(apStatus(apApproved, 's-001') === 'accepted' && apStatus(apApproved, 's-002') === 'accepted', 'approve: proposed spans in section anchors → accepted')
+    assert(apStatus(apApproved, 's-003') === 'accepted' && apStatus(apApproved, 's-004') === 'user_added' && apStatus(apApproved, 's-005') === 'rejected', 'approve: accepted/user_added/rejected untouched')
+    assert(apStatus(apApproved, 's-006') === 'proposed', 'approve: proposed span outside section untouched')
+    assert(apApproved[2] === apSpans[2] && apApproved[0] !== apSpans[0], 'approve: already-accepted keeps identity, newly-accepted gets a copy')
+    const apEmpty = localApproveSectionSpans(apSpans, [])
+    assert(apEmpty.every((s) => s.status === apSpans.find((x) => x.id === s.id).status), 'approve: empty anchor set → no change')
+    assert(localApproveSectionSpans(null, ['a-x']).length === 0, 'approve: null spans → empty array')
 
     console.log(JSON.stringify({
       step: 'render-helpers',
@@ -748,6 +768,7 @@ function main() {
       v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape/Ctrl+Enter; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
       v051: 'math — supScript/subScript/boldMath/MATH_SYMBOLS converters + mathConvert (\\times/\\mathbf/\\bar/\\frac/\\sqrt/sub-sup/OCR { - }/unknown/delimiters) + splitMathPieces (coverage, math flags, block $$, no-math passthrough) + renderText phl-math spans (seg/dlen) + segment alignment + nodeOffsetToSeg raw-end mapping + non-math layout regression guard',
+      v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (39 helpers in BODY)',
     }, null, 2))
     return null
   })

@@ -20,8 +20,8 @@ const { assert } = require('./verify')
 
 const SECTIONS = [
   { id: 's1', title: 'Title', level: 1, anchor_id: 'a-0001-01-01', empty: true, kind: 'paper_title' },
-  { id: 's2', title: 'Abstract', level: 2, anchor_id: 'a-0001-03-01', empty: false, kind: 'section' },
-  { id: 's3', title: 'References', level: 2, anchor_id: 'a-0001-05-01', empty: true, kind: 'section' },
+  { id: 's2', title: 'Abstract', level: 2, anchor_id: 'a-0001-03-01', empty: false, kind: 'section', anchor_ids: ['a-0001-03-01', 'a-0001-04-01'] },
+  { id: 's3', title: 'References', level: 2, anchor_id: 'a-0001-05-01', empty: true, kind: 'section', anchor_ids: ['a-0001-05-01'] },
 ]
 
 function makeDoc() {
@@ -95,6 +95,39 @@ function main() {
   assert(r.section.status === 'reviewed' && r.section.id === 's3' && r.section.section === 'References', 'missing plan entry created with title')
   assert(doc.plan.sections.length === 2, 'new plan entry appended')
 
+  // ── v0.5.1 approve_section: accepts ALL proposed spans in the section ─────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'approve_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.section && r.section.status === 'reviewed', 'approve_section marks the section reviewed')
+  assert(Array.isArray(r.accepted) && r.accepted.length === 1, 'approve_section accepts exactly the section spans')
+  assert(r.accepted[0].id === 's-002' && r.accepted[0].status === 'accepted', 'proposed span in Abstract accepted')
+  assert(r.accepted_count === 1, 'accepted_count reported')
+  assert(doc.spans[0].status === 'proposed', 'span in Intro (not in Abstract) untouched')
+  assert(r.accepted[0].decisions.length === 2 && r.accepted[0].decisions[1].action === 'accepted' && r.accepted[0].decisions[1].by === 'user', 'approve_section appends per-span user decision')
+
+  // ── approve_section: accepted/user_added/rejected spans are untouched ─────
+  doc = makeDoc()
+  doc.spans[1].status = 'user_added' // s-002 now user_added
+  doc.spans.push({ id: 's-003', anchor: 'a-0001-04-01', char_start: 8, char_end: 14, color: 'red', status: 'rejected', decisions: [] })
+  doc.spans.push({ id: 's-004', anchor: 'a-0001-04-01', char_start: 8, char_end: 14, color: 'red', status: 'accepted', decisions: [] })
+  r = applyAction(doc, { action: 'approve_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.accepted_count === 0, 'no proposed span in section → 0 accepted')
+  assert(doc.spans.find((s) => s.id === 's-002').status === 'user_added', 'user_added span untouched')
+  assert(doc.spans.find((s) => s.id === 's-003').status === 'rejected', 'rejected span untouched')
+  assert(doc.spans.find((s) => s.id === 's-004').status === 'accepted', 'accepted span untouched')
+  assert(r.section.status === 'reviewed', 'empty-but-approved section still marked reviewed')
+
+  // ── approve_section: unknown section id → accept none + still reviewed ────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'approve_section', section: 's9' }, { sections: SECTIONS })
+  assert(r.accepted_count === 0 && r.section.id === 's9' && r.section.status === 'reviewed', 'unknown section: accept none, entry created reviewed')
+  assert(doc.plan.sections.length === 2, 'unknown section plan entry appended')
+
+  // ── approve_section: no opts.sections → accept none, still reviewed ───────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'approve_section', section: 's2' })
+  assert(r.accepted_count === 0 && r.section.status === 'reviewed', 'no sections index → accept none, reviewed')
+
   // ── mutations stay schema-valid (note field + plan status/reviewed_at) ────
   assert(validateHighlights(doc) === true, 'document remains schema-valid after mutations')
 
@@ -117,13 +150,16 @@ function main() {
   expectThrow(() => applyAction(makeDoc(), { action: 'note', span_id: 's-001', note: 42 }), /note must be/, 'non-string note throws')
   expectThrow(() => applyAction(makeDoc(), { action: 'nuke' }), /unsupported action/, 'unsupported action throws')
   expectThrow(() => applyAction(makeDoc(), { action: 'review_section', section: '' }), /section must be/, 'empty review_section throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'approve_section', section: '' }), /section must be/, 'empty approve_section throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'approve_section', section: 42 }), /section must be/, 'non-string approve_section throws')
   expectThrow(() => applyAction(makeDoc(), null), /action must be an object/, 'null action throws')
 
   console.log(JSON.stringify({
     step: 'actions-unit',
     result: 'PASS',
-    covered: ['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section'],
-    negative: 'unknown span/anchor, bad range, bad color, bad note, unsupported action, empty section',
+    covered: ['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section'],
+    approve_section: 'batch accept of all proposed spans in the section (anchor_ids), section marked reviewed; accepted/user_added/rejected untouched; empty/unknown/no-index sections → accept 0 + still reviewed; per-span user decisions appended',
+    negative: 'unknown span/anchor, bad range, bad color, bad note, unsupported action, empty section (review + approve)',
     audit: 'decisions append-only, mutations stay schema-valid',
   }, null, 2))
 }

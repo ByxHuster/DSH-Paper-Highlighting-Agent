@@ -636,6 +636,22 @@ function localApplySpans(spans, payload) {
 }
 
 /**
+ * v0.5.1 · batch optimistic accept for the section-TOC click: every PROPOSED
+ * span whose anchor is in `sectionAnchors` (the section's anchor_ids) flips to
+ * accepted. Accepted / user_added / rejected spans are untouched; unknown
+ * anchors are ignored. Pure — returns a new array (spans that were already
+ * accepted keep their object identity). The server reconcile replaces these
+ * optimistic copies with the authoritative `approve_section` response.
+ */
+function localApproveSectionSpans(spans, sectionAnchors) {
+  const set = new Set(sectionAnchors || [])
+  return (spans || []).map((s) => {
+    if (s.status !== 'proposed' || !set.has(s.anchor)) return s
+    return Object.assign({}, s, { status: 'accepted' })
+  })
+}
+
+/**
  * Status → visual style mapping (P2-b). Merged into a mark's React style by
  * the review UI (P2-c+) so proposed / accepted / user_added / rejected are
  * visually distinct. Note rejected spans are normally filtered by
@@ -1009,6 +1025,8 @@ ${excludeRejected.toString()}
 
 ${localApplySpans.toString()}
 
+${localApproveSectionSpans.toString()}
+
 ${spanActiveStyle.toString()}
 
 ${markStyle.toString()}
@@ -1294,11 +1312,53 @@ function PaperView() {
     })
   }
 
+  // v0.5.1: approve one section from the TOC chip click — optimistic batch
+  // accept of every proposed span in the section + mark the section reviewed,
+  // then the approve_section round trip (server accepts + marks reviewed; the
+  // returned spans reconcile the overlay, the section entry merges into the
+  // optimistic review map). Empty sections (agent proposed nothing) still get
+  // marked reviewed — passing them is exactly the point of a TOC click.
+  const approveSection = (id) => {
+    if (!id) return
+    const sec = (data.sections || []).find((s) => s.id === id)
+    const secAnchors = (sec && Array.isArray(sec.anchor_ids)) ? sec.anchor_ids : []
+    const title = (sec && sec.title) || id
+    const before = spans.filter((s) => s.status === 'proposed' && secAnchors.indexOf(s.anchor) >= 0).length
+    const next = localApproveSectionSpans(spans, secAnchors)
+    setSpansOverride(next)
+    const optimistic = { status: 'reviewed', reviewed_at: new Date().toISOString() }
+    setSectionOverrides((m) => Object.assign({}, m, { [id]: optimistic }))
+    setFlash(null)
+    setFlash({ kind: 'ok', text: '已审批通过 ' + title + (before ? '（接受 ' + before + ' 处高亮）' : '（无待审批高亮，已标记审查）') })
+    callWrite({ action: 'approve_section', section: id }, state.paperId).then((res) => {
+      if (res && Array.isArray(res.accepted)) {
+        setSpansOverride((prev) => {
+          let acc = prev || next
+          for (const sp of res.accepted) acc = reconcileSpan(acc, sp, { action: 'accept', span_id: sp.id })
+          return acc
+        })
+      }
+      if (res && res.section && res.section.id) {
+        setSectionOverrides((m) => Object.assign({}, m, { [res.section.id]: { status: res.section.status || 'reviewed', reviewed_at: res.section.reviewed_at || null } }))
+      }
+      if (res && typeof res.accepted_count === 'number') {
+        setFlash({ kind: 'ok', text: '已审批通过 ' + title + (res.accepted_count ? '（接受 ' + res.accepted_count + ' 处高亮）' : '（无待审批高亮，已标记审查）') })
+      }
+    }).catch((err) => {
+      const msg = String(err && err.message ? err.message : err)
+      setFlash({ kind: 'error', text: '审批失败（已回读校准）：' + msg })
+      callData({ paperId: state.paperId }).then((res) => {
+        if (res && res.ok) { setState((s) => ({ ...s, data: res })); setSpansOverride(null); setSectionOverrides({}) }
+      }).catch(() => {})
+    })
+  }
+
   // v0.4 Phase 4 (D6): publish the ready-path dispatch closures + hints so the
   // keydown effect (declared before the early returns) reads them fresh.
   dispatchRef.current = {
     applyAction,
     markCurrentReviewed,
+    approveSection,
     sectionItems,
     palette: palette.map((l) => l.name),
   }
@@ -1494,13 +1554,16 @@ function PaperView() {
       )
     : null
   // P2-e: reviewable section bar (✓ on reviewed, highlight on the section in view).
+  // v0.5.1: clicking a section chip approves ALL its highlights (batch accept)
+  // and marks it reviewed — even when the agent proposed none.
   const sectionBar = React.createElement('div', { className: 'phl-sections' },
     sectionItems.map((s) =>
       React.createElement('div', {
         key: s.id,
         className: 'phl-section' + (s.reviewed ? ' phl-section-done' : '') + (s.id === currentSection ? ' phl-section-curr' : ''),
         'data-phl-sec': s.id,
-        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title
+        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title + '（点击审批通过本节全部高亮）',
+        onClick: () => approveSection(s.id)
       },
         React.createElement('span', { className: 'phl-section-check' }, s.reviewed ? '✓' : ''),
         React.createElement('span', { className: 'phl-section-title' }, s.title)
@@ -1982,7 +2045,8 @@ function apply(ctx) {
       '.phl-add-btn:hover{background:rgba(255,255,255,.14)}',
       '.phl-add-confirm{border-color:rgba(120,220,130,.8)}',
       '.phl-sections{display:flex;gap:6px;overflow-x:auto;padding:6px 0 8px;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:11px;scrollbar-width:thin}',
-      '.phl-section{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;max-width:220px;padding:3px 8px;border-radius:10px;border:1px solid rgba(128,128,128,.35);background:transparent;color:rgba(128,128,128,.9);cursor:default;white-space:nowrap;overflow:hidden}',
+      '.phl-section{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;max-width:220px;padding:3px 8px;border-radius:10px;border:1px solid rgba(128,128,128,.35);background:transparent;color:rgba(128,128,128,.9);cursor:pointer;white-space:nowrap;overflow:hidden;transition:border-color .12s}',
+      '.phl-section:hover{border-color:rgba(150,190,255,.85)}',
       '.phl-section-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.phl-section-check{font-weight:700;flex:0 0 auto}',
       '.phl-section-done{border-color:rgba(120,220,130,.6);color:rgba(160,230,170,.95);background:rgba(120,220,130,.08)}',
@@ -2078,6 +2142,7 @@ module.exports = {
   colorLegend,
   excludeRejected,
   localApplySpans,
+  localApproveSectionSpans,
   spanActiveStyle,
   markStyle,
   reconcileSpan,

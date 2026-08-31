@@ -251,6 +251,9 @@ function applyMockAction(spans, payload) {
   }
   return span
 }
+// v0.5.1: the approve_section mock answers are captured so the interaction test
+// can assert the batch round trip (server accepted exactly the section spans).
+const approveCapture = []
 function mockWriteHandler(url, body) {
   const payload = JSON.parse(body || '{}')
   writeCapture.push(payload)
@@ -264,6 +267,17 @@ function mockWriteHandler(url, body) {
       if (payload.action === 'review_section') {
         const sec = { id: payload.section, status: 'reviewed', reviewed_at: new Date().toISOString() }
         result = { ok: true, action: 'review_section', section: sec, span_count: spans.length }
+      } else if (payload.action === 'approve_section') {
+        // v0.5.1: approve_section answers with the batch-accepted spans + a
+        // reviewed section entry (mirrors the real host applyApproveSection).
+        const sec = (j.sections || []).find((s) => s.id === payload.section)
+        const anchors = (sec && sec.anchor_ids) || []
+        const accepted = spans.filter((s) => s.status === 'proposed' && anchors.indexOf(s.anchor) >= 0).map((s) => {
+          const copy = Object.assign({}, s, { status: 'accepted', decisions: (s.decisions || []).concat([{ action: 'accepted', by: 'user', at: new Date().toISOString() }]) })
+          return copy
+        })
+        result = { ok: true, action: 'approve_section', section: { id: payload.section, status: 'reviewed', reviewed_at: new Date().toISOString() }, accepted, accepted_count: accepted.length, span_count: spans.length }
+        approveCapture.push({ section: payload.section, accepted_count: accepted.length, accepted: accepted.map((s) => s.id) })
       } else {
         const span = applyMockAction(spans, payload)
         if (payload.action === 'add' && span) mockAddedSpan = span
@@ -363,6 +377,10 @@ const p2e = ['sectionList', 'currentSectionId', 'review_section', '标记本节�
 for (const needle of p2e) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-e review-complete plumbing: ${needle}`)
 }
+const p2f = ['approve_section', 'approveSection', 'localApproveSectionSpans', 'data-phl-sec', '已审批通过']
+for (const needle of p2f) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 approve-section plumbing: ${needle}`)
+}
 const p1 = ['colorLegend', 'callProfile', 'profileData', '/paper-hl/profile', '初始化画像', 'phl-onb', 'defaultOnboardDraft', 'has_profile']
 for (const needle of p1) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.3 Phase 1 profile plumbing: ${needle}`)
@@ -395,6 +413,7 @@ console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
 console.log('bundle selection→add/rescope (P2-d):', p2d.join(', '))
 console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
+console.log('bundle approve-section plumbing (v0.5.1):', p2f.join(', '))
 console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
@@ -822,6 +841,31 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const doneChip = chipsAfterReview.find((c) => c.props['data-phl-sec'] === expectedCurrent)
   assert(doneChip !== undefined && (doneChip.props.className || '').indexOf('phl-section-done') >= 0, 'P2-e: reviewed section chip shows the done state (✓)')
 
+  // ══════════════ v0.5.1: section TOC click → batch approve ══════════════
+  // Clicking a section chip approves ALL its highlights (POST approve_section)
+  // and marks it reviewed — even when the agent proposed none. Pick the first
+  // content chip that is not the already-reviewed current section.
+  const targetSec = expectedList.find((s) => s.id !== expectedCurrent && !s.reviewed && s.id !== 's1')
+  assert(targetSec !== undefined, 'P2-f: another unreviewed content section exists for the approve-click test')
+  const targetChip = byType.div.filter(isSectionChip).find((c) => c.props['data-phl-sec'] === targetSec.id)
+  assert(targetChip !== undefined && typeof targetChip.props.onClick === 'function', 'P2-f: section chip carries an onClick (TOC approve)')
+  const proposedBefore = (liveData.highlights.spans || []).filter((s) => s.status === 'proposed' && (targetSec.anchor_ids || []).indexOf(s.anchor) >= 0).length
+  writeCapture.length = 0
+  approveCapture.length = 0
+  targetChip.props.onClick()
+  assert(writeCapture.length === 1 && writeCapture[0].action === 'approve_section' && writeCapture[0].section === targetSec.id,
+    'P2-f: approve_section POST payload targets the clicked section (' + targetSec.id + ')')
+  await new Promise((r) => setTimeout(r, 200)) // flush mock write + reconcile
+  rerender()
+  const chipsAfterApprove = byType.div.filter(isSectionChip)
+  const approvedChip = chipsAfterApprove.find((c) => c.props['data-phl-sec'] === targetSec.id)
+  assert(approvedChip !== undefined && (approvedChip.props.className || '').indexOf('phl-section-done') >= 0, 'P2-f: approved section chip shows the done state (✓)')
+  assert(approveCapture.length === 1 && approveCapture[0].section === targetSec.id, 'P2-f: mock approve_section answered for the clicked section')
+  assert(approveCapture[0].accepted_count === proposedBefore && approveCapture[0].accepted.length === proposedBefore,
+    'P2-f: server accepted exactly the section spans (' + targetSec.id + ': ' + proposedBefore + ' proposed → all accepted)')
+  assert(approveCapture[0].accepted.every((id) => (liveData.highlights.spans || []).find((s) => s.id === id) && (targetSec.anchor_ids || []).indexOf((liveData.highlights.spans || []).find((s) => s.id === id).anchor) >= 0),
+    'P2-f: every accepted span belongs to the clicked section')
+
   // ══════════════ v0.3 Phase 3: profile edit panel ══════════════
   const saveAllBtn = () => collectButtons(tree).find((b) => textOf(b) === '保存全部')
   const profileBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-profile-btn') === 0)
@@ -1101,7 +1145,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb').length >= 1,
     'P5: view returns to cold-start onboarding (profile cleared, factory reset)')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P2-f section-TOC approve (chip click → approve_section POST → batch accept + reviewed ✓, server accepted exactly the section spans) + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

@@ -1,4 +1,4 @@
-# paper-highlight (v0.5.1 ✅)
+# paper-highlight (v0.5.2 ✅)
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
@@ -8,6 +8,7 @@
 > **v0.4（打磨导出）2026-08-27 验收 PASS（归档 `v0.4.0`）**：HTML/MD 导出（`export_paper` 工具 + `/paper-hl/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` 只读注入 + 论文级反思（`reflect_paper` / `paper-reflection.md`）+ UX 打磨（`keyAction` 快捷键 / 审查进度条）。验收记录见 `D:\aa\docs\paper-highlight-progress-v0.4.md`（M0–M5 全达标）。
 > **v0.5（一键格式化）2026-08-27 Phase 0 完成（`v0.5.0` 待验收）**：工厂重置 —— 清空所有论文高亮记录（`paper.highlights.json` 重置 + `reflections.json`/`export/`/`paper-reflection.md` 删除，保留论文正文）+ 删除个性化画像（`highlight-profile/`，回到冷启动）。GUI「格式化」按钮 + 确认对话框（`callFormat` → `POST /paper-hl/format`）+ `format_all` 工具（confirm 门禁，scope all/highlights/profile）。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.md`。
 > **v0.5.1（图例彩色语义 + 轻量公式渲染）2026-08-31 验收 PASS（归档 `v0.5.1`）**：①图例五个语义标签用对应高亮色显示（`phl-legend-label`）；②轻量（零依赖，无 KaTeX/MathJax）公式渲染 —— `render-body.js` 纯函数 `MATH_SYMBOLS`/`supScript`/`subScript`/`boldMath`/`mathClean`/`mathConvert`/`matchMathDelim`/`matchMathToken`/`splitMathPieces`/`mathPieceEl` 支持 `$…$`/`$$…$$`/`\(…\)`/`\[…\]` 定界符与 MinerU 裸 LaTeX 片段（`\times`→×、`_ { 2 }`→₂、`\mathbf{f}`→𝐟、`\bar{U}`→Ū、OCR `{ - }`→-、未知命令保留）；数学片段独立 segment + `data-phl-dlen`，`nodeOffsetToSeg` 显示末→原始末映射，**选区映射保持精确、非数学段布局与 v0.5.0 逐字节一致**（回归守卫测试）。**热修复（同日内）**：`pushPlainSegs` 未嵌入 BODY 导致 bundle 渲染空白页 → 补嵌 + `run-render.js` 嵌入完备性守卫（38 helper 逐一检查）+ `simulate-render.js` v0.5.1 静态守卫；live bundle 已验证含 `pushPlainSegs`。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.1.md`。
+> **v0.5.2（章节目录一键审批）2026-08-31 Phase 0 完成（待归档 `v0.5.2`）**：点击章节目录芯片（如 Abstract）→ 批量接受该节全部 proposed 高亮 + 标记该节审查完毕；**agent 未在该节提出高亮时同样「通过」**（接受 0 + 标记已审）。host 新增**原子动作** `POST /paper-hl/write {action:'approve_section', section:<id>}`（`host/actions.js` `applyApproveSection`：按 `buildSections.anchor_ids` 判定节内 span，proposed→accepted 逐条追加用户 decision，已接受/用户新增/拒绝不动；空/未知节接受 0 + 仍标 reviewed；`plugin.js` 响应新增 `accepted`/`accepted_count`）；client 节芯片 `onClick` → `approveSection(id)`（`localApproveSectionSpans` 乐观接受 + 乐观 ✓ + `callWrite` 回读校准，成功逐条 `reconcileSpan`、失败整页回读）。既有「标记本节审查完毕」（`review_section`）保留、语义分离。验证：`run-actions.js`/`run-render.js` PASS + 路由探针 PASS + live client bundle 验证 PASS。⚠️ **host 变更需重启 3081 后落盘生效**。进度见 `D:\aa\docs\paper-highlight-progress-v0.5.2.md`。
 
 ## 布局
 

@@ -104,6 +104,8 @@ function generateBundle() {
   lines.push(`\t\texports.mathClean = mathClean;`)
   lines.push(`\t\texports.mathConvert = mathConvert;`)
   lines.push(`\t\texports.splitMathPieces = splitMathPieces;`)
+  // v0.5.1: batch section-approve optimistic helper for headless tests.
+  lines.push(`\t\texports.localApproveSectionSpans = localApproveSectionSpans;`)
   // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
   lines.push(`\t\texports.colorLegend = colorLegend;`)
   lines.push(`\t\texports.callProfile = callProfile;`)
