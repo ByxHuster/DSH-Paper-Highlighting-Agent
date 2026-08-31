@@ -355,7 +355,7 @@ const p2c = ['markStyle', 'reconcileSpan', 'renderActionBar', 'applyAction', 'ph
 for (const needle of p2c) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-c action bar: ${needle}`)
 }
-const p2d = ['buildSegmentMap', 'buildBlockSegments', 'mapSelection', 'selectionToNorm', 'nodeOffsetToSeg', 'data-phl-seg', '新增高亮', '改范围', 'addDraft', 'rescueTarget', 'onBodyMouseUp']
+const p2d = ['buildSegmentMap', 'buildBlockSegments', 'pushPlainSegs', 'mapSelection', 'selectionToNorm', 'nodeOffsetToSeg', 'data-phl-seg', '新增高亮', '改范围', 'addDraft', 'rescueTarget', 'onBodyMouseUp']
 for (const needle of p2d) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-d selection plumbing: ${needle}`)
 }
@@ -383,6 +383,13 @@ const p5 = ['callFormat', 'formatData', '/paper-hl/format', 'phl-fmt', 'phl-form
 for (const needle of p5) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5 format plumbing: ${needle}`)
 }
+// v0.5.1: legend colored labels + lightweight math rendering. Guard the
+// embedded helpers by name so a missing toString() embed (which would only
+// surface as a runtime ReferenceError → blank page) is caught statically.
+const v051 = ['splitMathPieces', 'mathConvert', 'mathClean', 'MATH_SYMBOLS', 'mathPieceEl', 'data-phl-dlen', 'phl-math', 'phl-legend-label', 'phl-math-display']
+for (const needle of v051) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 math/legend plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
@@ -393,6 +400,7 @@ console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
 console.log('bundle keyboard/export/progress plumbing (v0.4 P4):', p4.join(', '))
 console.log('bundle one-click format plumbing (v0.5 P5):', p5.join(', '))
+console.log('bundle math/legend plumbing (v0.5.1):', v051.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func

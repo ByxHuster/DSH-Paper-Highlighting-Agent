@@ -92,6 +92,15 @@
 
 > ⚠️ **已知（非本版本回归）**：v0.5 用户实跑格式化后，三篇论文高亮已清空（0 spans）+ 画像回到冷启动默认 —— 依赖**演示数据非空**的 `scripts/simulate-render.js`（断言 `expectedSpans > 0`）与 `test/run-plugin.js` 第 2 步（断言原始 5 条演示 span `s-001…s-005` 仍在）当前会失败；重新 propose 出新高亮后自动恢复。这不是代码缺陷，是格式化清空数据的预期结果。
 
+### 5.1 热修复（2026-08-31，同日内）：空白页 → `pushPlainSegs is not defined`
+- **现象**：v0.5.1 首次归档后 web 页面渲染**空白**（PaperView 崩溃）。
+- **根因**：`buildBlockSegments` 改造后调用 `pushPlainSegs`，但 BODY 嵌入清单漏嵌 `${pushPlainSegs.toString()}` —— 模块级 require 测试能过（模块作用域有该函数），**bundle 里没有** → 渲染时 `ReferenceError` → 整个论文视图崩溃 → 空白页。`scripts/simulate-render.js` 运行到 `buildSegmentMap` 渲染时当场复现 `pushPlainSegs is not defined`。
+- **修复**：把 `${pushPlainSegs.toString()}` 加入 BODY 嵌入；重跑 `gen-client.js`（bundle 含 `function pushPlainSegs`）→ live 3081 按请求从磁盘读到修复 bundle，**刷新页面即恢复**。
+- **回归守卫（防止再犯）**：
+  - `test/run-render.js` 新增 **bundle 嵌入完备性守卫**：逐一断言 38 个纯函数 helper 的 `function <name>(` 都出现在 `BODY` 中（任何缺失 toString 嵌入 → 离线测试直接失败）；
+  - `scripts/simulate-render.js` 新增 **v0.5.1 bundle 静态守卫**（`splitMathPieces`/`mathConvert`/`mathClean`/`MATH_SYMBOLS`/`mathPieceEl`/`data-phl-dlen`/`phl-math`/`phl-legend-label`/`phl-math-display`）—— 渲染前对 bundle 源码做包含检查，**不依赖演示数据非空**也能抓到同类缺失；P2-d 静态检查清单补充 `pushPlainSegs`。
+- **验证**：`run-render.js` PASS（含嵌入完备性守卫）；`simulate-render.js` 越过该点直到唯一的空数据断言（`spans got 0`，已知）；293 个真实锚点 `renderText` 全渲染成功（0 错误、407 个数学 span）；live bundle 含 `pushPlainSegs` → **空白页修复**。v0.5.1 标签移到修复提交。
+
 ## 6. 风险
 
 | # | 风险 | 缓解 |
@@ -120,3 +129,4 @@ node scripts/simulate-render.js  # live 3081 —— 当前需演示数据非空�
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 | 图例彩色语义 + 轻量公式渲染完成 + 离线测试 PASS + live bundle 验证 | ✅ `render-body.js`（`MATH_SYMBOLS`/`supScript`/`subScript`/`boldMath`/`mathClean`/`mathConvert`/`matchMathDelim`/`matchMathToken`/`splitMathPieces`/`mathPieceEl` 纯函数 + `renderText`/`buildBlockSegments`/`nodeOffsetToSeg` 改造 + 图例标签彩色 + `.phl-math*` CSS）+ `gen-client.js`（新 exports）+ `run-render.js`（v0.5.1 数学矩阵 + 选区/布局回归守卫）PASS + gen-client 重跑 + `node --check` OK + **live 3081 bundle 验证 PASS（`/plugins/paper-highlight/client.js` 含 `phl-math`/`phl-legend-label`，刷新即生效）** + 真实数据只读探针 PASS（`\times`→×、`_ { 2 }`→₂、`\bar{U}`→Ū、OCR `{ - }`→-、未知命令保留）→ **归档 `v0.5.1`（2026-08-31）** |
+| M1-FIX | **空白页热修复（`pushPlainSegs is not defined`）** | ✅ 根因 = `pushPlainSegs` 未嵌入 BODY（模块测试覆盖不到、bundle 运行才暴露的 ReferenceError → 空白页）；修复 = BODY 补嵌 `${pushPlainSegs.toString()}` + gen-client 重跑 + live bundle 验证（含 `pushPlainSegs`，刷新即恢复）；回归守卫 = run-render 嵌入完备性断言（38 个 helper 逐一检查 `function <name>(` 在 BODY）+ simulate-render v0.5.1 静态守卫（不依赖演示数据）；**v0.5.1 标签移到修复提交** |

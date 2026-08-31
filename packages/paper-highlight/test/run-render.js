@@ -61,6 +61,7 @@ const {
   proposalCardModel, buildApplyDecisions,
   MATH_SYMBOLS, supScript, subScript, boldMath,
   mathClean, mathConvert, splitMathPieces,
+  BODY,
 } = require('../client/render-body')
 const { assert } = require('./verify')
 
@@ -723,6 +724,13 @@ function main() {
     assert(segMap3.length === rtSeg3.length && segMap3.length === 2, 'renderText/math: mark-over-math stays one segment (2 total)')
     const markEls3 = rtSeg3.filter((n) => n.props && n.props['data-phl-seg'] !== undefined && n.type === 'mark')
     assert(markEls3.length === 1 && markEls3[0].props['data-phl-seg'] === '0', 'renderText/math: mark keeps its segment index')
+    // v0.5.1 regression guard: every pure helper referenced by the embedded
+    // functions must be embedded into BODY (a missing toString() embed would
+    // only surface at runtime as a ReferenceError → blank page).
+    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'colorLegend', 'mapScript', 'supScript', 'subScript', 'boldMath', 'mathClean', 'mathConvert', 'matchMathDelim', 'matchMathToken', 'splitMathPieces', 'mathPieceEl', 'pushPlainSegs', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions']
+    for (const name of EMBED_HELPERS) {
+      assert(typeof BODY === 'string' && BODY.includes('function ' + name), 'bundle embed completeness: function ' + name + ' embedded into BODY')
+    }
 
     console.log(JSON.stringify({
       step: 'render-helpers',

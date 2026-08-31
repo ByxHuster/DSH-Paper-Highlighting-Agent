@@ -1015,6 +1015,8 @@ ${markStyle.toString()}
 
 ${reconcileSpan.toString()}
 
+${pushPlainSegs.toString()}
+
 ${buildBlockSegments.toString()}
 
 ${buildSegmentMap.toString()}

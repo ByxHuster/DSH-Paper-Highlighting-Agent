@@ -476,6 +476,11 @@ window.__ModuleLoader__.load({
 		  return arr
 		}
 		
+		function pushPlainSegs(segs, anchorId, text, from, to) {
+		  const pieces = splitMathPieces(text.slice(from, to))
+		  for (const p of pieces) segs.push({ anchorId, start: from + p.start, end: from + p.end, spanId: null, math: !!p.math })
+		}
+		
 		function buildBlockSegments(anchorId, text, spans) {
 		  const segs = []
 		  const sorted = (spans || []).slice().sort((x, y) => x.char_start - y.char_start)

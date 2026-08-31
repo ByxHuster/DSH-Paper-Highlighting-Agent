@@ -52,7 +52,7 @@ highlight-profile/ 四层（设计 §4.3）:
 | **v0.3** | 画像收敛 | 四层画像 + 冷启动 + colors.yml 驱动图例 + 画像/提案面板 + propose 摘要注入 + 确认闭环 + **三篇收敛验收（step7：认可率 50%→67%→100%，PASS）** | ✅ 已交付（归档 v0.3.0） |
 | **v0.4** | 打磨导出 | HTML/MD 导出（`export_paper` + `/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper`/`paper-reflection.md`）+ UX（快捷键/进度条） | ✅ 已交付（归档 v0.4.0；step8 端到端 PASS） |
 | **v0.5** | 一键格式化 | 工厂重置：`format_all` 工具 + `/paper-hl/format` 路由（confirm 门禁 + scope all/highlights/profile）+ GUI「格式化」按钮 + 确认对话框；清空所有论文高亮记录（保留论文正文）+ 删除画像 | ✅ 已交付（归档 v0.5.0；`run-format.js` + simulate-render P5 + **live 3081 冒烟 PASS**，用户实跑格式化后磁盘状态与设计一致） |
-| **v0.5.1** | 图例彩色语义 + 轻量公式渲染 | ①图例五个语义标签用对应高亮色显示；②轻量（零依赖，无 KaTeX/MathJax）公式渲染：`$…$`/`$$…$$`/`\(…\)`/`\[…\]` 定界符 + MinerU 裸 LaTeX 片段（`\times`→×、`_ { 2 }`→₂、`\mathbf{f}`→𝐟、OCR `{ - }`→- 等）→ 衬线斜体样式；数学片段独立 segment + `data-phl-dlen`，选区映射保持精确 | ✅ 已交付（归档 v0.5.1；`run-render.js` v0.5.1 矩阵 PASS + 选区/布局回归守卫 + gen-client 重跑 + **live 3081 bundle 验证 PASS**（刷新即生效）+ 真实数据只读探针 PASS） |
+| **v0.5.1** | 图例彩色语义 + 轻量公式渲染 | ①图例五个语义标签用对应高亮色显示；②轻量（零依赖，无 KaTeX/MathJax）公式渲染：`$…$`/`$$…$$`/`\(…\)`/`\[…\]` 定界符 + MinerU 裸 LaTeX 片段（`\times`→×、`_ { 2 }`→₂、`\mathbf{f}`→𝐟、OCR `{ - }`→- 等）→ 衬线斜体样式；数学片段独立 segment + `data-phl-dlen`，选区映射保持精确 | ✅ 已交付（归档 v0.5.1；`run-render.js` v0.5.1 矩阵 PASS + 选区/布局回归守卫 + gen-client 重跑 + **live 3081 bundle 验证 PASS**（刷新即生效）+ 真实数据只读探针 PASS + **空白页热修复**：`pushPlainSegs` 未嵌入 BODY → 补嵌 + 嵌入完备性守卫） |
 
 **v0.5 当前实际**：一键格式化已实跑验证并归档 `v0.5.0` —— 三篇论文高亮全部清空（0 spans / 0 plan / 0 duplicates）、衍生文件（reflections/export/paper-reflection）删除、论文正文保留；`highlight-profile/` 经冷启动重建（2 条默认规则 + 0 示例 + 0 统计），可随时重新 propose 从头学起。
 
