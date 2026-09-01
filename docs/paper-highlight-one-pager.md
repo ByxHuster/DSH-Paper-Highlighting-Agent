@@ -53,13 +53,13 @@ highlight-profile/ 四层（设计 §4.3）:
 | **v0.4** | 打磨导出 | HTML/MD 导出（`export_paper` + `/export` 路由 + GUI 导出对话框）+ 领域地图 `field-map.md` + `read_field_map` + 论文级反思（`reflect_paper`/`paper-reflection.md`）+ UX（快捷键/进度条） | ✅ 已交付（归档 v0.4.0；step8 端到端 PASS） |
 | **v0.5** | 一键格式化 | 工厂重置：`format_all` 工具 + `/paper-hl/format` 路由（confirm 门禁 + scope all/highlights/profile）+ GUI「格式化」按钮 + 确认对话框；清空所有论文高亮记录（保留论文正文）+ 删除画像 | ✅ 已交付（归档 v0.5.0；`run-format.js` + simulate-render P5 + **live 3081 冒烟 PASS**，用户实跑格式化后磁盘状态与设计一致） |
 | **v0.5.1** | 图例彩色语义 + 轻量公式渲染 | ①图例五个语义标签用对应高亮色显示；②轻量（零依赖，无 KaTeX/MathJax）公式渲染：`$…$`/`$$…$$`/`\(…\)`/`\[…\]` 定界符 + MinerU 裸 LaTeX 片段（`\times`→×、`_ { 2 }`→₂、`\mathbf{f}`→𝐟、OCR `{ - }`→- 等）→ 衬线斜体样式；数学片段独立 segment + `data-phl-dlen`，选区映射保持精确 | ✅ 已交付（归档 v0.5.1；`run-render.js` v0.5.1 矩阵 PASS + 选区/布局回归守卫 + gen-client 重跑 + **live 3081 bundle 验证 PASS**（刷新即生效）+ 真实数据只读探针 PASS + **空白页热修复**：`pushPlainSegs` 未嵌入 BODY → 补嵌 + 嵌入完备性守卫） |
-| **v0.5.2** | 章节目录一键审批 | 点击章节目录芯片（如 Abstract）→ **批量接受该节全部 proposed 高亮** + 标记该节审查完毕；**agent 未在该节提出高亮时同样「通过」**（接受 0 + 标记已审）；原子 host 动作 `approve_section`（D3 按 `buildSections.anchor_ids` 判定归属，空/未知节优雅通过）+ client 乐观接受 + 回读校准 | ✅ 已交付（`run-actions.js` 批量接受/空节/未知节/幂等 PASS + `run-render.js` `localApproveSectionSpans`/嵌入守卫 39 helper PASS + **路由探针 PASS**（2 accepted、节外不动、幂等、400）+ **live client bundle 验证 PASS**（刷新即见新 UI）+ `simulate-render.js` P2-f 静态守卫 + 交互测试待数据恢复后全量回归）——**host 变更需用户重启 3081 后落盘生效** |
+| **v0.5.2** | 章节目录一键审批 | 点击章节目录芯片（如 Abstract）→ **批量接受该节全部 proposed 高亮** + 标记该节审查完毕；**agent 未在该节提出高亮时同样「通过」**（接受 0 + 标记已审）；原子 host 动作 `approve_section`（D3 按 `buildSections.anchor_ids` 判定归属，空/未知节优雅通过）+ client 乐观接受 + 回读校准 | ✅ 已交付（`run-actions.js` 批量接受/空节/未知节/幂等 PASS + `run-render.js` `localApproveSectionSpans`/嵌入守卫 39 helper PASS + **路由探针 PASS**（2 accepted、节外不动、幂等、400）+ **live client bundle 验证 PASS**（刷新即见新 UI）+ `simulate-render.js` P2-f 静态守卫 + 交互测试待数据恢复后全量回归）——**host 变更需用户重启 3081 后落盘生效** + **公式灰块热修复**：空 display 片段（裸 `\bf`、空 `^ { }`）折叠回普通文本，真实数据 407→0 空 display |
 
 **v0.5 当前实际**：一键格式化已实跑验证并归档 `v0.5.0` —— 三篇论文高亮全部清空（0 spans / 0 plan / 0 duplicates）、衍生文件（reflections/export/paper-reflection）删除、论文正文保留；`highlight-profile/` 经冷启动重建（2 条默认规则 + 0 示例 + 0 统计），可随时重新 propose 从头学起。
 
 **v0.5.1 当前实际**：图例语义标签彩色显示、正文公式轻量渲染均已上线（client 变更，刷新页面即生效）；`run-render.js` v0.5.1 矩阵 + 选区/布局回归守卫 PASS；live 3081 bundle 已验证含新特性。**注意**：格式化后演示数据为空，`simulate-render.js` / `run-plugin.js` 第 2 步等「依赖演示数据非空」的回归需重新 propose 出高亮后自动恢复。
 
-**v0.5.2 当前实际**：章节目录一键审批已完成并验证（host `approve_section` + client 节芯片点击）。live client bundle 已验证含新 UI（**刷新页面即见**）；**host 变更需用户重启 3081 后**，点击章节芯片才真正落盘（重启前客户端会提示「审批失败（已回读校准）」并回读，不损坏数据）。P2-f 交互测试 / run-plugin 11b–11f 待重新 propose 出高亮后随全量回归自动执行。
+**v0.5.2 当前实际**：章节目录一键审批已完成并验证（host `approve_section` + client 节芯片点击）。live client bundle 已验证含新 UI（**刷新页面即见**）；**host 变更需用户重启 3081 后**，点击章节芯片才真正落盘（重启前客户端会提示「审批失败（已回读校准）」并回读，不损坏数据）。P2-f 交互测试 / run-plugin 11b–11f 待重新 propose 出高亮后随全量回归自动执行。**公式灰块热修复**：`splitMathPieces` 空 display 片段折叠回普通文本（全库 3 处色块消除，EMPTY display 407→0；纯 client，刷新即生效）。
 
 ## ⚙️ 关键约束（每次续作必读）
 

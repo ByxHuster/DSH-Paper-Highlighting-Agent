@@ -368,22 +368,29 @@ function splitMathPieces(text) {
   const flush = (end) => {
     if (end > textStart) out.push({ start: textStart, end, math: false, display: src.slice(textStart, end) })
   }
+  // v0.5.2 fix: a math piece whose conversion yields an EMPTY display (bare
+  // font switches like `\bf`/`\rm`, empty `^ { }`, `$$$$`, …) must NOT become
+  // a math span — an empty span with background+padding renders as a hollow
+  // gray box that covers the formula text. Fold the raw LaTeX back into the
+  // surrounding plain run instead (nothing is hidden, nothing is lost).
+  const pushMath = (start, end, display, block) => {
+    if (display.length === 0) return
+    flush(start)
+    out.push({ start, end, math: true, display, block: !!block })
+    textStart = end
+  }
   while (pos < n) {
     const rest = src.slice(pos)
     const d = matchMathDelim(rest)
     if (d) {
-      flush(pos)
-      out.push({ start: pos, end: pos + d.len, math: true, display: d.display, block: !!d.block })
+      pushMath(pos, pos + d.len, d.display, d.block)
       pos += d.len
-      textStart = pos
       continue
     }
     const t = matchMathToken(rest)
     if (t) {
-      flush(pos)
-      out.push({ start: pos, end: pos + t.len, math: true, display: t.display })
+      pushMath(pos, pos + t.len, t.display, false)
       pos += t.len
-      textStart = pos
       continue
     }
     pos++

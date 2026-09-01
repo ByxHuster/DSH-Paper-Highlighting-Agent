@@ -2,6 +2,7 @@
 
 > 版本：v0.5.2（新交互：点击章节目录审批通过该节全部高亮，含「无高亮」情形）· 状态：**Phase 0 完成 + 离线测试 PASS + live client bundle 验证（待归档 `v0.5.2`）** · 创建：2026-08-31 · 最近更新：2026-08-31
 > **独立使用说明**：本文件含 v0.5.1 继承状态、v0.5.2 目标/已锁定决策/实施步骤（含验证方法）/风险/命令，可脱离旧文件单独续作；旧版记录见 `paper-highlight-progress-v0.5.1.md`（归档，v0.5.1 + 空白页热修复）。
+> **v0.5.2 热修复（同日，§5.1）**：公式渲染空 display 片段 → 空心灰色色块覆盖内容 —— 已修复（`splitMathPieces` 空 display 折叠回普通文本）。
 
 ---
 
@@ -86,6 +87,16 @@
 
 > ⚠️ **已知（非本版本回归）**：v0.5 用户实跑格式化后，三篇论文高亮已清空（0 spans）+ 画像回到冷启动默认 —— 依赖**演示数据非空**的 `scripts/simulate-render.js`（断言 `expectedSpans > 0`）与 `test/run-plugin.js` 第 2 步（断言原始 5 条演示 span 仍在）当前会失败；重新 propose 出新高亮后自动恢复。这不是代码缺陷，是格式化清空数据的预期结果。v0.5.2 的新交互测试（P2-f / run-plugin 11b–11f）同样在数据恢复后自动生效。
 
+### 5.1 热修复（2026-08-31，同日）：公式空 display → 空心灰色色块覆盖内容
+- **现象（用户报告）**：部分公式**未正常渲染**，其位置被**灰色色块覆盖**（看不到公式内容）。
+- **根因**：`splitMathPieces` 对每个 LaTeX 片段算 `display` 后，一律标记为 `math` 并渲染 `<span className="phl-math">`（带 `background:rgba(96,130,190,.12)` + padding）。当某片段**转换结果为空串**时，该 span 就只剩背景而无文字 —— 在深色主题下就是一块**空心灰色色块**，把公式原始内容「盖住」。全库 407 个数学片段中命中 3 处：裸字体开关 `\bf`（bahdanau a-0002-09-01、mikolov a-0003-08-01，`MATH_SYMBOLS.bf=''` 被吞成空串）与**空上标 `^ { }`**（sutskever a-0003-10-01）。
+- **修复**：`splitMathPieces` 引入 `pushMath` —— **`display` 为空时不再生成 math 片段，把该段原始 LaTeX 折叠回前后普通文本**（`{ \bf g 0 }` → 整段按原样显示，绝不丢信息、绝不出现色块）；`display` 非空的转换（`\bf {f}`→` f`、`\times`→× 等）照常渲染。纯 client 变更。
+- **验证**：
+  - ✅ 真实数据重扫：数学片段 407→404，**EMPTY display = 0**（3 处色块全部消除），53 个含公式锚点渲染不变；
+  - ✅ `test/run-render.js` 新增回归（v051c）：裸 `\bf`/`\rm`/`\it`/`\tt`/`\cal`/`\boldsymbol`、空 `^ { }`、空 `$$…$$` 全部折叠回普通文本（**不变量：不存在 `math && display 为空` 的片段**，且原始覆盖连续）；`\bf {f}` 仍渲染；`renderText` 不再为折叠 token 生成 `phl-math` span 且原文逐字保留（带/不带 segment 均验证）→ PASS；
+  - ✅ `gen-client.js` 重跑 + `node --check` OK；离线回归（run-actions/run-tools/run-format）PASS；simulate-render P2-f 静态守卫 PASS；
+  - ✅ **live client bundle 验证（2026-08-31）**：`/plugins/paper-highlight/client.js` → 200，含 `pushMath` / `display.length === 0`（**刷新页面即生效**，本修复为纯 client 变更，无需重启）。
+
 ## 6. 风险
 
 | # | 风险 | 缓解 |
@@ -114,3 +125,4 @@ node scripts/simulate-render.js  # live 3081 —— P2-f 静态守卫 PASS；交
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 | 章节目录一键审批 | ✅ `host/actions.js`（`approve_section` 原子动作 + `resolveReviewEntry` 复用）+ `host/plugin.js`（响应携带 `accepted`/`accepted_count`）+ `client/render-body.js`（`localApproveSectionSpans` 纯函数 + `approveSection(id)` + 节芯片 `onClick` + `cursor:pointer`/hover CSS）+ `gen-client.js`（新 export）+ 测试 PASS（run-actions 批量接受/空节/未知节/幂等 + run-render 纯函数/嵌入守卫 39 helper）+ 路由探针 PASS（2 accepted、节外不动、幂等、400）+ live client bundle 验证 PASS（刷新即见新 UI）→ **待用户重启 3081 后落盘生效 → 归档 `v0.5.2`** |
+| M1-FIX | **公式空 display → 灰色色块覆盖（热修复，§5.1）** | ✅ 根因 = `splitMathPieces` 对空 display 片段仍渲染 `phl-math` span（背景无文字 → 空心灰色色块）；命中 3 处：裸 `\bf`×2、空 `^ { }`×1。修复 = `pushMath` 折叠：空 display 的原始 LaTeX 折回普通文本（不丢信息、无色块）；验证 = 真实数据 EMPTY display 407→0 + run-render v051c 回归（含「无空 math」不变量 + 原文逐字保留）+ gen-client 重跑 + live bundle 含 `pushMath`（刷新即生效，纯 client 无需重启）→ **v0.5.2 标签移到修复提交** |

@@ -690,6 +690,27 @@ function main() {
     const dispPiece = spDisp.find((p) => p.math && p.block)
     assert(dispPiece !== undefined && dispPiece.display.indexOf('\u2211') >= 0 && cov(spDisp, 18), 'splitMathPieces: $$…$$ → block math piece')
 
+    // v0.5.2 fix: a math token converting to an EMPTY display must not become a
+    // math span (it would render as a hollow gray box covering the formula).
+    // It folds back into the surrounding plain text so the raw LaTeX stays
+    // visible; non-empty conversions still render as math.
+    const noEmptyMath = (pieces) => pieces.every((p) => !(p.math && p.display.length === 0))
+    const spBareBf = splitMathPieces('x \\bf y')
+    assert(spBareBf.length === 1 && spBareBf[0].math === false && spBareBf[0].display === 'x \\bf y', 'splitMathPieces: bare \\bf (empty display) folds into plain text (no box)')
+    const spEmptySup = splitMathPieces('a ^ { } b')
+    assert(spEmptySup.length === 1 && spEmptySup[0].math === false && spEmptySup[0].display === 'a ^ { } b', 'splitMathPieces: empty ^ { } folds into plain text')
+    const spBfWithArg = splitMathPieces('\\bf {f} ok')
+    assert(spBfWithArg.some((p) => p.math && p.display.trim() === 'f'), 'splitMathPieces: \\bf {f} (non-empty) still a math piece')
+    assert(noEmptyMath(splitMathPieces('\\rm \\it \\tt \\cal \\boldsymbol a')), 'splitMathPieces: all legacy font switches fold (no empty math)')
+    assert(noEmptyMath(splitMathPieces('$$\\bf$$ x')), 'splitMathPieces: empty display-math block folds to plain')
+    assert(cov(spBareBf, 7) && cov(spEmptySup, 9), 'splitMathPieces: folded empty tokens still cover the raw input contiguously')
+    // renderText: no phl-math span for a folded empty token; raw text preserved.
+    const rtBf = renderText('keep \\bf raw', null, {})
+    assert(rtBf.every((n) => !(n && n.props && n.props.className === 'phl-math')), 'renderText: bare \\bf → no phl-math span')
+    assert(rtBf.join('') === 'keep \\bf raw', 'renderText: bare \\bf raw text preserved verbatim')
+    const rtBfSeg = renderText('keep \\bf raw', null, { withSegments: true, segBase: 0, anchorId: 'a1' })
+    assert(rtBfSeg.every((n) => !(n && n.props && n.props.className === 'phl-math')), 'renderText: bare \\bf → no phl-math span even with segments')
+
     // renderText emits phl-math spans (with and without segments) and keeps
     // plain runs as bare strings; segment index alignment with buildBlockSegments.
     const mathText = 'Size N \\times D, done.'
@@ -769,6 +790,7 @@ function main() {
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
       v051: 'math — supScript/subScript/boldMath/MATH_SYMBOLS converters + mathConvert (\\times/\\mathbf/\\bar/\\frac/\\sqrt/sub-sup/OCR { - }/unknown/delimiters) + splitMathPieces (coverage, math flags, block $$, no-math passthrough) + renderText phl-math spans (seg/dlen) + segment alignment + nodeOffsetToSeg raw-end mapping + non-math layout regression guard',
       v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (39 helpers in BODY)',
+      v051c: 'math empty-display fold — splitMathPieces: bare \\bf / \\rm / \\it / \\tt / \\cal / \\boldsymbol / empty ^ { } / empty $$…$$ fold back to plain text (invariant: no math piece has empty display; contiguous raw coverage); \\bf {f} still renders; renderText emits no phl-math span for folded tokens and preserves raw verbatim (with/without segments)',
     }, null, 2))
     return null
   })
