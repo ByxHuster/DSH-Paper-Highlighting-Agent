@@ -128,6 +128,49 @@ function main() {
   r = applyAction(doc, { action: 'approve_section', section: 's2' })
   assert(r.accepted_count === 0 && r.section.status === 'reviewed', 'no sections index → accept none, reviewed')
 
+  // ── v0.5.3 revert_section (反选 = 批量恢复待审): reverts EVERY accepted span ─
+  // ── in the section back to proposed (待审) + sets the section to pending ─────
+  doc = makeDoc()
+  doc.spans[1].status = 'accepted' // s-002 (Abstract body) was approved
+  r = applyAction(doc, { action: 'revert_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.section && r.section.status === 'pending', 'revert_section sets the section back to pending (待审)')
+  assert(Array.isArray(r.reverted) && r.reverted.length === 1, 'revert_section reverts exactly the section accepted spans')
+  assert(r.reverted[0].id === 's-002' && r.reverted[0].status === 'proposed', 'accepted span in Abstract back to proposed (待审)')
+  assert(r.reverted_count === 1, 'reverted_count reported')
+  assert(doc.spans[0].status === 'proposed', 'span in Intro (not in Abstract) untouched')
+  assert(r.reverted[0].decisions.length === 2 && r.reverted[0].decisions[1].action === 'proposed' && r.reverted[0].decisions[1].by === 'user', 'revert_section appends per-span user decision')
+
+  // ── revert_section: only accepted spans revert; proposed/user_added/rejected ─
+  // ── are untouched ───────────────────────────────────────────────────────────
+  doc = makeDoc()
+  doc.spans[1].status = 'user_added' // s-002 now user_added
+  doc.spans.push({ id: 's-003', anchor: 'a-0001-04-01', char_start: 8, char_end: 14, color: 'red', status: 'rejected', decisions: [] })
+  doc.spans.push({ id: 's-004', anchor: 'a-0001-04-01', char_start: 8, char_end: 14, color: 'red', status: 'accepted', decisions: [] })
+  r = applyAction(doc, { action: 'revert_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.reverted_count === 1, 'only the accepted span in section reverts')
+  assert(doc.spans.find((s) => s.id === 's-002').status === 'user_added', 'user_added span untouched by revert')
+  assert(doc.spans.find((s) => s.id === 's-003').status === 'rejected', 'rejected span untouched by revert')
+  assert(doc.spans.find((s) => s.id === 's-004').status === 'proposed', 'accepted span reverts to proposed')
+  assert(r.section.status === 'pending', 'section back to pending even with 1 revert')
+
+  // ── revert_section: approve → revert round trip (undo the one-click approve) ─
+  doc = makeDoc()
+  applyAction(doc, { action: 'approve_section', section: 's2' }, { sections: SECTIONS })
+  assert(doc.spans.find((s) => s.id === 's-002').status === 'accepted' && doc.plan.sections.find((e) => e.id === 's2').status === 'reviewed', 'approve first: accepted + reviewed')
+  r = applyAction(doc, { action: 'revert_section', section: 's2' }, { sections: SECTIONS })
+  assert(r.reverted_count === 1 && doc.spans.find((s) => s.id === 's-002').status === 'proposed', 'revert undoes the approve (accepted → proposed)')
+  assert(r.section.status === 'pending' && r.section.reviewed_at === undefined, 'revert clears reviewed + timestamp (section 待审)')
+
+  // ── revert_section: unknown section id → revert none + entry created pending ─
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'revert_section', section: 's9' }, { sections: SECTIONS })
+  assert(r.reverted_count === 0 && r.section.id === 's9' && r.section.status === 'pending', 'unknown section: revert none, entry created pending')
+
+  // ── revert_section: no opts.sections → revert none, section pending ────────
+  doc = makeDoc()
+  r = applyAction(doc, { action: 'revert_section', section: 's2' })
+  assert(r.reverted_count === 0 && r.section.status === 'pending', 'no sections index → revert none, pending')
+
   // ── mutations stay schema-valid (note field + plan status/reviewed_at) ────
   assert(validateHighlights(doc) === true, 'document remains schema-valid after mutations')
 
@@ -152,14 +195,17 @@ function main() {
   expectThrow(() => applyAction(makeDoc(), { action: 'review_section', section: '' }), /section must be/, 'empty review_section throws')
   expectThrow(() => applyAction(makeDoc(), { action: 'approve_section', section: '' }), /section must be/, 'empty approve_section throws')
   expectThrow(() => applyAction(makeDoc(), { action: 'approve_section', section: 42 }), /section must be/, 'non-string approve_section throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'revert_section', section: '' }), /section must be/, 'empty revert_section throws')
+  expectThrow(() => applyAction(makeDoc(), { action: 'revert_section', section: 42 }), /section must be/, 'non-string revert_section throws')
   expectThrow(() => applyAction(makeDoc(), null), /action must be an object/, 'null action throws')
 
   console.log(JSON.stringify({
     step: 'actions-unit',
     result: 'PASS',
-    covered: ['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section'],
+    covered: ['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section', 'revert_section'],
     approve_section: 'batch accept of all proposed spans in the section (anchor_ids), section marked reviewed; accepted/user_added/rejected untouched; empty/unknown/no-index sections → accept 0 + still reviewed; per-span user decisions appended',
-    negative: 'unknown span/anchor, bad range, bad color, bad note, unsupported action, empty section (review + approve)',
+    revert_section: '反选 = 批量恢复待审 — batch revert of all ACCEPTED spans in the section (anchor_ids) back to proposed (待审), section set back to pending (待审, clears reviewed_at); proposed/user_added/rejected untouched; approve→revert round trip undoes the one-click approve; unknown/no-index sections → revert 0 + entry pending; per-span user decisions appended',
+    negative: 'unknown span/anchor, bad range, bad color, bad note, unsupported action, empty section (review + approve + revert)',
     audit: 'decisions append-only, mutations stay schema-valid',
   }, null, 2))
 }

@@ -254,6 +254,10 @@ function applyMockAction(spans, payload) {
 // v0.5.1: the approve_section mock answers are captured so the interaction test
 // can assert the batch round trip (server accepted exactly the section spans).
 const approveCapture = []
+// v0.5.3: the revert_section mock answers are captured so the interaction test
+// can assert the batch round trip (server reverted exactly the section spans
+// back to 待审/proposed).
+const revertCapture = []
 function mockWriteHandler(url, body) {
   const payload = JSON.parse(body || '{}')
   writeCapture.push(payload)
@@ -278,6 +282,18 @@ function mockWriteHandler(url, body) {
         })
         result = { ok: true, action: 'approve_section', section: { id: payload.section, status: 'reviewed', reviewed_at: new Date().toISOString() }, accepted, accepted_count: accepted.length, span_count: spans.length }
         approveCapture.push({ section: payload.section, accepted_count: accepted.length, accepted: accepted.map((s) => s.id) })
+      } else if (payload.action === 'revert_section') {
+        // v0.5.3: revert_section answers with the batch-reverted (待审) spans +
+        // a pending section entry (mirrors the real host applyRevertSection:
+        // accepted → proposed + section back to pending). 反选 = 恢复待审, NOT reject.
+        const sec = (j.sections || []).find((s) => s.id === payload.section)
+        const anchors = (sec && sec.anchor_ids) || []
+        const reverted = spans.filter((s) => s.status === 'accepted' && anchors.indexOf(s.anchor) >= 0).map((s) => {
+          const copy = Object.assign({}, s, { status: 'proposed', decisions: (s.decisions || []).concat([{ action: 'proposed', by: 'user', at: new Date().toISOString() }]) })
+          return copy
+        })
+        result = { ok: true, action: 'revert_section', section: { id: payload.section, status: 'pending' }, reverted, reverted_count: reverted.length, span_count: spans.length }
+        revertCapture.push({ section: payload.section, reverted_count: reverted.length, reverted: reverted.map((s) => s.id) })
       } else {
         const span = applyMockAction(spans, payload)
         if (payload.action === 'add' && span) mockAddedSpan = span
@@ -369,7 +385,7 @@ const p2c = ['markStyle', 'reconcileSpan', 'renderActionBar', 'applyAction', 'ph
 for (const needle of p2c) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-c action bar: ${needle}`)
 }
-const p2d = ['buildSegmentMap', 'buildBlockSegments', 'pushPlainSegs', 'mapSelection', 'selectionToNorm', 'nodeOffsetToSeg', 'data-phl-seg', '新增高亮', '改范围', 'addDraft', 'rescueTarget', 'onBodyMouseUp']
+const p2d = ['buildSegmentMap', 'buildBlockSegments', 'mapSelection', 'selectionToNorm', 'nodeOffsetToSeg', 'data-phl-seg', '新增高亮', '改范围', 'addDraft', 'rescueTarget', 'onBodyMouseUp']
 for (const needle of p2d) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-d selection plumbing: ${needle}`)
 }
@@ -380,6 +396,11 @@ for (const needle of p2e) {
 const p2f = ['approve_section', 'approveSection', 'localApproveSectionSpans', 'data-phl-sec', '已审批通过']
 for (const needle of p2f) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 approve-section plumbing: ${needle}`)
+}
+// v0.5.3: reject-section (反选) plumbing — Shift+click batch reject mirror.
+const p2g = ['revert_section', 'revertSection', 'localRevertSectionSpans', '已恢复为待审']
+for (const needle of p2g) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.3 revert-section plumbing: ${needle}`)
 }
 const p1 = ['colorLegend', 'callProfile', 'profileData', '/paper-hl/profile', '初始化画像', 'phl-onb', 'defaultOnboardDraft', 'has_profile']
 for (const needle of p1) {
@@ -401,12 +422,13 @@ const p5 = ['callFormat', 'formatData', '/paper-hl/format', 'phl-fmt', 'phl-form
 for (const needle of p5) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5 format plumbing: ${needle}`)
 }
-// v0.5.1: legend colored labels + lightweight math rendering. Guard the
-// embedded helpers by name so a missing toString() embed (which would only
-// surface as a runtime ReferenceError → blank page) is caught statically.
-const v051 = ['splitMathPieces', 'mathConvert', 'mathClean', 'MATH_SYMBOLS', 'mathPieceEl', 'data-phl-dlen', 'phl-math', 'phl-legend-label', 'phl-math-display']
+// v0.5.1: legend colored labels. Guard the embedded helper by name so a missing
+// toString() embed (which would only surface as a runtime ReferenceError →
+// blank page) is caught statically. (v0.5.3: math rendering was removed; the
+// legend labels remain.)
+const v051 = ['phl-legend-label']
 for (const needle of v051) {
-  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 math/legend plumbing: ${needle}`)
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 legend-label plumbing: ${needle}`)
 }
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
@@ -414,12 +436,14 @@ console.log('bundle action bar (P2-c):', p2c.join(', '))
 console.log('bundle selection→add/rescope (P2-d):', p2d.join(', '))
 console.log('bundle review-complete signal (P2-e):', p2e.join(', '))
 console.log('bundle approve-section plumbing (v0.5.1):', p2f.join(', '))
+console.log('bundle revert-section plumbing (v0.5.3):', p2g.join(', '))
 console.log('bundle profile plumbing (v0.3 P1):', p1.join(', '))
 console.log('bundle profile-panel plumbing (v0.3 P3):', p3.join(', '))
 console.log('bundle proposal-panel plumbing (v0.3 P2):', p2.join(', '))
 console.log('bundle keyboard/export/progress plumbing (v0.4 P4):', p4.join(', '))
 console.log('bundle one-click format plumbing (v0.5 P5):', p5.join(', '))
 console.log('bundle math/legend plumbing (v0.5.1):', v051.join(', '))
+console.log('bundle revert-section plumbing (v0.5.3):', p2g.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -866,6 +890,31 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(approveCapture[0].accepted.every((id) => (liveData.highlights.spans || []).find((s) => s.id === id) && (targetSec.anchor_ids || []).indexOf((liveData.highlights.spans || []).find((s) => s.id === id).anchor) >= 0),
     'P2-f: every accepted span belongs to the clicked section')
 
+  // ══════════════ v0.5.3: section TOC Shift+click → batch 反选 (revert to 待审) ══════════════
+  // Shift+clicking a section chip REVERTS every accepted highlight in the
+  // section back to proposed (待审) + sets the section back to pending (POST
+  // revert_section) — the inverse of the plain click (反选 = 恢复待审, NOT reject).
+  const targetSec2 = expectedList.find((s) => s.id !== targetSec.id && s.id !== expectedCurrent && s.reviewed && s.id !== 's1')
+  assert(targetSec2 !== undefined, 'P2-g: a reviewed content section exists for the revert-click test (target the one just approved)')
+  const targetChip2 = byType.div.filter(isSectionChip).find((c) => c.props['data-phl-sec'] === targetSec2.id)
+  assert(targetChip2 !== undefined && typeof targetChip2.props.onClick === 'function', 'P2-g: section chip carries an onClick (TOC revert)')
+  const acceptedBefore2 = (liveData.highlights.spans || []).filter((s) => s.status === 'accepted' && (targetSec2.anchor_ids || []).indexOf(s.anchor) >= 0).length
+  writeCapture.length = 0
+  revertCapture.length = 0
+  targetChip2.props.onClick({ shiftKey: true })
+  assert(writeCapture.length === 1 && writeCapture[0].action === 'revert_section' && writeCapture[0].section === targetSec2.id,
+    'P2-g: revert_section POST payload targets the Shift-clicked section (' + targetSec2.id + ')')
+  await new Promise((r) => setTimeout(r, 200)) // flush mock write + reconcile
+  rerender()
+  const chipsAfterRevert = byType.div.filter(isSectionChip)
+  const revertedChip = chipsAfterRevert.find((c) => c.props['data-phl-sec'] === targetSec2.id)
+  assert(revertedChip !== undefined && (revertedChip.props.className || '').indexOf('phl-section-done') < 0, 'P2-g: reverted section chip no longer shows the done state (back to 待审查)')
+  assert(revertCapture.length === 1 && revertCapture[0].section === targetSec2.id, 'P2-g: mock revert_section answered for the Shift-clicked section')
+  assert(revertCapture[0].reverted_count === acceptedBefore2 && revertCapture[0].reverted.length === acceptedBefore2,
+    'P2-g: server reverted exactly the section spans (' + targetSec2.id + ': ' + acceptedBefore2 + ' accepted → all back to 待审/proposed)')
+  assert(revertCapture[0].reverted.every((id) => (liveData.highlights.spans || []).find((s) => s.id === id) && (targetSec2.anchor_ids || []).indexOf((liveData.highlights.spans || []).find((s) => s.id === id).anchor) >= 0),
+    'P2-g: every reverted span belongs to the Shift-clicked section')
+
   // ══════════════ v0.3 Phase 3: profile edit panel ══════════════
   const saveAllBtn = () => collectButtons(tree).find((b) => textOf(b) === '保存全部')
   const profileBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-profile-btn') === 0)
@@ -1145,7 +1194,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb').length >= 1,
     'P5: view returns to cold-start onboarding (profile cleared, factory reset)')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P2-f section-TOC approve (chip click → approve_section POST → batch accept + reviewed ✓, server accepted exactly the section spans) + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P2-f section-TOC approve (chip click → approve_section POST → batch accept + reviewed ✓, server accepted exactly the section spans) + P2-g section-TOC 反选 (Shift+chip click → revert_section POST → accepted back to 待审/proposed + chip back to 待审查, server reverted exactly the section spans) + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

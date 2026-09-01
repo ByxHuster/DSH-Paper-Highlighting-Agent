@@ -128,13 +128,10 @@ async function main() {
   assert(j.paperId === 'p-mikolov-2013-2013-1-word2vec', 'explicit paperId resolves the real paper')
   assert(j.anchors && Object.keys(j.anchors).length === 80, '80 anchors served')
   // The real demo data may legitimately carry extra user-added spans from a
-  // manual browser walkthrough (live /write add persists); guard the invariant
-  // that the original 5 demo spans are still present rather than an exact count.
-  assert(Array.isArray(j.highlights.spans) && j.highlights.spans.length >= 5, 'real data serves 5+ spans')
-  const realIds = (j.highlights.spans || []).map((s) => s.id)
-  for (const id of ['s-001', 's-002', 's-003', 's-004', 's-005']) {
-    assert(realIds.includes(id), 'original demo span intact: ' + id)
-  }
+  // manual browser walkthrough (live /write add persists), or be empty after a
+  // one-click format (一键格式化 wipes highlight records while keeping the
+  // parsed paper). Guard the array SHAPE only — not specific spans/counts.
+  assert(Array.isArray(j.highlights.spans), 'real data serves a spans array')
 
   // ── 3) GET /read returns the derived section index (v0.2 Phase 1) ──────────
   assert(Array.isArray(j.sections) && j.sections.length === 22, '22 sections derived')
@@ -248,6 +245,39 @@ async function main() {
   // 11f) empty section id → 400.
   const ap4 = await post2('paperId=p-test2', { action: 'approve_section', section: '' })
   assert(ap4.status === 400 && /section must be/.test(JSON.parse(ap4.body).error), 'approve_section empty section -> 400')
+
+  // ══════════════════ v0.5.3: revert_section route (batch 反选 = 恢复待审) ══════════════════
+  // Fresh fixture: 2 proposed in Abstract + 1 in References (all proposed).
+  const fx3 = await seedFixtureApprove()
+  const ctx5 = fakeCtx()
+  plugin.apply(ctx5, { root: fx3.root })
+  const w3 = ctx5.captured[0]
+  const post3 = (url, action) => invoke(w3.handler, {
+    method: 'POST',
+    url: '/paper-hl/write' + (url ? '?' + url : ''),
+    body: action === undefined ? '' : (typeof action === 'string' ? action : JSON.stringify(action)),
+  })
+
+  // 11g) approve Abstract first (2 accepted + reviewed), then revert_section →
+  // the 2 accepted spans go back to proposed (待审) + the section back to pending.
+  const rj = await post3('paperId=p-test2', { action: 'approve_section', section: 's2' })
+  assert(rj.status === 200 && JSON.parse(rj.body).accepted_count === 2, 'write approve_section first (round-trip setup)')
+  const rvr = await post3('paperId=p-test2', { action: 'revert_section', section: 's2' })
+  const jrvr = JSON.parse(rvr.body)
+  assert(rvr.status === 200 && jrvr.ok === true && jrvr.action === 'revert_section', 'write revert_section -> 200')
+  assert(jrvr.reverted_count === 2 && Array.isArray(jrvr.reverted) && jrvr.reverted.length === 2, 'revert_section reverts the 2 Abstract accepted spans')
+  assert(jrvr.reverted.every((s) => s.status === 'proposed'), 'revert_section response spans are proposed (待审)')
+  assert(jrvr.section.status === 'pending' && jrvr.section.reviewed_at === undefined, 'revert_section response section pending (待审), no reviewed_at')
+  const rvrDisk = await readHighlights(fx3.root, fx3.paperId)
+  assert(rvrDisk.spans.filter((s) => s.status === 'proposed').length === 3 && rvrDisk.spans.find((s) => s.id === 's-001').status === 'proposed', 'revert_section persisted: Abstract spans back to proposed, References proposed untouched')
+
+  // 11h) re-reverting Abstract is idempotent (0 new reverts).
+  const rvr2 = await post3('paperId=p-test2', { action: 'revert_section', section: 's2' })
+  assert(JSON.parse(rvr2.body).reverted_count === 0, 'revert_section idempotent on re-revert')
+
+  // 11i) empty section id → 400.
+  const rvr3 = await post3('paperId=p-test2', { action: 'revert_section', section: '' })
+  assert(rvr3.status === 400 && /section must be/.test(JSON.parse(rvr3.body).error), 'revert_section empty section -> 400')
 
   // ── negative write matrix ──
   const bad = await post('paperId=p-test', { action: 'accept', span_id: 's-999' })
@@ -450,7 +480,7 @@ async function main() {
     step: 'plugin-route',
     result: 'PASS',
     config_root: 'cwd-independent data root (Step 4 restart regression guarded)',
-    read: '/paper-hl/read -> 200, 80 anchors, 5+ spans (original demo intact, user walkthrough may add), 22 sections (References empty)',
+    read: '/paper-hl/read -> 200, 80 anchors, spans array (shape-only: post-format empty or user-walkthrough additions both OK), 22 sections (References empty)',
     write: 'POST /paper-hl/write: accept/recolor/add/review_section applied + persisted; review status merged into read',
     write_negative: 'unknown span/action/paperId, bad range, malformed body, missing paperId -> 4xx',
     profile: 'GET /paper-hl/profile (has_profile/summary/pending_proposals) + POST /init (defaults + onboarding colors/rules merge) + POST /apply?paperId (proposal confirmation, append-only) + POST /save (edit-panel partial update: colors/rules/exemplars/notes, stats read-only) + negatives',

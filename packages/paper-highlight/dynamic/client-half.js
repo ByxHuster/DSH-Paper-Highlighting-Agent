@@ -44,52 +44,21 @@ function renderText(text, spans, opts) {
   const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
   const anchorId = (opts && opts.anchorId) || ''
   const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-  // v0.5.1: emit one node per splitMathPieces piece for a plain run (math
-  // pieces become their own styled/segment elements). The mathPieceEl helper
-  // keeps every branch (no-span / gap / tail) emitting identical DOM.
-  const emitPlain = (run) => {
-    const pieces = splitMathPieces(run)
-    if (pieces.length === 1 && !pieces[0].math) {
-      if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), run))
-      else out.push(run)
-      si++
-      return
-    }
-    for (const p of pieces) {
-      if (!p.math) {
-        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
-        else out.push(p.display)
-      } else {
-        out.push(mathPieceEl(p, run.slice(p.start, p.end), si, withSeg, segProps))
-      }
-      si++
-    }
+  if (!spans || spans.length === 0) {
+    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
+    return [text]
   }
   const out = []
   let pos = 0
   let si = segBase
   const onMarkClick = opts && opts.onMarkClick
   const activeSpanId = opts && opts.activeSpanId
-  if (!spans || spans.length === 0) {
-    const pieces = splitMathPieces(String(text))
-    if (pieces.length === 1 && !pieces[0].math) {
-      if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-      return [text]
-    }
-    for (const p of pieces) {
-      if (!p.math) {
-        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
-        else out.push(p.display)
-      } else {
-        out.push(mathPieceEl(p, text.slice(p.start, p.end), si, withSeg, segProps))
-      }
-      si++
-    }
-    return out
-  }
   for (const s of spans) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) emitPlain(text.slice(pos, start))
+    if (start > pos) {
+      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+      si++
+    }
     if (end > start) {
       const props = {
         key: s.id,
@@ -108,7 +77,10 @@ function renderText(text, spans, opts) {
     }
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) emitPlain(text.slice(pos))
+  if (pos < text.length) {
+    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
+    si++
+  }
   return out
 }
 
@@ -169,130 +141,29 @@ function colorLegend(colors) {
   return list
 }
 
-const MATH_SYMBOLS = {"alpha":"α","beta":"β","gamma":"γ","delta":"δ","epsilon":"ε","varepsilon":"ϵ","zeta":"ζ","eta":"η","theta":"θ","vartheta":"ϑ","iota":"ι","kappa":"κ","lambda":"λ","mu":"μ","nu":"ν","xi":"ξ","omicron":"ο","pi":"π","varpi":"ϖ","rho":"ρ","varrho":"ϱ","sigma":"σ","varsigma":"ς","tau":"τ","upsilon":"υ","phi":"φ","varphi":"ϕ","chi":"χ","psi":"ψ","omega":"ω","Gamma":"Γ","Delta":"Δ","Theta":"Θ","Lambda":"Λ","Xi":"Ξ","Pi":"Π","Sigma":"Σ","Upsilon":"Υ","Phi":"Φ","Psi":"Ψ","Omega":"Ω","times":"×","cdot":"·","pm":"±","mp":"∓","le":"≤","leq":"≤","ge":"≥","geq":"≥","ne":"≠","neq":"≠","approx":"≈","equiv":"≡","propto":"∝","in":"∈","notin":"∉","ni":"∋","subset":"⊂","supset":"⊃","subseteq":"⊆","supseteq":"⊇","cup":"∪","cap":"∩","forall":"∀","exists":"∃","nexists":"∄","emptyset":"∅","infty":"∞","partial":"∂","nabla":"∇","to":"→","rightarrow":"→","leftarrow":"←","leftrightarrow":"↔","uparrow":"↑","downarrow":"↓","Rightarrow":"⇒","Leftarrow":"⇐","sum":"∑","prod":"∏","int":"∫","oint":"∮","ldots":"…","dots":"…","cdots":"⋯","vdots":"⋮","ddots":"⋱","prime":"′","degree":"°","ast":"∗","star":"⋆","oplus":"⊕","otimes":"⊗","ominus":"⊖","odot":"⊙","sqrt":"√","angle":"∠","perp":"⊥","parallel":"∥","mid":"∣","sim":"∼","simeq":"≃","cong":"≅","asymp":"≍","ll":"≪","gg":"≫","lceil":"⌈","rceil":"⌉","lfloor":"⌊","rfloor":"⌋","frac":"⁄","colon":":","bf":"","rm":"","it":"","tt":"","cal":"","boldsymbol":""};
-const SUP_MAP = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾","n":"ⁿ","i":"ⁱ","T":"ᵀ"};
-const SUB_MAP = {"0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉","+":"₊","-":"₋","=":"₌","(":"₍",")":"₎","a":"ₐ","e":"ₑ","o":"ₒ","x":"ₓ","i":"ᵢ","j":"ⱼ","k":"ₖ","l":"ₗ","m":"ₘ","n":"ₙ","p":"ₚ","s":"ₛ","t":"ₜ","r":"ᵣ","h":"ₕ","u":"ᵤ","v":"ᵥ","f":"ᶠ"};
 
-function mapScript(t, map) {
-  let out = ''
-  for (const ch of String(t || '')) out += map[ch] !== undefined ? map[ch] : ch
-  return out
-}
 
-function supScript(t) { return mapScript(t, SUP_MAP) }
 
-function subScript(t) { return mapScript(t, SUB_MAP) }
 
-function boldMath(t) {
-  let out = ''
-  for (const ch of String(t || '')) {
-    const c = ch.codePointAt(0)
-    if (c >= 97 && c <= 122) out += String.fromCodePoint(0x1D41A + (c - 97))
-    else if (c >= 65 && c <= 90) out += String.fromCodePoint(0x1D400 + (c - 65))
-    else out += ch
-  }
-  return out
-}
 
-function mathClean(s) {
-  return String(s || '')
-    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (m, a, b) => mathClean(a).trim() + '\u2044' + mathClean(b).trim())
-    .replace(/\\(mathbf|boldsymbol|textbf)\s*\{([^{}]*)\}/g, (m, c, a) => boldMath(mathClean(a).trim()))
-    .replace(/\\(mathrm|mathit|text|textit|textrm)\s*\{([^{}]*)\}/g, (m, c, a) => mathClean(a).trim())
-    .replace(/\\(bar|hat|tilde|dot|acute|grave|vec|overline|check)\s*\{([^{}]*)\}/g, (m, cmd, a) => {
-      const t = mathClean(a).trim()
-      const cc = { bar: '\u0304', hat: '\u0302', tilde: '\u0303', dot: '\u0307', acute: '\u0301', grave: '\u0300', vec: '\u20D7', overline: '\u0305', check: '\u030C' }[cmd]
-      return cc ? (t + cc) : t
-    })
-    .replace(/\\sqrt\s*\{([^{}]*)\}/g, (m, a) => '\u221A' + mathClean(a).trim())
-    .replace(/([_\^])\s*\{\s*([^{}]*)\s*\}/g, (m, op, inner) => (op === '_' ? subScript(mathClean(inner).trim()) : supScript(mathClean(inner).trim())))
-    .replace(/([_\^])([A-Za-z0-9])/g, (m, op, ch) => (op === '_' ? subScript(ch) : supScript(ch)))
-    .replace(/\\[,;:!]\s*/g, ' ')
-    .replace(/\\([a-zA-Z]+)/g, (m, name) => (MATH_SYMBOLS[name] !== undefined ? MATH_SYMBOLS[name] : m))
-    .replace(/\{\s*([0-9A-Za-z+\-*/=<>()|.,;:'"~])\s*\}/g, '$1')
-}
 
-function mathConvert(raw) {
-  let s = String(raw || '').trim()
-  s = s.replace(/^\$\$/, '').replace(/\$\$$/, '')
-    .replace(/^\$/, '').replace(/\$$/, '')
-    .replace(/^\\\[/, '').replace(/\\\]$/, '')
-    .replace(/^\\\(/, '').replace(/\\\)$/, '')
-  return mathClean(s)
-}
 
-function matchMathDelim(rest) {
-  let m = /^\$\$([\s\S]+?)\$\$/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
-  m = /^\\\[([\s\S]+?)\\\]/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
-  m = /^\\\(([\s\S]+?)\\\)/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]) }
-  m = /^\$([\s\S]+?)\$/.exec(rest)
-  if (m && /[\\_^{]/.test(m[1])) return { len: m[0].length, display: mathConvert(m[1]) }
-  return null
-}
 
-function matchMathToken(rest) {
-  const re = /\\[a-zA-Z]+(?:\s*\{[^{}]*\}){0,2}|[_\^]\s*\{[^{}]*\}|[_\^][A-Za-z0-9]|\{\s*[^\s{}]\s*\}/g
-  re.lastIndex = 0
-  const m = re.exec(rest)
-  if (m && m.index === 0) return { len: m[0].length, display: mathConvert(m[0]) }
-  return null
-}
 
-function splitMathPieces(text) {
-  const src = String(text || '')
-  const n = src.length
-  const out = []
-  let pos = 0
-  let textStart = 0
-  const flush = (end) => {
-    if (end > textStart) out.push({ start: textStart, end, math: false, display: src.slice(textStart, end) })
-  }
-  // v0.5.2 fix: a math piece whose conversion yields an EMPTY display (bare
-  // font switches like `\bf`/`\rm`, empty `^ { }`, `$$$$`, …) must NOT become
-  // a math span — an empty span with background+padding renders as a hollow
-  // gray box that covers the formula text. Fold the raw LaTeX back into the
-  // surrounding plain run instead (nothing is hidden, nothing is lost).
-  const pushMath = (start, end, display, block) => {
-    if (display.length === 0) return
-    flush(start)
-    out.push({ start, end, math: true, display, block: !!block })
-    textStart = end
-  }
-  while (pos < n) {
-    const rest = src.slice(pos)
-    const d = matchMathDelim(rest)
-    if (d) {
-      pushMath(pos, pos + d.len, d.display, d.block)
-      pos += d.len
-      continue
-    }
-    const t = matchMathToken(rest)
-    if (t) {
-      pushMath(pos, pos + t.len, t.display, false)
-      pos += t.len
-      continue
-    }
-    pos++
-  }
-  flush(n)
-  return out
-}
 
-function mathPieceEl(piece, rawText, segIndex, withSeg, segProps) {
-  const props = {
-    key: 'seg-' + segIndex,
-    className: 'phl-math' + (piece.block ? ' phl-math-display' : ''),
-    title: rawText,
-  }
-  if (withSeg) {
-    props['data-phl-seg'] = String(segIndex)
-    props['data-phl-dlen'] = String(piece.display.length)
-  }
-  return React.createElement('span', props, piece.display)
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function profilePanelModel(profile) {
   const colors = profilePanelColors(profile)
@@ -411,6 +282,14 @@ function localApproveSectionSpans(spans, sectionAnchors) {
   })
 }
 
+function localRevertSectionSpans(spans, sectionAnchors) {
+  const set = new Set(sectionAnchors || [])
+  return (spans || []).map((s) => {
+    if (s.status !== 'accepted' || !set.has(s.anchor)) return s
+    return Object.assign({}, s, { status: 'proposed' })
+  })
+}
+
 function spanActiveStyle(status) {
   if (status === 'rejected') return { opacity: 0.3, textDecoration: 'line-through' }
   if (status === 'accepted') return { opacity: 1 }
@@ -449,10 +328,7 @@ function reconcileSpan(spans, serverSpan, payload) {
   return arr
 }
 
-function pushPlainSegs(segs, anchorId, text, from, to) {
-  const pieces = splitMathPieces(text.slice(from, to))
-  for (const p of pieces) segs.push({ anchorId, start: from + p.start, end: from + p.end, spanId: null, math: !!p.math })
-}
+
 
 function buildBlockSegments(anchorId, text, spans) {
   const segs = []
@@ -460,11 +336,11 @@ function buildBlockSegments(anchorId, text, spans) {
   let pos = 0
   for (const s of sorted) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) pushPlainSegs(segs, anchorId, text, pos, start)
+    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
     if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) pushPlainSegs(segs, anchorId, text, pos, text.length)
+  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
   return segs
 }
 
@@ -509,21 +385,7 @@ function nodeOffsetToSeg(node, offset, segments) {
       const seg = Number(attr)
       if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
       const len = segments[seg].end - segments[seg].start
-      // v0.5.1: math pieces carry data-phl-dlen (their display length, which
-      // may be shorter than the raw LaTeX range). A display offset at/after the
-      // display end maps to the raw end (whole-token selections stay exact);
-      // partial offsets are clamped to the raw range.
-      let off
-      if (isEl) {
-        off = offset > 0 ? len : 0
-      } else {
-        off = Math.max(0, Math.min(offset, len))
-        const dlenAttr = (typeof el.getAttribute === 'function') ? el.getAttribute('data-phl-dlen') : null
-        if (dlenAttr !== null && dlenAttr !== undefined && dlenAttr !== '') {
-          const dlen = Number(dlenAttr)
-          if (Number.isFinite(dlen) && dlen < len && off >= dlen) off = len
-        }
-      }
+      const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
       return { seg, offset: off }
     }
     if (isEl && el === node && typeof el.getAttribute === 'function' && el.getAttribute('data-phl-anchor') !== null) {
@@ -937,12 +799,55 @@ function PaperView() {
     })
   }
 
+  // v0.5.3 · 反选 — revert one section from the TOC chip Shift+click. Optimistic
+  // batch revert (accepted → proposed 待审) of the section's spans + set the
+  // section back to pending (待审), then the revert_section round trip (server
+  // reverts + marks pending; the returned spans reconcile the overlay, the
+  // section entry merges into the optimistic map). The user asked explicitly
+  // that 反选 = 批量设置为待审状态 (undo the one-click approve) — NOT batch
+  // reject. Mirrors approveSection.
+  const revertSection = (id) => {
+    if (!id) return
+    const sec = (data.sections || []).find((s) => s.id === id)
+    const secAnchors = (sec && Array.isArray(sec.anchor_ids)) ? sec.anchor_ids : []
+    const title = (sec && sec.title) || id
+    const before = spans.filter((s) => s.status === 'accepted' && secAnchors.indexOf(s.anchor) >= 0).length
+    const next = localRevertSectionSpans(spans, secAnchors)
+    setSpansOverride(next)
+    const optimistic = { status: 'pending' }
+    setSectionOverrides((m) => Object.assign({}, m, { [id]: optimistic }))
+    setFlash(null)
+    setFlash({ kind: 'ok', text: '已恢复为待审 ' + title + (before ? '（' + before + ' 处高亮回到待审）' : '（该节无已接受高亮，已标记待审）') })
+    callWrite({ action: 'revert_section', section: id }, state.paperId).then((res) => {
+      if (res && Array.isArray(res.reverted)) {
+        setSpansOverride((prev) => {
+          let acc = prev || next
+          for (const sp of res.reverted) acc = reconcileSpan(acc, sp, { action: 'revert', span_id: sp.id })
+          return acc
+        })
+      }
+      if (res && res.section && res.section.id) {
+        setSectionOverrides((m) => Object.assign({}, m, { [res.section.id]: { status: res.section.status || 'pending' } }))
+      }
+      if (res && typeof res.reverted_count === 'number') {
+        setFlash({ kind: 'ok', text: '已恢复为待审 ' + title + (res.reverted_count ? '（' + res.reverted_count + ' 处高亮回到待审）' : '（该节无已接受高亮，已标记待审）') })
+      }
+    }).catch((err) => {
+      const msg = String(err && err.message ? err.message : err)
+      setFlash({ kind: 'error', text: '恢复待审失败（已回读校准）：' + msg })
+      callData({ paperId: state.paperId }).then((res) => {
+        if (res && res.ok) { setState((s) => ({ ...s, data: res })); setSpansOverride(null); setSectionOverrides({}) }
+      }).catch(() => {})
+    })
+  }
+
   // v0.4 Phase 4 (D6): publish the ready-path dispatch closures + hints so the
   // keydown effect (declared before the early returns) reads them fresh.
   dispatchRef.current = {
     applyAction,
     markCurrentReviewed,
     approveSection,
+    revertSection,
     sectionItems,
     palette: palette.map((l) => l.name),
   }
@@ -1140,14 +1045,18 @@ function PaperView() {
   // P2-e: reviewable section bar (✓ on reviewed, highlight on the section in view).
   // v0.5.1: clicking a section chip approves ALL its highlights (batch accept)
   // and marks it reviewed — even when the agent proposed none.
+  // v0.5.3: Shift+click on a chip is the 反选 — batch-REJECT all its highlights.
   const sectionBar = React.createElement('div', { className: 'phl-sections' },
     sectionItems.map((s) =>
       React.createElement('div', {
         key: s.id,
         className: 'phl-section' + (s.reviewed ? ' phl-section-done' : '') + (s.id === currentSection ? ' phl-section-curr' : ''),
         'data-phl-sec': s.id,
-        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title + '（点击审批通过本节全部高亮）',
-        onClick: () => approveSection(s.id)
+        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title + '（点击 = 审批通过本节全部高亮；Shift+点击 = 恢复本节为待审，撤销审批）',
+        onClick: (e) => {
+          if (e && e.shiftKey) revertSection(s.id)
+          else approveSection(s.id)
+        }
       },
         React.createElement('span', { className: 'phl-section-check' }, s.reviewed ? '✓' : ''),
         React.createElement('span', { className: 'phl-section-title' }, s.title)
@@ -1363,7 +1272,7 @@ function PaperView() {
     )
 
     const exemplarRows = d.exemplars.length === 0
-      ? React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无示例，确认提案后自动入库）')
+      ? [React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无示例，确认提案后自动入库）')]
       : d.exemplars.map((e, i) =>
           React.createElement('div', { key: i, className: 'phl-pnl-row', 'data-phl-ex': String(i) },
             React.createElement('span', { className: 'phl-pnl-ex-summary' },
@@ -1591,8 +1500,6 @@ function apply(ctx) {
       // v0.5.1: the semantic label renders in its own highlight color.
       '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
       // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
-      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#dcdcdc;padding:0 2px;border-radius:3px;background:rgba(96,130,190,.12)}',
-      '.phl-math-display{display:block;text-align:center;font-size:1.05em;margin:6px 0;padding:5px 8px;background:rgba(96,130,190,.14);border-radius:6px}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',

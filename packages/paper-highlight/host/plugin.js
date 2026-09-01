@@ -147,6 +147,9 @@ async function handleWrite(root, url, req, res, sendJson) {
       // v0.5.1: approve_section returns the batch-accepted spans + count.
       accepted: result.accepted ?? null,
       accepted_count: result.accepted_count ?? null,
+      // v0.5.3: revert_section returns the batch-reverted (待审) spans + count.
+      reverted: result.reverted ?? null,
+      reverted_count: result.reverted_count ?? null,
       span_count: highlights.spans.length,
     })
   } catch (err) {

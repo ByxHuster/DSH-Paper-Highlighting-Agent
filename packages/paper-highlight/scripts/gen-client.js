@@ -96,16 +96,11 @@ function generateBundle() {
   lines.push(`\t\texports.keyAction = keyAction;`)
   lines.push(`\t\texports.reviewProgress = reviewProgress;`)
   lines.push(`\t\texports.buildExportUrl = buildExportUrl;`)
-  // v0.5.1: lightweight math rendering helpers for headless tests.
-  lines.push(`\t\texports.MATH_SYMBOLS = MATH_SYMBOLS;`)
-  lines.push(`\t\texports.supScript = supScript;`)
-  lines.push(`\t\texports.subScript = subScript;`)
-  lines.push(`\t\texports.boldMath = boldMath;`)
-  lines.push(`\t\texports.mathClean = mathClean;`)
-  lines.push(`\t\texports.mathConvert = mathConvert;`)
-  lines.push(`\t\texports.splitMathPieces = splitMathPieces;`)
   // v0.5.1: batch section-approve optimistic helper for headless tests.
   lines.push(`\t\texports.localApproveSectionSpans = localApproveSectionSpans;`)
+  // v0.5.3: batch section-revert-to-pending (反选 = 批量恢复待审, NOT reject)
+  // optimistic helper for headless tests.
+  lines.push(`\t\texports.localRevertSectionSpans = localRevertSectionSpans;`)
   // v0.3 Phase 1: colors.yml-driven palette helper for headless tests.
   lines.push(`\t\texports.colorLegend = colorLegend;`)
   lines.push(`\t\texports.callProfile = callProfile;`)

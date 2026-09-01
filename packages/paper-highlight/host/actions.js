@@ -16,13 +16,18 @@
  *   approve_section { section }            → accept ALL proposed spans in the
  *                                             section's anchor_ids + mark the
  *                                             section reviewed (v0.5.1)
+ *   revert_section { section }             → revert EVERY accepted span in the
+ *                                             section's anchor_ids back to
+ *                                             proposed (待审) + set the section
+ *                                             back to pending (v0.5.3 反选:
+ *                                             undo the one-click approve)
  *
  * Every action appends an immutable decision (design §4.2: decisions append-
  * only, the profile-learning audit log). The caller persists the mutated
  * document with writeHighlights (which re-validates the whole schema).
  */
 
-const ACTIONS = new Set(['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section'])
+const ACTIONS = new Set(['accept', 'reject', 'recolor', 'rescope', 'add', 'note', 'review_section', 'approve_section', 'revert_section'])
 
 function nowIso() {
   return new Date().toISOString()
@@ -140,6 +145,26 @@ function resolveReviewEntry(doc, section, opts) {
   return entry
 }
 
+/** Inverse of resolveReviewEntry: find the plan entry (by id or section
+ *  title, or create one) and set it back to pending (待审), clearing the
+ *  reviewed timestamp. Returns the entry. */
+function resolvePendingEntry(doc, section, opts) {
+  let entry = (doc.plan.sections || []).find((e) => e.id === section || e.section === section)
+  if (!entry) {
+    let title = section
+    if (opts && Array.isArray(opts.sections)) {
+      const built = opts.sections.find((s) => s.id === section)
+      if (built) title = built.title
+    }
+    entry = { id: section, section: title, status: 'pending' }
+    doc.plan.sections.push(entry)
+    return entry
+  }
+  entry.status = 'pending'
+  delete entry.reviewed_at
+  return entry
+}
+
 function applyReviewSection(doc, a, opts) {
   const section = a.section
   if (typeof section !== 'string' || section.length === 0) throw new Error('review_section: section must be a non-empty string id')
@@ -177,6 +202,36 @@ function applyApproveSection(doc, a, opts) {
 }
 
 /**
+ * v0.5.3 · revert_section — 反选 (the inverse of approve_section): undo the
+ * one-click approve by reverting EVERY accepted span whose anchor belongs to
+ * the section (from the built section index, opts.sections → anchor_ids) back
+ * to proposed (待审), then sets the section back to pending (待审, clears the
+ * reviewed timestamp). The user asked explicitly that 反选 means "batch set to
+ * 待审" — NOT batch reject. Proposed / user_added / rejected spans are left
+ * untouched (only what the approve had accepted goes back to the review queue).
+ * Each revert appends a 'proposed' decision (audit log). Pure mutation of `doc`.
+ */
+function applyRevertSection(doc, a, opts) {
+  const section = a.section
+  if (typeof section !== 'string' || section.length === 0) throw new Error('revert_section: section must be a non-empty string id')
+  const anchors = new Set()
+  if (opts && Array.isArray(opts.sections)) {
+    const built = opts.sections.find((s) => s.id === section)
+    if (built && Array.isArray(built.anchor_ids)) {
+      for (const id of built.anchor_ids) anchors.add(id)
+    }
+  }
+  const reverted = []
+  for (const s of doc.spans || []) {
+    if (s.status !== 'accepted' || !anchors.has(s.anchor)) continue
+    s.status = 'proposed'
+    s.decisions.push(decision('proposed'))
+    reverted.push(s)
+  }
+  return { section: resolvePendingEntry(doc, section, opts), reverted, reverted_count: reverted.length }
+}
+
+/**
  * @param {object} doc    highlights document (mutated in place)
  * @param {object} action { action, ... }
  * @param {object} [opts] { sections?: built section list }
@@ -203,6 +258,8 @@ function applyAction(doc, action, opts) {
       return applyReviewSection(doc, action, opts)
     case 'approve_section':
       return applyApproveSection(doc, action, opts)
+    case 'revert_section':
+      return applyRevertSection(doc, action, opts)
     default:
       throw new Error(`unsupported action: ${kind}`)
   }

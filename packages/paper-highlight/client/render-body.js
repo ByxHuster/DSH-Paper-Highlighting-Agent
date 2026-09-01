@@ -226,194 +226,6 @@ function markStyle(span, isActive, clickable, colors) {
 }
 
 /**
- * v0.5.1 · lightweight inline/display math rendering.
- *
- * No external dependency (no KaTeX / MathJax): a pure tokenizer + converter
- * over the OCR-mangled LaTeX fragments that MinerU normalization leaves inline
- * (e.g. "N \times D", "l o g _ { 2 } ( V )", "\mathbf { f }", "{ - }"). It
- * supports explicit delimiters ($$…$$ / \[…\] display, $…$ / \(…\) inline) AND
- * bare LaTeX tokens embedded in prose. Display = Unicode symbols + combining
- * accents + CSS styling; unknown commands are preserved verbatim so nothing is
- * ever lost. splitMathPieces keeps the raw [start,end) char ranges, so the
- * highlight-selection machinery can subdivide segments exactly (each math
- * piece becomes its own segment; nodeOffsetToSeg maps the display-length
- * offset back to the raw range).
- *
- * These helpers never use backticks / template literals / `${` (they are
- * embedded into the shipped bundle via toString()).
- */
-
-const MATH_SYMBOLS = {
-  alpha: '\u03B1', beta: '\u03B2', gamma: '\u03B3', delta: '\u03B4', epsilon: '\u03B5',
-  varepsilon: '\u03F5', zeta: '\u03B6', eta: '\u03B7', theta: '\u03B8', vartheta: '\u03D1',
-  iota: '\u03B9', kappa: '\u03BA', lambda: '\u03BB', mu: '\u03BC', nu: '\u03BD',
-  xi: '\u03BE', omicron: '\u03BF', pi: '\u03C0', varpi: '\u03D6', rho: '\u03C1',
-  varrho: '\u03F1', sigma: '\u03C3', varsigma: '\u03C2', tau: '\u03C4', upsilon: '\u03C5',
-  phi: '\u03C6', varphi: '\u03D5', chi: '\u03C7', psi: '\u03C8', omega: '\u03C9',
-  Gamma: '\u0393', Delta: '\u0394', Theta: '\u0398', Lambda: '\u039B', Xi: '\u039E',
-  Pi: '\u03A0', Sigma: '\u03A3', Upsilon: '\u03A5', Phi: '\u03A6', Psi: '\u03A8', Omega: '\u03A9',
-  times: '\u00D7', cdot: '\u00B7', pm: '\u00B1', mp: '\u2213', le: '\u2264', leq: '\u2264',
-  ge: '\u2265', geq: '\u2265', ne: '\u2260', neq: '\u2260', approx: '\u2248', equiv: '\u2261',
-  propto: '\u221D', in: '\u2208', notin: '\u2209', ni: '\u220B', subset: '\u2282',
-  supset: '\u2283', subseteq: '\u2286', supseteq: '\u2287', cup: '\u222A', cap: '\u2229',
-  forall: '\u2200', exists: '\u2203', nexists: '\u2204', emptyset: '\u2205', infty: '\u221E',
-  partial: '\u2202', nabla: '\u2207', to: '\u2192', rightarrow: '\u2192', leftarrow: '\u2190',
-  leftrightarrow: '\u2194', uparrow: '\u2191', downarrow: '\u2193', Rightarrow: '\u21D2',
-  Leftarrow: '\u21D0', sum: '\u2211', prod: '\u220F', int: '\u222B', oint: '\u222E',
-  ldots: '\u2026', dots: '\u2026', cdots: '\u22EF', vdots: '\u22EE', ddots: '\u22F1',
-  prime: '\u2032', degree: '\u00B0', ast: '\u2217', star: '\u22C6', oplus: '\u2295',
-  otimes: '\u2297', ominus: '\u2296', odot: '\u2299', sqrt: '\u221A', angle: '\u2220',
-  perp: '\u22A5', parallel: '\u2225', mid: '\u2223', sim: '\u223C', simeq: '\u2243',
-  cong: '\u2245', asymp: '\u224D', ll: '\u226A', gg: '\u226B', lceil: '\u2308',
-  rceil: '\u2309', lfloor: '\u230A', rfloor: '\u230B', frac: '\u2044', colon: ':',
-  // legacy font switches (no glyph of their own) — vanish cleanly.
-  bf: '', rm: '', it: '', tt: '', cal: '', boldsymbol: '',
-}
-
-const SUP_MAP = { '0': '\u2070', '1': '\u00B9', '2': '\u00B2', '3': '\u00B3', '4': '\u2074', '5': '\u2075', '6': '\u2076', '7': '\u2077', '8': '\u2078', '9': '\u2079', '+': '\u207A', '-': '\u207B', '=': '\u207C', '(': '\u207D', ')': '\u207E', 'n': '\u207F', 'i': '\u2071', 'T': '\u1D40' }
-const SUB_MAP = { '0': '\u2080', '1': '\u2081', '2': '\u2082', '3': '\u2083', '4': '\u2084', '5': '\u2085', '6': '\u2086', '7': '\u2087', '8': '\u2088', '9': '\u2089', '+': '\u208A', '-': '\u208B', '=': '\u208C', '(': '\u208D', ')': '\u208E', 'a': '\u2090', 'e': '\u2091', 'o': '\u2092', 'x': '\u2093', 'i': '\u1D62', 'j': '\u2C7C', 'k': '\u2096', 'l': '\u2097', 'm': '\u2098', 'n': '\u2099', 'p': '\u209A', 's': '\u209B', 't': '\u209C', 'r': '\u1D63', 'h': '\u2095', 'u': '\u1D64', 'v': '\u1D65', 'f': '\u1DA0' }
-
-/** Map each char of t through the script table (fallback = the char itself). */
-function mapScript(t, map) {
-  let out = ''
-  for (const ch of String(t || '')) out += map[ch] !== undefined ? map[ch] : ch
-  return out
-}
-
-/** Unicode superscript for t (fallback = plain char). */
-function supScript(t) { return mapScript(t, SUP_MAP) }
-
-/** Unicode subscript for t (fallback = plain char). */
-function subScript(t) { return mapScript(t, SUB_MAP) }
-
-/** Unicode mathematical bold for t (a-z → 𝐚-𝐳, A-Z → 𝐀-𝐙). */
-function boldMath(t) {
-  let out = ''
-  for (const ch of String(t || '')) {
-    const c = ch.codePointAt(0)
-    if (c >= 97 && c <= 122) out += String.fromCodePoint(0x1D41A + (c - 97))
-    else if (c >= 65 && c <= 90) out += String.fromCodePoint(0x1D400 + (c - 65))
-    else out += ch
-  }
-  return out
-}
-
-/**
- * Convert one math fragment (raw LaTeX text, delimiters stripped by
- * mathConvert) into its display string. Pure — unknown commands stay verbatim.
- */
-function mathClean(s) {
-  return String(s || '')
-    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (m, a, b) => mathClean(a).trim() + '\u2044' + mathClean(b).trim())
-    .replace(/\\(mathbf|boldsymbol|textbf)\s*\{([^{}]*)\}/g, (m, c, a) => boldMath(mathClean(a).trim()))
-    .replace(/\\(mathrm|mathit|text|textit|textrm)\s*\{([^{}]*)\}/g, (m, c, a) => mathClean(a).trim())
-    .replace(/\\(bar|hat|tilde|dot|acute|grave|vec|overline|check)\s*\{([^{}]*)\}/g, (m, cmd, a) => {
-      const t = mathClean(a).trim()
-      const cc = { bar: '\u0304', hat: '\u0302', tilde: '\u0303', dot: '\u0307', acute: '\u0301', grave: '\u0300', vec: '\u20D7', overline: '\u0305', check: '\u030C' }[cmd]
-      return cc ? (t + cc) : t
-    })
-    .replace(/\\sqrt\s*\{([^{}]*)\}/g, (m, a) => '\u221A' + mathClean(a).trim())
-    .replace(/([_\^])\s*\{\s*([^{}]*)\s*\}/g, (m, op, inner) => (op === '_' ? subScript(mathClean(inner).trim()) : supScript(mathClean(inner).trim())))
-    .replace(/([_\^])([A-Za-z0-9])/g, (m, op, ch) => (op === '_' ? subScript(ch) : supScript(ch)))
-    .replace(/\\[,;:!]\s*/g, ' ')
-    .replace(/\\([a-zA-Z]+)/g, (m, name) => (MATH_SYMBOLS[name] !== undefined ? MATH_SYMBOLS[name] : m))
-    .replace(/\{\s*([0-9A-Za-z+\-*/=<>()|.,;:'"~])\s*\}/g, '$1')
-}
-
-/** Strip the surrounding math delimiters, then convert. */
-function mathConvert(raw) {
-  let s = String(raw || '').trim()
-  s = s.replace(/^\$\$/, '').replace(/\$\$$/, '')
-    .replace(/^\$/, '').replace(/\$$/, '')
-    .replace(/^\\\[/, '').replace(/\\\]$/, '')
-    .replace(/^\\\(/, '').replace(/\\\)$/, '')
-  return mathClean(s)
-}
-
-/** Match one explicit delimiter at the head of rest → {len, display, block} | null. */
-function matchMathDelim(rest) {
-  let m = /^\$\$([\s\S]+?)\$\$/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
-  m = /^\\\[([\s\S]+?)\\\]/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]), block: true }
-  m = /^\\\(([\s\S]+?)\\\)/.exec(rest)
-  if (m) return { len: m[0].length, display: mathConvert(m[1]) }
-  m = /^\$([\s\S]+?)\$/.exec(rest)
-  if (m && /[\\_^{]/.test(m[1])) return { len: m[0].length, display: mathConvert(m[1]) }
-  return null
-}
-
-/** Match one bare LaTeX token at the head of rest → {len, display} | null. */
-function matchMathToken(rest) {
-  const re = /\\[a-zA-Z]+(?:\s*\{[^{}]*\}){0,2}|[_\^]\s*\{[^{}]*\}|[_\^][A-Za-z0-9]|\{\s*[^\s{}]\s*\}/g
-  re.lastIndex = 0
-  const m = re.exec(rest)
-  if (m && m.index === 0) return { len: m[0].length, display: mathConvert(m[0]) }
-  return null
-}
-
-/**
- * PURE — split a string into contiguous pieces [{start, end, math, display,
- * block?}] covering [0, text.length). `start/end` are offsets into `text`
- * (RAW), `display` is the rendered form (length may differ for math pieces).
- * Text gaps without math collapse into a single piece so non-math anchors keep
- * the exact segment layout the selection machinery expects.
- */
-function splitMathPieces(text) {
-  const src = String(text || '')
-  const n = src.length
-  const out = []
-  let pos = 0
-  let textStart = 0
-  const flush = (end) => {
-    if (end > textStart) out.push({ start: textStart, end, math: false, display: src.slice(textStart, end) })
-  }
-  // v0.5.2 fix: a math piece whose conversion yields an EMPTY display (bare
-  // font switches like `\bf`/`\rm`, empty `^ { }`, `$$$$`, …) must NOT become
-  // a math span — an empty span with background+padding renders as a hollow
-  // gray box that covers the formula text. Fold the raw LaTeX back into the
-  // surrounding plain run instead (nothing is hidden, nothing is lost).
-  const pushMath = (start, end, display, block) => {
-    if (display.length === 0) return
-    flush(start)
-    out.push({ start, end, math: true, display, block: !!block })
-    textStart = end
-  }
-  while (pos < n) {
-    const rest = src.slice(pos)
-    const d = matchMathDelim(rest)
-    if (d) {
-      pushMath(pos, pos + d.len, d.display, d.block)
-      pos += d.len
-      continue
-    }
-    const t = matchMathToken(rest)
-    if (t) {
-      pushMath(pos, pos + t.len, t.display, false)
-      pos += t.len
-      continue
-    }
-    pos++
-  }
-  flush(n)
-  return out
-}
-
-/** React element for one math piece (shared by the renderText branches). */
-function mathPieceEl(piece, rawText, segIndex, withSeg, segProps) {
-  const props = {
-    key: 'seg-' + segIndex,
-    className: 'phl-math' + (piece.block ? ' phl-math-display' : ''),
-    title: rawText,
-  }
-  if (withSeg) {
-    props['data-phl-seg'] = String(segIndex)
-    props['data-phl-dlen'] = String(piece.display.length)
-  }
-  return React.createElement('span', props, piece.display)
-}
-
-/**
  * Render one paragraph's text with its spans as <mark> nodes. opts (optional)
  * enables the P2-c review interaction: { onMarkClick, activeSpanId }. When
  * onMarkClick is provided the marks become clickable (selected outline from
@@ -431,52 +243,21 @@ function renderText(text, spans, opts) {
   const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
   const anchorId = (opts && opts.anchorId) || ''
   const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-  // v0.5.1: emit one node per splitMathPieces piece for a plain run (math
-  // pieces become their own styled/segment elements). The mathPieceEl helper
-  // keeps every branch (no-span / gap / tail) emitting identical DOM.
-  const emitPlain = (run) => {
-    const pieces = splitMathPieces(run)
-    if (pieces.length === 1 && !pieces[0].math) {
-      if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), run))
-      else out.push(run)
-      si++
-      return
-    }
-    for (const p of pieces) {
-      if (!p.math) {
-        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
-        else out.push(p.display)
-      } else {
-        out.push(mathPieceEl(p, run.slice(p.start, p.end), si, withSeg, segProps))
-      }
-      si++
-    }
+  if (!spans || spans.length === 0) {
+    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
+    return [text]
   }
   const out = []
   let pos = 0
   let si = segBase
   const onMarkClick = opts && opts.onMarkClick
   const activeSpanId = opts && opts.activeSpanId
-  if (!spans || spans.length === 0) {
-    const pieces = splitMathPieces(String(text))
-    if (pieces.length === 1 && !pieces[0].math) {
-      if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-      return [text]
-    }
-    for (const p of pieces) {
-      if (!p.math) {
-        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), p.display))
-        else out.push(p.display)
-      } else {
-        out.push(mathPieceEl(p, text.slice(p.start, p.end), si, withSeg, segProps))
-      }
-      si++
-    }
-    return out
-  }
   for (const s of spans) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) emitPlain(text.slice(pos, start))
+    if (start > pos) {
+      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+      si++
+    }
     if (end > start) {
       const props = {
         key: s.id,
@@ -495,7 +276,10 @@ function renderText(text, spans, opts) {
     }
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) emitPlain(text.slice(pos))
+  if (pos < text.length) {
+    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
+    si++
+  }
   return out
 }
 
@@ -659,6 +443,23 @@ function localApproveSectionSpans(spans, sectionAnchors) {
 }
 
 /**
+ * v0.5.3 · 反选 — undo the one-click approve: batch-revert every ACCEPTED span
+ * whose anchor belongs to the section back to proposed (待审); other spans
+ * (proposed / user_added / rejected) keep their status and identity. This is
+ * the inverse of localApproveSectionSpans and powers the TOC chip Shift+click
+ * (批量设置为待审状态 — NOT batch reject). Pure — returns a new array. The
+ * server reconcile replaces these optimistic copies with the authoritative
+ * `revert_section` response.
+ */
+function localRevertSectionSpans(spans, sectionAnchors) {
+  const set = new Set(sectionAnchors || [])
+  return (spans || []).map((s) => {
+    if (s.status !== 'accepted' || !set.has(s.anchor)) return s
+    return Object.assign({}, s, { status: 'proposed' })
+  })
+}
+
+/**
  * Status → visual style mapping (P2-b). Merged into a mark's React style by
  * the review UI (P2-c+) so proposed / accepted / user_added / rejected are
  * visually distinct. Note rejected spans are normally filtered by
@@ -706,25 +507,17 @@ function reconcileSpan(spans, serverSpan, payload) {
  * manual add / rescope" interaction.
  */
 
-/** Segments for ONE block (anchor). Spans are clamped + sorted by start.
- *  v0.5.1: plain runs are subdivided by splitMathPieces so math pieces become
- *  their own segments — exactly matching renderText's node emission. */
-function pushPlainSegs(segs, anchorId, text, from, to) {
-  const pieces = splitMathPieces(text.slice(from, to))
-  for (const p of pieces) segs.push({ anchorId, start: from + p.start, end: from + p.end, spanId: null, math: !!p.math })
-}
-
 function buildBlockSegments(anchorId, text, spans) {
   const segs = []
   const sorted = (spans || []).slice().sort((x, y) => x.char_start - y.char_start)
   let pos = 0
   for (const s of sorted) {
     const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) pushPlainSegs(segs, anchorId, text, pos, start)
+    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
     if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
     pos = Math.max(pos, end)
   }
-  if (pos < text.length) pushPlainSegs(segs, anchorId, text, pos, text.length)
+  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
   return segs
 }
 
@@ -789,21 +582,7 @@ function nodeOffsetToSeg(node, offset, segments) {
       const seg = Number(attr)
       if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
       const len = segments[seg].end - segments[seg].start
-      // v0.5.1: math pieces carry data-phl-dlen (their display length, which
-      // may be shorter than the raw LaTeX range). A display offset at/after the
-      // display end maps to the raw end (whole-token selections stay exact);
-      // partial offsets are clamped to the raw range.
-      let off
-      if (isEl) {
-        off = offset > 0 ? len : 0
-      } else {
-        off = Math.max(0, Math.min(offset, len))
-        const dlenAttr = (typeof el.getAttribute === 'function') ? el.getAttribute('data-phl-dlen') : null
-        if (dlenAttr !== null && dlenAttr !== undefined && dlenAttr !== '') {
-          const dlen = Number(dlenAttr)
-          if (Number.isFinite(dlen) && dlen < len && off >= dlen) off = len
-        }
-      }
+      const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
       return { seg, offset: off }
     }
     if (isEl && el === node && typeof el.getAttribute === 'function' && el.getAttribute('data-phl-anchor') !== null) {
@@ -994,29 +773,29 @@ ${callFormat.toString()}
 
 ${colorLegend.toString()}
 
-const MATH_SYMBOLS = ${JSON.stringify(MATH_SYMBOLS)};
-const SUP_MAP = ${JSON.stringify(SUP_MAP)};
-const SUB_MAP = ${JSON.stringify(SUB_MAP)};
 
-${mapScript.toString()}
 
-${supScript.toString()}
 
-${subScript.toString()}
 
-${boldMath.toString()}
 
-${mathClean.toString()}
 
-${mathConvert.toString()}
 
-${matchMathDelim.toString()}
 
-${matchMathToken.toString()}
 
-${splitMathPieces.toString()}
 
-${mathPieceEl.toString()}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ${profilePanelModel.toString()}
 
@@ -1034,13 +813,15 @@ ${localApplySpans.toString()}
 
 ${localApproveSectionSpans.toString()}
 
+${localRevertSectionSpans.toString()}
+
 ${spanActiveStyle.toString()}
 
 ${markStyle.toString()}
 
 ${reconcileSpan.toString()}
 
-${pushPlainSegs.toString()}
+
 
 ${buildBlockSegments.toString()}
 
@@ -1360,12 +1141,55 @@ function PaperView() {
     })
   }
 
+  // v0.5.3 · 反选 — revert one section from the TOC chip Shift+click. Optimistic
+  // batch revert (accepted → proposed 待审) of the section's spans + set the
+  // section back to pending (待审), then the revert_section round trip (server
+  // reverts + marks pending; the returned spans reconcile the overlay, the
+  // section entry merges into the optimistic map). The user asked explicitly
+  // that 反选 = 批量设置为待审状态 (undo the one-click approve) — NOT batch
+  // reject. Mirrors approveSection.
+  const revertSection = (id) => {
+    if (!id) return
+    const sec = (data.sections || []).find((s) => s.id === id)
+    const secAnchors = (sec && Array.isArray(sec.anchor_ids)) ? sec.anchor_ids : []
+    const title = (sec && sec.title) || id
+    const before = spans.filter((s) => s.status === 'accepted' && secAnchors.indexOf(s.anchor) >= 0).length
+    const next = localRevertSectionSpans(spans, secAnchors)
+    setSpansOverride(next)
+    const optimistic = { status: 'pending' }
+    setSectionOverrides((m) => Object.assign({}, m, { [id]: optimistic }))
+    setFlash(null)
+    setFlash({ kind: 'ok', text: '已恢复为待审 ' + title + (before ? '（' + before + ' 处高亮回到待审）' : '（该节无已接受高亮，已标记待审）') })
+    callWrite({ action: 'revert_section', section: id }, state.paperId).then((res) => {
+      if (res && Array.isArray(res.reverted)) {
+        setSpansOverride((prev) => {
+          let acc = prev || next
+          for (const sp of res.reverted) acc = reconcileSpan(acc, sp, { action: 'revert', span_id: sp.id })
+          return acc
+        })
+      }
+      if (res && res.section && res.section.id) {
+        setSectionOverrides((m) => Object.assign({}, m, { [res.section.id]: { status: res.section.status || 'pending' } }))
+      }
+      if (res && typeof res.reverted_count === 'number') {
+        setFlash({ kind: 'ok', text: '已恢复为待审 ' + title + (res.reverted_count ? '（' + res.reverted_count + ' 处高亮回到待审）' : '（该节无已接受高亮，已标记待审）') })
+      }
+    }).catch((err) => {
+      const msg = String(err && err.message ? err.message : err)
+      setFlash({ kind: 'error', text: '恢复待审失败（已回读校准）：' + msg })
+      callData({ paperId: state.paperId }).then((res) => {
+        if (res && res.ok) { setState((s) => ({ ...s, data: res })); setSpansOverride(null); setSectionOverrides({}) }
+      }).catch(() => {})
+    })
+  }
+
   // v0.4 Phase 4 (D6): publish the ready-path dispatch closures + hints so the
   // keydown effect (declared before the early returns) reads them fresh.
   dispatchRef.current = {
     applyAction,
     markCurrentReviewed,
     approveSection,
+    revertSection,
     sectionItems,
     palette: palette.map((l) => l.name),
   }
@@ -1563,14 +1387,18 @@ function PaperView() {
   // P2-e: reviewable section bar (✓ on reviewed, highlight on the section in view).
   // v0.5.1: clicking a section chip approves ALL its highlights (batch accept)
   // and marks it reviewed — even when the agent proposed none.
+  // v0.5.3: Shift+click on a chip is the 反选 — batch-REJECT all its highlights.
   const sectionBar = React.createElement('div', { className: 'phl-sections' },
     sectionItems.map((s) =>
       React.createElement('div', {
         key: s.id,
         className: 'phl-section' + (s.reviewed ? ' phl-section-done' : '') + (s.id === currentSection ? ' phl-section-curr' : ''),
         'data-phl-sec': s.id,
-        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title + '（点击审批通过本节全部高亮）',
-        onClick: () => approveSection(s.id)
+        title: (s.reviewed ? '✓ 已审查' : '待审查') + ' · ' + s.title + '（点击 = 审批通过本节全部高亮；Shift+点击 = 恢复本节为待审，撤销审批）',
+        onClick: (e) => {
+          if (e && e.shiftKey) revertSection(s.id)
+          else approveSection(s.id)
+        }
       },
         React.createElement('span', { className: 'phl-section-check' }, s.reviewed ? '✓' : ''),
         React.createElement('span', { className: 'phl-section-title' }, s.title)
@@ -1786,7 +1614,7 @@ function PaperView() {
     )
 
     const exemplarRows = d.exemplars.length === 0
-      ? React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无示例，确认提案后自动入库）')
+      ? [React.createElement('div', { className: 'phl-pnl-empty' }, '（暂无示例，确认提案后自动入库）')]
       : d.exemplars.map((e, i) =>
           React.createElement('div', { key: i, className: 'phl-pnl-row', 'data-phl-ex': String(i) },
             React.createElement('span', { className: 'phl-pnl-ex-summary' },
@@ -2014,8 +1842,6 @@ function apply(ctx) {
       // v0.5.1: the semantic label renders in its own highlight color.
       '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
       // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
-      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;color:#dcdcdc;padding:0 2px;border-radius:3px;background:rgba(96,130,190,.12)}',
-      '.phl-math-display{display:block;text-align:center;font-size:1.05em;margin:6px 0;padding:5px 8px;background:rgba(96,130,190,.14);border-radius:6px}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',
@@ -2150,6 +1976,7 @@ module.exports = {
   excludeRejected,
   localApplySpans,
   localApproveSectionSpans,
+  localRevertSectionSpans,
   spanActiveStyle,
   markStyle,
   reconcileSpan,
@@ -2169,11 +1996,4 @@ module.exports = {
   profileSavePayload,
   proposalCardModel,
   buildApplyDecisions,
-  MATH_SYMBOLS,
-  supScript,
-  subScript,
-  boldMath,
-  mathClean,
-  mathConvert,
-  splitMathPieces,
 }
