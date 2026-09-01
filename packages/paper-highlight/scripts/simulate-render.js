@@ -319,6 +319,22 @@ function mockFormatHandler(body) {
   })
 }
 
+// v0.5.4 P2-h: the 重新提出高亮 POST is MOCKED (payload captured, ok answered).
+// The client POSTs /paper-hl/propose-request?paperId=…; the host would write a
+// durable data/<paper_id>/propose-request.json marker. We only verify the
+// request + the copied-instruction flash.
+const proposeCapture = []
+function mockProposeRequestHandler(url, body) {
+  const payload = JSON.parse(body || '{}')
+  const paperId = payload.paper_id || (url.match(/paperId=([^&]+)/) || [])[1] || 'p-x'
+  proposeCapture.push({ url, body })
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, paper_id: paperId, requested_at: new Date().toISOString(), status: 'pending' }),
+  })
+}
+
 function fetchShim(url, opts) {
   // The paper suite now has 3 papers; the assertion corpus (spans/plan/sections
   // counts, h1 title) is pinned to p-mikolov, so a bare /paper-hl/read (which
@@ -330,6 +346,9 @@ function fetchShim(url, opts) {
   }
   if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/format') === 0) {
     return mockFormatHandler(opts.body)
+  }
+  if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/propose-request') === 0) {
+    return mockProposeRequestHandler(url, opts.body)
   }
   if (opts && opts.method === 'POST' && url.indexOf('/paper-hl/write') === 0) {
     return mockWriteHandler(url, opts.body)
@@ -430,6 +449,15 @@ const v051 = ['phl-legend-label']
 for (const needle of v051) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 legend-label plumbing: ${needle}`)
 }
+// v0.5.4 P2-h: 重新提出高亮 (re-propose) — the GUI button POSTs a durable
+// propose-request to /paper-hl/propose-request and copies a ready-to-paste
+// instruction (请为《…》重新提出高亮) into the clipboard so the user can trigger
+// the agent in the conversation. A browser button cannot call the LLM directly;
+// this arms the request + makes the trigger one paste.
+const p2h = ['callProposeRequest', 'proposeData', '/paper-hl/propose-request', 'phl-repropose-btn', '重新提出高亮', '请为《', 'phl-empty-cta', 'requestRepropose']
+for (const needle of p2h) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.4 propose-request plumbing: ${needle}`)
+}
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
@@ -444,6 +472,7 @@ console.log('bundle keyboard/export/progress plumbing (v0.4 P4):', p4.join(', ')
 console.log('bundle one-click format plumbing (v0.5 P5):', p5.join(', '))
 console.log('bundle math/legend plumbing (v0.5.1):', v051.join(', '))
 console.log('bundle revert-section plumbing (v0.5.3):', p2g.join(', '))
+console.log('bundle propose-request plumbing (v0.5.4 P2-h):', p2h.join(', '))
 
 // Execute the bundle: window.__ModuleLoader__.load({id, factory})
 // eslint-disable-next-line no-new-func
@@ -1154,6 +1183,25 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   inputKeydown()
   assert(writeCapture.length === 0, 'P4: input-focused a is ignored')
 
+  // ══════════════ v0.5.4 P2-h: 重新提出高亮 (re-propose request + copied instruction) ══════════════
+  // The toolbar button POSTs /paper-hl/propose-request?paperId=… {paper_id} and
+  // flashes the ready-to-paste instruction 「请为《…》重新提出高亮」so the user can
+  // trigger the agent in the conversation (a browser button cannot call the LLM).
+  const reproposeBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-repropose-btn') === 0)
+  assert(reproposeBtn !== undefined, 'P2-h: 重新提出高亮 toolbar button present')
+  proposeCapture.length = 0
+  reproposeBtn.props.onClick()
+  await new Promise((r) => setTimeout(r, 50)) // flush the propose-request POST + flash
+  rerender()
+  fullText = textOf(tree)
+  assert(proposeCapture.length === 1, 'P2-h: 重新提出高亮 POSTs exactly once')
+  const proposeUrl = proposeCapture[0].url
+  const proposeBody = JSON.parse(proposeCapture[0].body)
+  assert(proposeUrl.indexOf('/paper-hl/propose-request') === 0 && proposeBody.paper_id === liveData.paperId,
+    'P2-h: POST targets /paper-hl/propose-request?paperId=… with {paper_id}')
+  assert(fullText.includes('已记录请求') && fullText.includes('请为《'), 'P2-h: flash confirms the request + shows the paste-ready instruction')
+  assert(fullText.includes('重新提出高亮'), 'P2-h: flash names the 重新提出高亮 trigger')
+
   // ══════════════ v0.5: one-click format (一键格式化) ══════════════
   const fmtBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-format-btn') === 0)
   assert(fmtBtn !== undefined, 'P5: 格式化 toolbar button present')
@@ -1194,7 +1242,7 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   assert(byType.div.filter((d) => (d.props.className || '') === 'phl-onb').length >= 1,
     'P5: view returns to cold-start onboarding (profile cleared, factory reset)')
 
-  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P2-f section-TOC approve (chip click → approve_section POST → batch accept + reviewed ✓, server accepted exactly the section spans) + P2-g section-TOC 反选 (Shift+chip click → revert_section POST → accepted back to 待审/proposed + chip back to 待审查, server reverted exactly the section spans) + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format mocked, real data untouched)`)
+  console.log(`\nSIMULATION PASS — bundle renders the paper with ${expectedSpans} highlight marks via the live 3081 data path; P1 cold-start onboarding (init POST + profile-driven legend/marks) + P2-c accept/recolor + P2-d selection→add→rescope + P2-e review-complete + P2-f section-TOC approve (chip click → approve_section POST → batch accept + reviewed ✓, server accepted exactly the section spans) + P2-g section-TOC 反选 (Shift+chip click → revert_section POST → accepted back to 待审/proposed + chip back to 待审查, server reverted exactly the section spans) + P2-h 重新提出高亮 (toolbar button → POST /paper-hl/propose-request {paper_id} → flash 已记录请求 + 请为《…》重新提出高亮 instruction) + P3 profile edit panel (colors/rules/exemplars/notes edits → /save payloads, add/remove rules, back to paper) + P2 proposal confirmation panel (全部接受 / 确认选择 rule-0 / 全部否决 → /apply payloads, empty-selection guard, cards removed) + P4 progress bar (reviewed/total + ratio + next hint) + export dialog (format md + include_pending + download=1 URL) + keyboard shortcuts (d→reject POST, 3→recolor blue, Escape closes bar, input-focus ignored) + P5 one-click format (格式化 button → warning dialog → 取消 closes w/o POST / 确认格式化 → POST {confirm:true, scope:"all"} → dialog closes + returns to cold-start onboarding) driven (write + profile + format + propose-request mocked, real data untouched)`)
 })().catch((err) => {
   console.error('SIMULATION FAILED:', err.message)
   process.exit(1)

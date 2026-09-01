@@ -41,6 +41,11 @@ window.__ModuleLoader__.load({
 			if (!res.ok) throw new Error("POST /paper-hl/format -> " + res.status);
 			return res.json();
 		};
+		const proposeData = async (url, body) => {
+			const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });
+			if (!res.ok) throw new Error("POST " + url + " -> " + res.status);
+			return res.json();
+		};
 		
 		const COLOR_MAP = {"yellow":"#fff3a0","red":"#ff9c94","blue":"#8fd0f7","green":"#b0e3a8","purple":"#d9b8f2"};
 		const COLOR_LABELS = {"yellow":"关键定义/方法","red":"核心洞见/贡献","blue":"局限/风险","green":"可借鉴/启发","purple":"待深挖/存疑"};
@@ -163,6 +168,17 @@ window.__ModuleLoader__.load({
 		  if (!t) return Promise.reject(new Error('paper-highlight: format transport not available'))
 		  return Promise.resolve(t(body)).then((res) => {
 		    if (!res || res.ok !== true) throw new Error((res && res.error) || 'format failed')
+		    return res
+		  })
+		}
+		
+		function callProposeRequest(paperId, transport) {
+		  const url = '/paper-hl/propose-request' + (paperId ? '?paperId=' + encodeURIComponent(paperId) : '')
+		  const body = JSON.stringify({ paper_id: paperId || null })
+		  const t = transport || (typeof proposeData === 'function' ? proposeData : null)
+		  if (!t) return Promise.reject(new Error('paper-highlight: propose-request transport not available'))
+		  return Promise.resolve(t(url, body)).then((res) => {
+		    if (!res || res.ok !== true) throw new Error((res && res.error) || 'propose-request failed')
 		    return res
 		  })
 		}
@@ -883,6 +899,41 @@ window.__ModuleLoader__.load({
 		    })
 		  }
 		
+		  // v0.5.4 · 重新提出高亮 — the GUI button after format: POSTs a durable
+		  // propose-request marker (host writes data/<paper_id>/propose-request.json)
+		  // and copies a ready-to-paste instruction, so the user just pastes it into
+		  // the conversation (or says 「重新提出高亮」) and the agent runs
+		  // global-read → propose again. A browser button cannot call the LLM itself;
+		  // this arms the request + makes the trigger one paste.
+		  const copyInstruction = (text) => {
+		    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+		      navigator.clipboard.writeText(text).then(function () {}, function () {})
+		      return
+		    }
+		    try {
+		      if (typeof document !== 'undefined' && typeof document.createElement === 'function' && typeof document.execCommand === 'function') {
+		        const ta = document.createElement('textarea')
+		        ta.value = text
+		        ta.style = 'position:fixed;opacity:0;pointer-events:none'
+		        document.body.appendChild(ta)
+		        ta.select()
+		        document.execCommand('copy')
+		        document.body.removeChild(ta)
+		      }
+		    } catch (e) { /* clipboard unavailable — instruction is still shown in the flash */ }
+		  }
+		  const requestRepropose = () => {
+		    if (!state.paperId) return
+		    callProposeRequest(state.paperId).then((res) => {
+		      const title = metaTitle || state.paperId
+		      const instruction = '请为《' + title + '》重新提出高亮（paper_id: ' + state.paperId + '）：先执行 global-read 重建逐节计划，再逐节 propose'
+		      copyInstruction(instruction)
+		      setFlash({ kind: 'ok', text: '已记录请求（' + ((res && res.status) || 'pending') + '）并复制指令。请对 Agent 说/粘贴：『请为《' + title + '》重新提出高亮』' })
+		    }).catch((err) => {
+		      setFlash({ kind: 'error', text: '请求重新提出高亮失败：' + String((err && err.message) || err) })
+		    })
+		  }
+		
 		  // v0.4 Phase 4 (D6): publish the ready-path dispatch closures + hints so the
 		  // keydown effect (declared before the early returns) reads them fresh.
 		  dispatchRef.current = {
@@ -890,6 +941,7 @@ window.__ModuleLoader__.load({
 		    markCurrentReviewed,
 		    approveSection,
 		    revertSection,
+		    requestRepropose,
 		    sectionItems,
 		    palette: palette.map((l) => l.name),
 		  }
@@ -961,6 +1013,11 @@ window.__ModuleLoader__.load({
 		        onClick: () => setFormatOpen(true),
 		        title: '一键格式化：清除所有论文高亮记录与个性化画像（危险操作，需二次确认）'
 		      }, '格式化'),
+		      React.createElement('button', {
+		        className: 'phl-repropose-btn',
+		        onClick: requestRepropose,
+		        title: '重新提出高亮：记录请求并复制指令到剪贴板，粘贴到对话（或说「重新提出高亮」）即触发 Agent 重新提出（格式化后为空时使用）'
+		      }, '重新提出高亮'),
 		      React.createElement('button', {
 		        className: 'phl-profile-btn',
 		        onClick: () => { setPanelDrafts(profilePanelModel(profileState.profile)); setPanelView('profile') },
@@ -1116,6 +1173,17 @@ window.__ModuleLoader__.load({
 		      return React.createElement('p', Object.assign(blockProps, { className: 'phl-para' }), ...kids)
 		    })
 		  )
+		
+		  // v0.5.4 · empty-state CTA — after format (0 visible highlights) a prominent
+		  // hint tells the user how to re-arm the propose loop (button → clipboard →
+		  // paste/say to the agent). Shown only in the paper view with no highlights.
+		  const emptyCta = spans.length === 0
+		    ? React.createElement('div', { className: 'phl-empty-cta' },
+		        React.createElement('span', { className: 'phl-empty-text' }, '该论文暂无高亮（可能刚格式化或已全部否决）。'),
+		        React.createElement('button', { className: 'phl-repropose-btn', onClick: requestRepropose }, '重新提出高亮'),
+		        React.createElement('span', { className: 'phl-empty-hint' }, '点击后记录请求并把指令复制到剪贴板，粘贴到对话（或说「重新提出高亮」）即触发 Agent 重新提出。')
+		      )
+		    : null
 		
 		  // P2-d: 改范围 hint bar — shown while a rescope selection is pending.
 		  const rescueHint = rescueTarget
@@ -1487,7 +1555,7 @@ window.__ModuleLoader__.load({
 		  if (panelView === 'proposals') {
 		    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProposalsPanel())
 		  }
-		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, formatDialog, actionBar, body)
+		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, formatDialog, actionBar, emptyCta, body)
 		}
 		
 		const inject = ['slots']
@@ -1524,6 +1592,11 @@ window.__ModuleLoader__.load({
 		      '.phl-exp-download{border-color:rgba(120,220,130,.8)}',
 		      '.phl-format-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(240,120,120,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
 		      '.phl-format-btn:hover{background:rgba(240,120,120,.14)}',
+		      '.phl-repropose-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(120,170,240,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
+		      '.phl-repropose-btn:hover{background:rgba(120,170,240,.14)}',
+		      '.phl-empty-cta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px;padding:8px 12px;border:1px dashed rgba(120,170,240,.6);border-radius:8px;background:rgba(120,170,240,.08);font-size:12px;line-height:1.5}',
+		      '.phl-empty-text{font-weight:600}',
+		      '.phl-empty-hint{color:rgba(255,255,255,.55)}',
 		      '.phl-fmt{position:fixed;top:60px;right:12px;z-index:23;width:320px;padding:10px 12px;border-radius:8px;background:rgba(40,24,24,.96);color:#f5f5f5;border:1px solid rgba(240,120,120,.6);box-shadow:0 4px 14px rgba(0,0,0,.4);font-size:12px;line-height:1.5}',
 		      '.phl-fmt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}',
 		      '.phl-fmt-title{font-weight:600;color:#ffb3b3}',
@@ -1678,6 +1751,7 @@ window.__ModuleLoader__.load({
 		exports.colorLegend = colorLegend;
 		exports.callProfile = callProfile;
 		exports.callFormat = callFormat;
+		exports.callProposeRequest = callProposeRequest;
 		exports.profilePanelModel = profilePanelModel;
 		exports.profilePanelColors = profilePanelColors;
 		exports.profileSavePayload = profileSavePayload;

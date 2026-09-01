@@ -1,6 +1,6 @@
 # Paper Highlight Agent —— 一页纸快照
 
-> **项目**：DSH 单论文多色高亮 Agent · **状态**：**v0.1 ✅ / v0.2 ✅ / v0.3 ✅ / v0.4 ✅（打磨导出，归档 v0.4.0）/ v0.5 ✅（一键格式化，归档 v0.5.0）/ v0.5.1 ✅（图例彩色语义 + 轻量公式渲染，归档 v0.5.1）/ v0.5.3 ✅（放弃数学渲染 + 一键审批反选 + 画像面板修复，归档 v0.5.3）**
+> **项目**：DSH 单论文多色高亮 Agent · **状态**：**v0.1 ✅ / v0.2 ✅ / v0.3 ✅ / v0.4 ✅（打磨导出，归档 v0.4.0）/ v0.5 ✅（一键格式化，归档 v0.5.0）/ v0.5.1 ✅（图例彩色语义 + 轻量公式渲染，归档 v0.5.1）/ v0.5.3 ✅（放弃数学渲染 + 一键审批反选 + 画像面板修复，归档 v0.5.3）/ v0.5.4 ✅（格式化后「重新提出高亮」按钮：记录请求 + 复制指令，归档 v0.5.4）**
 > **定位**：PDF → MinerU 解析 → GUI 渲染 → Agent 逐节 propose 高亮 → 用户审查 → 画像持续学习 → 导出分享
 
 
@@ -12,8 +12,8 @@ Agent 依据论文地图 + 领域发展线 + 用户画像逐节提出语义高�
 
 | 层 | 内容 |
 |---|---|
-| **Client**（浏览器） | `conversation.view` 槽位插件，渲染 Markdown + `<mark>` 高亮层，操作条/节列表/**画像面板**/**待确认提案面板**/**导出对话框 + 审查进度条 + 快捷键**/**一键格式化对话框**/**图例彩色语义**/**章节目录一键审批 + Shift+点击反选（恢复待审）** |
-| **Host**（Node） | `/paper-hl/read` + `/write` + `/profile` + `/init` + `/apply` + `/save` + `/export` + `/format` 路由；原子读写 `data/<paper_id>/paper.highlights.json` |
+| **Client**（浏览器） | `conversation.view` 槽位插件，渲染 Markdown + `<mark>` 高亮层，操作条/节列表/**画像面板**/**待确认提案面板**/**导出对话框 + 审查进度条 + 快捷键**/**一键格式化对话框**/**图例彩色语义**/**章节目录一键审批 + Shift+点击反选（恢复待审）**/**格式化后「重新提出高亮」按钮（记录请求 + 复制指令，空态 CTA 引导）** |
+| **Host**（Node） | `/paper-hl/read` + `/write` + `/profile` + `/init` + `/apply` + `/save` + `/export` + `/format` + **`/propose-request`**（v0.5.4，落盘 `data/<paper_id>/propose-request.json` 审计标记）路由；原子读写 `data/<paper_id>/paper.highlights.json` |
 | **Agent**（LLM） | 三技能：`global-read`（论文地图+plan + **`read_field_map` 领域定位**）、`propose`（逐节候选 + **`read_profile` 摘要注入** + 领域地图按需）、`reflect`（差异分析→画像提案 + **论文级反思 `reflect_paper`→`paper-reflection.md`**） |
 | **工具**（12个） | `parse_pdf`, `read/write_highlights`, `list_sections`, `read_section`, `summarize_section_diff`, `read_profile`, `confirm_proposal`, `export_paper`, `read_field_map`, `reflect_paper`, `format_all` |
 

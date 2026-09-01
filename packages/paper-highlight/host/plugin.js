@@ -369,6 +369,72 @@ async function handleFormat(root, req, res, send) {
   }
 }
 
+/** Resolve the target paper id (query → body → first paper, like /read). */
+async function resolvePaperId(root, requested) {
+  const papers = await listPaperIds(root)
+  if (papers.length === 0) return null
+  return requested && papers.includes(requested) ? requested : papers[0]
+}
+
+/** Best-effort paper title from the first non-heading line of paper.md. */
+async function paperTitle(root, paperId) {
+  try {
+    const md = String(await readPaperMd(root, paperId) || '')
+    const first = md.split('\n').map((l) => l.trim()).find((l) => l.length > 0 && l[0] !== '#' && l[0] !== '!' && l[0] !== '|')
+    return first || paperId
+  } catch (e) {
+    return paperId
+  }
+}
+
+/**
+ * v0.5.4 · propose-request route. POST writes a durable audit marker
+ * data/<paper_id>/propose-request.json {paper_id, title, requested_at,
+ * status:'pending'} — the GUI「重新提出高亮」button calls this after a format so
+ * the user can paste the copied instruction into the conversation and the agent
+ * re-runs global-read → propose. GET reads the current marker (200) or 404.
+ */
+async function handleProposeRequest(root, url, req, res, send) {
+  const papers = await listPaperIds(root)
+  if (papers.length === 0) {
+    send(res, 500, { ok: false, error: 'no papers under data/ (run parse_pdf first)' })
+    return
+  }
+  let payload = {}
+  try {
+    payload = JSON.parse((await readBody(req)) || '{}')
+  } catch {
+    /* body optional — query paperId or first paper still resolve */
+  }
+  const paperId = await resolvePaperId(root, url.searchParams.get('paperId') || payload.paper_id || null)
+  const request = {
+    paper_id: paperId,
+    title: await paperTitle(root, paperId),
+    requested_at: new Date().toISOString(),
+    status: 'pending',
+  }
+  const file = path.join(root, 'data', paperId, 'propose-request.json')
+  await fsp.mkdir(path.dirname(file), { recursive: true })
+  await fsp.writeFile(file, JSON.stringify(request, null, 2), 'utf8')
+  send(res, 200, { ok: true, ...request })
+}
+
+async function handleProposeRequestGet(root, url, res, send) {
+  const papers = await listPaperIds(root)
+  if (papers.length === 0) {
+    send(res, 500, { ok: false, error: 'no papers under data/ (run parse_pdf first)' })
+    return
+  }
+  const paperId = await resolvePaperId(root, url.searchParams.get('paperId') || null)
+  const file = path.join(root, 'data', paperId, 'propose-request.json')
+  try {
+    const raw = await fsp.readFile(file, 'utf8')
+    send(res, 200, { ok: true, request: JSON.parse(raw) })
+  } catch (e) {
+    send(res, 404, { ok: false, error: 'no propose request for ' + paperId })
+  }
+}
+
 function apply(ctx, config) {
   const root = workspaceRoot(config)
   const route = {
@@ -412,6 +478,14 @@ function apply(ctx, config) {
           await handleFormat(root, req, res, sendJson)
           return
         }
+        if (url.pathname === '/paper-hl/propose-request' && req.method === 'POST') {
+          await handleProposeRequest(root, url, req, res, sendJson)
+          return
+        }
+        if (url.pathname === '/paper-hl/propose-request' && (req.method === 'GET' || req.method === undefined)) {
+          await handleProposeRequestGet(root, url, res, sendJson)
+          return
+        }
         sendJson(res, 404, { ok: false, error: 'not found' })
       } catch (err) {
         sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
@@ -421,4 +495,4 @@ function apply(ctx, config) {
   ctx.effect(() => ctx.webServer.register(route), 'paper-highlight: /paper-hl route')
 }
 
-module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, handleExport, handleFormat, listPaperIds, buildSections, mergePlanStatus }
+module.exports = { name, inject, apply, handleRead, handleProfileGet, handleProfileInit, handleProfileApply, handleProfileSave, handleExport, handleFormat, handleProposeRequest, handleProposeRequestGet, listPaperIds, buildSections, mergePlanStatus }

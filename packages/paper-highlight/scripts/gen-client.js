@@ -78,6 +78,16 @@ function generateBundle() {
   lines.push(`\t\t\tif (!res.ok) throw new Error("POST /paper-hl/format -> " + res.status);`)
   lines.push(`\t\t\treturn res.json();`)
   lines.push(`\t\t};`)
+  // v0.5.4: propose-request transport. `callProposeRequest(paperId)` inside the
+  // shared BODY POSTs to /paper-hl/propose-request?paperId=… (host writes the
+  // durable data/<paper_id>/propose-request.json audit marker so the agent can
+  // re-propose after a format). Only the durable bundle wires this; the dynamic
+  // half stays read-only (callProposeRequest rejects cleanly).
+  lines.push(`\t\tconst proposeData = async (url, body) => {`)
+  lines.push(`\t\t\tconst res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });`)
+  lines.push(`\t\t\tif (!res.ok) throw new Error("POST " + url + " -> " + res.status);`)
+  lines.push(`\t\t\treturn res.json();`)
+  lines.push(`\t\t};`)
   for (const line of BODY.split('\n')) lines.push('\t\t' + line)
   lines.push(`\t\texports.apply = apply;`)
   lines.push(`\t\texports.inject = inject;`)
@@ -106,6 +116,8 @@ function generateBundle() {
   lines.push(`\t\texports.callProfile = callProfile;`)
   // v0.5: one-click format data function for headless tests.
   lines.push(`\t\texports.callFormat = callFormat;`)
+  // v0.5.4: propose-request data function for headless tests.
+  lines.push(`\t\texports.callProposeRequest = callProposeRequest;`)
   // v0.3 Phase 3: profile edit-panel model + save payload builders.
   lines.push(`\t\texports.profilePanelModel = profilePanelModel;`)
   lines.push(`\t\texports.profilePanelColors = profilePanelColors;`)

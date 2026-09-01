@@ -50,7 +50,7 @@
 const {
   clampRange, sortAnchorIds, buildBlocks, renderText,
   buildWriteUrl, encodeWriteBody, callWrite,
-  callProfile, callFormat, colorLegend,
+  callProfile, callFormat, callProposeRequest, colorLegend,
   excludeRejected, localApplySpans, spanActiveStyle,
   markStyle, reconcileSpan,
   buildBlockSegments, buildSegmentMap, mapSelection,
@@ -214,6 +214,25 @@ function main() {
           () => { throw new Error('callFormat without transport should reject') },
           (err) => assert(/format transport not available/.test(err.message), 'callFormat without transport rejects cleanly'),
         )
+      }).then(() => {
+        // ══════════════════ v0.5.4: callProposeRequest (重新提出高亮 transport) ══════════════════
+        const prcalls = []
+        const okProposeTransport = async (url, body) => { prcalls.push({ url, body }); return { ok: true, paper_id: 'p-x', requested_at: 't', status: 'pending' } }
+        return callProposeRequest('p-x', okProposeTransport).then((res) => {
+          assert(res && res.ok === true && res.status === 'pending' && res.paper_id === 'p-x', 'callProposeRequest resolves the ok transport response')
+          assert(prcalls.length === 1 && prcalls[0].url === '/paper-hl/propose-request?paperId=p-x', 'callProposeRequest targets /paper-hl/propose-request?paperId=…')
+          assert(JSON.parse(prcalls[0].body).paper_id === 'p-x', 'callProposeRequest sends {paper_id} JSON body')
+        }).then(() => {
+          return callProposeRequest('p-x', async () => ({ ok: false, error: 'no papers' })).then(
+            () => { throw new Error('callProposeRequest should reject on ok:false') },
+            (err) => assert(/no papers/.test(err.message), 'callProposeRequest rejects an ok:false payload with its error'),
+          )
+        }).then(() => {
+          return callProposeRequest('p-x').then(
+            () => { throw new Error('callProposeRequest without transport should reject') },
+            (err) => assert(/propose-request transport not available/.test(err.message), 'callProposeRequest without transport rejects cleanly'),
+          )
+        })
       })
     })
   }).then(() => {
@@ -651,7 +670,7 @@ function main() {
     // regression guard: every pure helper referenced by the embedded
     // functions must be embedded into BODY (a missing toString() embed would
     // only surface at runtime as a ReferenceError → blank page).
-    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans']
+    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'callProposeRequest', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans']
     for (const name of EMBED_HELPERS) {
       assert(typeof BODY === 'string' && BODY.includes('function ' + name), 'bundle embed completeness: function ' + name + ' embedded into BODY')
     }
@@ -708,6 +727,7 @@ function main() {
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
       v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (26 helpers in BODY)',
       v053: 'section TOC 反选 (batch revert to 待审) — localRevertSectionSpans (accepted-in-section → proposed; proposed/user_added/rejected/outside untouched; identity preserved; empty set / null safe) — the inverse of approve (undo the one-click approve), NOT batch reject',
+      v054: 'callProposeRequest — POST /paper-hl/propose-request?paperId=… {paper_id} body; ok resolve / ok:false reject / no-transport reject (重新提出高亮 transport)',
     }, null, 2))
     return null
   })

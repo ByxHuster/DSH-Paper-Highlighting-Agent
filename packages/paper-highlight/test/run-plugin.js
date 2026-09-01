@@ -299,6 +299,22 @@ async function main() {
   const final = await readHighlights(fx.root, fx.paperId)
   assert(final.spans.length === 2 && final.spans[0].status === 'accepted', 'document intact after negative matrix')
 
+  // ══════════════════ v0.5.4: /paper-hl/propose-request (重新提出高亮) ══════════════════
+  // POST writes a durable data/<paper_id>/propose-request.json {status:'pending'};
+  // GET reads it back; missing paperId falls back to the first paper (like /read).
+  const pr0 = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/propose-request?paperId=' + fx.paperId, body: JSON.stringify({ paper_id: fx.paperId }) })
+  const jpr0 = JSON.parse(pr0.body)
+  assert(pr0.status === 200 && jpr0.ok === true && jpr0.paper_id === fx.paperId && jpr0.status === 'pending', 'POST /propose-request: 200 + pending marker')
+  const prDisk = await fsp.readFile(path.join(fx.root, 'data', fx.paperId, 'propose-request.json'), 'utf8')
+  const jprDisk = JSON.parse(prDisk)
+  assert(jprDisk.paper_id === fx.paperId && jprDisk.status === 'pending' && typeof jprDisk.requested_at === 'string' && typeof jprDisk.title === 'string', 'propose-request persisted to data/<id>/propose-request.json')
+  const prGet = await invoke(wroute.handler, { url: '/paper-hl/propose-request?paperId=' + fx.paperId })
+  const jprGet = JSON.parse(prGet.body)
+  assert(prGet.status === 200 && jprGet.ok === true && jprGet.request.paper_id === fx.paperId, 'GET /propose-request reads the marker back')
+  const prFb = await invoke(wroute.handler, { method: 'POST', url: '/paper-hl/propose-request', body: '{}' })
+  const jprFb = JSON.parse(prFb.body)
+  assert(prFb.status === 200 && jprFb.ok === true && typeof jprFb.paper_id === 'string' && jprFb.paper_id.length > 0, 'POST /propose-request falls back to the first paper')
+
   // ══════════════════ v0.3 Phase 0: /paper-hl/profile routes ══════════════════
   // GET /profile: no profile yet → has_profile:false (cold start signal for the
   // GUI onboarding); POST /init creates defaults (optionally merged colors +
