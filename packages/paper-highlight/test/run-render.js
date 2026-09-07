@@ -60,7 +60,7 @@ const {
   profilePanelModel, profilePanelColors, profileSavePayload,
   proposalCardModel, buildApplyDecisions,
   localApproveSectionSpans, localRevertSectionSpans,
-  repairMath, splitMathPieces, mathConvert, segLen, buildTextPieces,
+  repairMath, splitMathPieces, mathConvert, katexRender, segLen, buildTextPieces,
   BODY,
 } = require('../client/render-body')
 const { assert } = require('./verify')
@@ -672,7 +672,7 @@ function main() {
     // regression guard: every pure helper referenced by the embedded
     // functions must be embedded into BODY (a missing toString() embed would
     // only surface at runtime as a ReferenceError → blank page).
-    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'callProposeRequest', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans', 'repairMath', 'splitMathPieces', 'mathConvert', 'segLen', 'buildTextPieces']
+    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'callProposeRequest', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans', 'repairMath', 'splitMathPieces', 'mathConvert', 'katexRender', 'segLen', 'buildTextPieces']
     for (const name of EMBED_HELPERS) {
       assert(typeof BODY === 'string' && BODY.includes('function ' + name), 'bundle embed completeness: function ' + name + ' embedded into BODY')
     }
@@ -802,6 +802,42 @@ function main() {
     const rtMark = renderText('H \\times V', [{ id: 's-m1', char_start: 0, char_end: 10, color: 'red', status: 'accepted' }], {})
     assert(rtMark.length === 1 && rtMark[0].type === 'mark' && rtMark[0].children[0].props.className === 'phl-math', 'renderText: math inside a mark wraps the math span')
 
+    // ══════════════════ v0.6.1+ · KaTeX render branch ══════════════════
+    // katexRender prefers the real KaTeX engine when a global `katex` exists
+    // (the shipped bundles inline it); Node module tests lack it by default, so
+    // we inject/remove the global around these assertions to exercise BOTH
+    // branches. KaTeX renders with its own math fonts → no tofu boxes.
+    let katexMod = null
+    try { katexMod = require('katex') } catch (e) { /* katex not installed → skip KaTeX-branch asserts */ }
+    if (katexMod) {
+      const hadKatex = typeof global.katex !== 'undefined'
+      const saved = global.katex
+      global.katex = katexMod
+      try {
+        const k1 = katexRender('\\alpha _ { i j }')
+        assert(k1.engine === 'katex' && k1.html.indexOf('katex') >= 0 && k1.html.indexOf('katex-error') === -1, 'KaTeX branch: clean input renders without error markers')
+        const k2 = katexRender('\\begin { array } { r c l } { h _ { t } } & = & \\mathrm { s i g m } \\left( x \\right) \\end { array }')
+        assert(k2.engine === 'katex' && k2.html.indexOf('katex') >= 0 && k2.html.indexOf('katex-error') === -1, 'KaTeX branch: OCR-spaced \\begin{array} renders after repairMath (no error)')
+        const k3 = katexRender('\\vec { \\boldsymbol { f } }')
+        assert(k3.engine === 'katex' && k3.html.indexOf('katex') >= 0, 'KaTeX branch: vec-over-bold renders')
+        const k4 = katexRender('\\foo { bar }')
+        assert(k4.engine === 'katex' && typeof k4.html === 'string', 'KaTeX branch: unknown command does not throw (throwOnError:false)')
+        const k5 = katexRender('2 0 1 1')
+        assert(k5.engine === 'katex' && k5.text === '2011', 'KaTeX branch: repaired digits feed KaTeX, dlen stays approximate text')
+        const kMark = renderText('H \\times V', [], {})
+        assert(kMark.length === 1 && kMark[0].props && kMark[0].props.className === 'phl-math' && kMark[0].props.dangerouslySetInnerHTML.__html.indexOf('katex') >= 0, 'renderText: math node emits KaTeX HTML when katex global present')
+      } finally {
+        if (hadKatex) global.katex = saved
+        else delete global.katex
+      }
+      // fallback branch: no global katex → approximate Unicode/CSS (Node default)
+      const f1 = katexRender('\\mathbb { R } ^ { n }')
+      assert(f1.engine === 'approx' && f1.text === 'ℝⁿ', 'katexRender fallback: no katex global → approximate engine')
+    } else {
+      const f1 = katexRender('\\mathbb { R } ^ { n }')
+      assert(f1.engine === 'approx' && f1.text === 'ℝⁿ', 'katexRender fallback: katex not installed → approximate engine')
+    }
+
     console.log(JSON.stringify({
       step: 'render-helpers',
       result: 'PASS',
@@ -817,7 +853,7 @@ function main() {
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
       v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape; modifiers ignored incl. Ctrl+Enter — review-shortcut removed; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
-      v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (31 helpers in BODY)',
+      v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (32 helpers in BODY)',
       v053: 'section TOC 反选 (batch revert to 待审) — localRevertSectionSpans (accepted-in-section → proposed; proposed/user_added/rejected/outside untouched; identity preserved; empty set / null safe) — the inverse of approve (undo the one-click approve), NOT batch reject',
       v054: 'callProposeRequest — POST /paper-hl/propose-request?paperId=… {paper_id} body; ok resolve / ok:false reject / no-transport reject (重新提出高亮 transport)',
       v061: 'math render pipeline — repairMath (A1-A7 + guards) + splitMathPieces (math runs / prose untouched / full coverage) + mathConvert (Unicode/CSS, ℝ/subscripts/accents/fonts/frac/env-drop/unknown-preserved/empty-script) + segLen (dlen-aware) + buildTextPieces/buildBlockSegments (math segments carry dlen) + mapSelection (math whole-range clamp) + renderText (.phl-math + data-phl-dlen, G2 empty-fold, G3 byte-identical plain)',

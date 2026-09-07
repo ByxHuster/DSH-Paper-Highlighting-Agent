@@ -61,13 +61,16 @@ if (!bundleSpec || typeof bundleSpec.factory !== 'function') {
   throw new Error('bundle did not register a factory')
 }
 const bundle = bundleSpec.factory(makeRequire())
-const { buildBlocks, buildBlockSegments, mathConvert, segLen } = bundle
+const { buildBlocks, buildBlockSegments, mathConvert, katexRender, segLen } = bundle
 
 function main() {
   let totalAnchors = 0
   let totalMathSegs = 0
   let totalPlainSegs = 0
   let emptyDisplay = 0
+  let katexRendered = 0
+  let approxRendered = 0
+  let katexErrors = 0
   const perPaper = []
 
   for (const paperId of PAPERS) {
@@ -102,13 +105,22 @@ function main() {
         pos = s.end
       }
       assert(pos === text.length, `coverage end ${pos} != len ${text.length} on ${paperId}/${id}`)
-      // math segments: dlen consistency + empty-display audit
+      // math segments: dlen consistency + empty-display audit + KaTeX render
       for (const s of segs) {
         if (s.math) {
           const conv = mathConvert(text.slice(s.start, s.end))
           assert(s.dlen === conv.text.length, `dlen mismatch on ${paperId}/${id} seg ${s.start}: ${s.dlen} != ${conv.text.length}`)
           assert(Number.isInteger(s.dlen) && s.dlen >= 0, `non-numeric dlen on ${paperId}/${id}`)
           if (conv.text.trim().length === 0) emptyDisplay++, paperEmpty++ // folds in renderText (G2), never a box
+          // KaTeX render audit: the shipped bundle inlines katex, so every math
+          // segment must render through the real engine without crashing and
+          // (post-repair) with no error markers. err-count is surfaced, not
+          // asserted to 0 (unknown commands degrade to red text by design), but
+          // the KaTeX engine must be the dominant path — tofu/approx is gone.
+          const kr = katexRender(text.slice(s.start, s.end))
+          assert(typeof kr.html === 'string' && kr.text.length === conv.text.length, `katexRender contract on ${paperId}/${id} seg ${s.start}`)
+          if (kr.engine === 'katex') { katexRendered++; if (kr.html.indexOf('katex-error') >= 0) katexErrors++ }
+          else approxRendered++
           totalMathSegs++
           paperMath++
         } else {
@@ -137,8 +149,9 @@ function main() {
 
   assert(totalAnchors > 100, `G4 covered only ${totalAnchors} anchors`)
   assert(totalMathSegs > 40, `G4 found only ${totalMathSegs} math segments — math pipeline barely exercised`)
-  console.log(`G4 totals: ${totalAnchors} anchors · ${totalMathSegs} math segs · ${totalPlainSegs} plain segs · ${emptyDisplay} empty-display (fold to plain, no grey box)`)
-  console.log('G4 PASS — real-bundle real-data math render audit clean')
+  assert(katexRendered > totalMathSegs * 0.8, `KaTeX engine should dominate real-data math rendering (katex=${katexRendered} approx=${approxRendered} of ${totalMathSegs})`)
+  console.log(`G4 totals: ${totalAnchors} anchors · ${totalMathSegs} math segs · ${totalPlainSegs} plain segs · ${emptyDisplay} empty-display (fold) · katex=${katexRendered} approx=${approxRendered} katex-errors=${katexErrors}`)
+  console.log('G4 PASS — real-bundle real-data math render audit clean (KaTeX, no tofu)')
   return perPaper
 }
 

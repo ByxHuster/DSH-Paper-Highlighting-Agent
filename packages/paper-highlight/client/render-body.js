@@ -250,10 +250,11 @@ function renderText(text, spans, opts) {
   let si = segBase
   for (const p of pieces) {
     if (p.math) {
-      // v0.6.1: render the repaired+converted math inside a .phl-math span. The
-      // G2 guard: a math piece whose display is empty/whitespace folds back to
-      // a plain text node (never emit an empty grey box — the v0.5.2 regression).
-      const converted = mathConvert(text.slice(p.start, p.end))
+      // v0.6.1+: render the cleaned LaTeX inside a .phl-math span — KaTeX (own
+      // fonts → no tofu, real layout) when present, Unicode/CSS fallback else.
+      // The G2 guard: a math piece whose display is empty/whitespace folds back
+      // to a plain text node (never emit an empty grey box — v0.5.2 regression).
+      const converted = katexRender(text.slice(p.start, p.end))
       if (converted.text.trim().length === 0) {
         if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(p.start, p.end)))
         else out.push(text.slice(p.start, p.end))
@@ -837,6 +838,34 @@ function mathConvert(tex) {
   return { html: r.html, text: r.text, repaired }
 }
 
+/**
+ * v0.6.1+ · math render entry — KaTeX when available, Unicode/CSS fallback.
+ *
+ * The shipped bundles inline the KaTeX runtime (global `katex`, own math
+ * fonts → no tofu boxes, real LaTeX layout). This function:
+ *   1. cleans OCR noise via repairMath (KaTeX is strict — `\begin { array }`
+ *      would error without it);
+ *   2. renders with KaTeX (throwOnError:false, so unknown commands degrade to
+ *      red text instead of crashing; strict:false keeps it tolerant);
+ *   3. falls back to the approximate Unicode/CSS renderer when KaTeX is absent
+ *      (Node tests / degraded environments) or throws — never a blank box.
+ * Returns { html, text, engine } where text is the DISPLAY length driver for
+ * the dlen bridge (math segments map whole-range, so an approximate text
+ * length is a safe upper bound).
+ */
+function katexRender(tex) {
+  const approx = mathConvert(tex)
+  if (typeof katex !== 'undefined' && katex && typeof katex.renderToString === 'function') {
+    try {
+      const html = katex.renderToString(repairMath(tex), { throwOnError: false, displayMode: false, strict: false })
+      return { html, text: approx.text, engine: 'katex' }
+    } catch (e) {
+      // KaTeX threw (shouldn't happen with throwOnError:false) — fall through
+    }
+  }
+  return { html: approx.html, text: approx.text, engine: 'approx' }
+}
+
 /** Display length of a segment (dlen-aware; plain segments are start..end). */
 function segLen(seg) {
   if (!seg) return 0
@@ -1160,6 +1189,8 @@ ${repairMath.toString()}
 ${splitMathPieces.toString()}
 
 ${mathConvert.toString()}
+
+${katexRender.toString()}
 
 ${segLen.toString()}
 
@@ -2287,13 +2318,14 @@ function apply(ctx) {
       '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
       // v0.5.1: the semantic label renders in its own highlight color.
       '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
-      // v0.6.1: math formula rendering — serif-italic glyphs on a faint tint.
-      // G2 guard: the span is only ever emitted when its display is non-empty
-      // (see renderText), so there is no empty grey box (the v0.5.2 regression).
-      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;background:rgba(90,120,220,.08);border-radius:3px;padding:0 1px;letter-spacing:.02em}',
-      '.phl-math sub,.phl-math sup{font-style:normal;font-size:.72em;line-height:0;position:relative;vertical-align:baseline}',
-      '.phl-math sub{bottom:-.25em}',
-      '.phl-math sup{top:-.5em}',
+      // v0.6.1+: math formula rendering — KaTeX renders real LaTeX layout with
+      // its own math fonts (no tofu boxes, no system-font dependence); the
+      // .phl-math shell only adds the faint tint marking "this is math". The
+      // G2 guard lives in renderText: empty/whitespace display folds to plain.
+      // KaTeX's own CSS (fonts inlined as data-URI) is appended via KATEX_CSS
+      // below (injected by gen-client; absent in Node tests → guarded).
+      '.phl-math{background:rgba(90,120,220,.08);border-radius:3px;padding:0 2px;display:inline-block;vertical-align:baseline}',
+      '.phl-math .katex{font-size:1.04em;font-style:normal}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',
@@ -2399,7 +2431,10 @@ function apply(ctx) {
       '.phl-prop-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}',
       '.phl-prop-btn2{padding:3px 12px;border-radius:5px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
       '.phl-prop-btn2:hover{background:rgba(128,128,128,.12)}',
-      '.phl-prop-confirm{border-color:rgba(120,220,130,.8)}'
+      '.phl-prop-confirm{border-color:rgba(120,220,130,.8)}',
+      // v0.6.1+: KaTeX styles + inlined math fonts (injected by gen-client;
+      // absent in Node tests → typeof guard keeps this a no-op there)
+      (typeof KATEX_CSS !== 'undefined' ? KATEX_CSS : '')
     ].join(''))
   }, 'paper-highlight: styles')
 
@@ -2454,6 +2489,7 @@ module.exports = {
   repairMath,
   splitMathPieces,
   mathConvert,
+  katexRender,
   segLen,
   buildTextPieces,
 }

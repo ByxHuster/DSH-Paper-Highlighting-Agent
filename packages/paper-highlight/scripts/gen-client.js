@@ -21,8 +21,34 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const { BODY } = require('../client/render-body')
 
+/**
+ * v0.6.1+ · local KaTeX runtime — inline katex.min.js (UMD, sets global `katex`)
+ * and KaTeX's font CSS with every woff2 inlined as a base64 data-URI (woff/ttf
+ * fallbacks dropped). Result: the shipped bundles are fully self-contained —
+ * real LaTeX-level rendering with KaTeX's own math fonts, NO CDN, NO host
+ * static route, NO 3081 restart. `KATEX_CSS` is injected as a module-level
+ * const and appended by apply()'s styles.insert; render-body guards it with
+ * `typeof KATEX_CSS !== 'undefined'` so Node tests (which lack it) still pass.
+ */
+function loadKatexAssets() {
+  const dist = path.join(ROOT, 'node_modules', 'katex', 'dist')
+  const katexJs = fs.readFileSync(path.join(dist, 'katex.min.js'), 'utf8')
+  let katexCss = fs.readFileSync(path.join(dist, 'katex.min.css'), 'utf8')
+  katexCss = katexCss.replace(/url\(fonts\/([A-Za-z0-9_-]+)\.woff2\)/g, (m, name) => {
+    const b64 = fs.readFileSync(path.join(dist, 'fonts', `${name}.woff2`)).toString('base64')
+    return `url(data:font/woff2;base64,${b64})`
+  })
+  katexCss = katexCss.replace(/,url\(fonts\/[A-Za-z0-9_-]+\.woff\) format\("woff"\),url\(fonts\/[A-Za-z0-9_-]+\.ttf\) format\("truetype"\)/g, '')
+  return { katexJs, katexCss }
+}
+
 function generateBundle() {
+  const { katexJs, katexCss } = loadKatexAssets()
   const lines = []
+  // local KaTeX runtime first so the factory can use the global `katex`
+  lines.push(`// KaTeX (local, inlined) — renders math with its own fonts`)
+  lines.push(katexJs)
+  lines.push(`const KATEX_CSS = ${JSON.stringify(katexCss)};`)
   lines.push(`window.__ModuleLoader__.load({`)
   lines.push(`\tid: "paper-highlight/client",`)
   lines.push(`\tfactory: (require) => {`)
@@ -104,6 +130,7 @@ function generateBundle() {
   lines.push(`\t\texports.repairMath = repairMath;`)
   lines.push(`\t\texports.splitMathPieces = splitMathPieces;`)
   lines.push(`\t\texports.mathConvert = mathConvert;`)
+  lines.push(`\t\texports.katexRender = katexRender;`)
   lines.push(`\t\texports.buildTextPieces = buildTextPieces;`)
   lines.push(`\t\texports.segLen = segLen;`)
   // P2-e: section-status + current-section helpers for headless tests.
@@ -140,7 +167,12 @@ function generateBundle() {
 }
 
 function generateDynamicClientHalf() {
+  const { katexJs, katexCss } = loadKatexAssets()
   const lines = []
+  // local KaTeX runtime first so the dynamic half can render math identically
+  lines.push(`// KaTeX (local, inlined)`)
+  lines.push(katexJs)
+  lines.push(`const KATEX_CSS = ${JSON.stringify(katexCss)};`)
   lines.push(`const callData = (q) => host.call('paper.read', q)`)
   for (const line of BODY.split('\n')) lines.push(line)
   lines.push(`return { inject, apply }`)

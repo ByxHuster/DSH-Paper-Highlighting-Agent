@@ -482,11 +482,15 @@ console.log('bundle sticky-top plumbing (v0.5.4.1):', p2i.join(', '))
 // style .phl-math WITHOUT any fixed min-width (an empty-width span was the
 // v0.5.2 grey-box root cause; the renderText guard folds empty displays, and
 // the CSS must not reintroduce a visible box).
-const p6 = ['repairMath', 'splitMathPieces', 'mathConvert', 'buildTextPieces', 'segLen', 'MATH_GREEK', 'MATH_SYMB', 'MATH_ACCENTS', 'MATH_SUB', 'MATH_SUP', 'MATH_BB', 'MATH_BOLD', 'MATH_MONO', 'phl-math', 'data-phl-dlen', '.phl-math{font-family:Georgia']
-for (const needle of p6) {
-  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.6.1 math plumbing: ${needle}`)
+const p6 = ['repairMath', 'splitMathPieces', 'mathConvert', 'katexRender', 'buildTextPieces', 'segLen', 'MATH_GREEK', 'MATH_SYMB', 'MATH_ACCENTS', 'MATH_SUB', 'MATH_SUP', 'MATH_BB', 'MATH_BOLD', 'MATH_MONO', 'phl-math', 'data-phl-dlen', '.phl-math{background:rgba(90,120,220,.08)']
+// v0.6.1+: KaTeX runtime inlined — the shipped bundle must carry the KaTeX
+// engine (own math fonts → no tofu boxes) + its data-URI font CSS.
+const p6k = ['// KaTeX (local, inlined)', 'const KATEX_CSS', 'data:font/woff2;base64', 'katex']
+for (const needle of [...p6, ...p6k]) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.6.1+ math/KaTeX plumbing: ${needle}`)
 }
 console.log('bundle math plumbing (v0.6.1):', p6.join(', '))
+console.log('bundle KaTeX plumbing (v0.6.1+):', p6k.join(', '))
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
