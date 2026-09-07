@@ -60,6 +60,7 @@ const {
   profilePanelModel, profilePanelColors, profileSavePayload,
   proposalCardModel, buildApplyDecisions,
   localApproveSectionSpans, localRevertSectionSpans,
+  repairMath, splitMathPieces, mathConvert, segLen, buildTextPieces,
   BODY,
 } = require('../client/render-body')
 const { assert } = require('./verify')
@@ -671,7 +672,7 @@ function main() {
     // regression guard: every pure helper referenced by the embedded
     // functions must be embedded into BODY (a missing toString() embed would
     // only surface at runtime as a ReferenceError → blank page).
-    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'callProposeRequest', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans']
+    const EMBED_HELPERS = ['clampRange', 'sortAnchorIds', 'buildBlocks', 'renderText', 'buildWriteUrl', 'encodeWriteBody', 'callWrite', 'callProfile', 'callFormat', 'callProposeRequest', 'colorLegend', 'buildBlockSegments', 'buildSegmentMap', 'mapSelection', 'nodeOffsetToSeg', 'blockChildToSeg', 'selectionToNorm', 'sectionList', 'currentSectionId', 'keyAction', 'reviewProgress', 'buildExportUrl', 'profilePanelModel', 'profilePanelColors', 'profileSavePayload', 'proposalCardModel', 'buildApplyDecisions', 'localApproveSectionSpans', 'localRevertSectionSpans', 'repairMath', 'splitMathPieces', 'mathConvert', 'segLen', 'buildTextPieces']
     for (const name of EMBED_HELPERS) {
       assert(typeof BODY === 'string' && BODY.includes('function ' + name), 'bundle embed completeness: function ' + name + ' embedded into BODY')
     }
@@ -711,6 +712,96 @@ function main() {
     assert(localRevertSectionSpans(apSpans, []).every((s) => s.status === apSpans.find((x) => x.id === s.id).status), 'revert: empty anchor set → no change')
     assert(localRevertSectionSpans(null, ['a-x']).length === 0, 'revert: null spans → empty array')
 
+    // ══════════════════ v0.6.1: math rendering pipeline ══════════════════
+    // ── repairMath: A1 brace-spacing, A2 \cmd {, A3/A3b script spacing, A4
+    // spaced words, A5 OCR dots, A7 digit runs, A6 ~ / \: — conservative, and
+    // never touches what it cannot confidently repair.
+    assert(repairMath('\\mathbf { y } \\mid \\textbf { x }') === '\\mathbf{y} \\mid \\textbf{x}', 'repair A1+A2: brace + cmd spacing collapsed')
+    assert(repairMath('x _ { 1 } , y ^ { 2 }') === 'x_{1} , y^{2}', 'repair A3+A3b: script spacing collapsed (x_ {1} → x_{1})')
+    assert(repairMath('l o g _ { 2 } ( V ) .') === 'log_{2} ( V ) .', 'repair A4: spaced word log rebuilt, script tightened')
+    assert(repairMath('i . e . , \\ a r g \\ m a x') === 'i.e., \\ arg \\ max', 'repair A4+A5: i.e., + arg/max rebuilt')
+    assert(repairMath('N \\times D \\times H') === 'N \\times D \\times H', 'repair: clean LaTeX untouched')
+    assert(repairMath('2 0 1 1') === '2011', 'repair A7: spaced digit run collapsed')
+    assert(repairMath('s = \\| g \\| _ { 2 } ,') === 's = \\| g \\|_{2} ,', 'repair: norm + script tightened')
+    assert(repairMath('4 \\cdot 5') === '4 \\cdot 5', 'repair guard: decimal/\\cdot NOT collapsed')
+
+    // ── splitMathPieces: math runs found, prose left alone, full coverage ──
+    const sp1 = splitMathPieces('is computed by \\alpha _ { i j } of each annotation h _ { j }')
+    assert(sp1.length === 4, 'splitMathPieces: plain/math/plain/math = 4 pieces (math run reaches end)')
+    assert(sp1[0].isMath === false && sp1[0].start === 0 && sp1[0].end === 15, 'splitMathPieces: leading prose [0,15) "is computed by "')
+    assert(sp1[1].isMath === true && sp1[1].start === 15 && sp1[1].end === 31 && sp1[1].end - sp1[1].start === 16, 'splitMathPieces: math run \\alpha _ { i j } [15,31)')
+    assert(sp1[2].isMath === false && sp1[2].start === 31 && sp1[2].end === 51, 'splitMathPieces: prose gap (of each annotation)')
+    assert(sp1[3].isMath === true && sp1[3].start === 51 && sp1[3].end === 60, 'splitMathPieces: math run h _ { j } reaches text end')
+    const sp2 = splitMathPieces('This is plain prose with no math at all.')
+    assert(sp2.length === 1 && sp2[0].isMath === false && sp2[0].end === sp2[0].start + 40, 'splitMathPieces: pure prose → single plain piece')
+    const sp3 = splitMathPieces('')
+    assert(sp3.length === 1 && sp3[0].end === 0, 'splitMathPieces: empty text → one empty piece')
+    const sp4 = splitMathPieces('1 { - } 0 \\mathbf { f } { - } V coding')
+    assert(sp4[0].isMath === true && sp4[0].start === 0 && sp4[0].end === 31 && sp4[0].end - sp4[0].start === 31, 'splitMathPieces: OCR braces + bold command one run, stops before "coding"')
+    assert(sp4.length === 2, 'splitMathPieces: "coding" stays prose (word boundary)')
+
+    // ── mathConvert: Unicode/CSS display, no data loss ──
+    assert(mathConvert('\\mathbf { x } \\mid \\textbf { x }').text === '𝐱 | 𝐱', 'mathConvert: bold + mid')
+    assert(mathConvert('\\mathbb { R } ^ { n }').text === 'ℝⁿ', 'mathConvert: double-struck R + superscript n')
+    assert(mathConvert('\\alpha _ { i j }').text === 'αᵢⱼ', 'mathConvert: greek + multi-letter subscript')
+    assert(mathConvert('x _ { 1 } , \\cdot \\cdot \\cdot , x _ { T _ { x } }').text === 'x₁ , · · · , xTₓ', 'mathConvert: subscripts + dots + nested')
+    assert(mathConvert('h _ { t } \\in \\mathbb { R } ^ { n }').text === 'hₜ ∈ ℝⁿ', 'mathConvert: script + ∈ + ℝⁿ')
+    assert(mathConvert('\\bar { U } \\acute { n }').text === 'U\u0304 n\u0301', 'mathConvert: combining accents (U+macron, n+acute)')
+    assert(mathConvert('\\overrightarrow { h } _ { j }').text === 'h⃗ⱼ', 'mathConvert: overrightarrow + script')
+    assert(mathConvert('\\vec { \\boldsymbol { f } }').text === '𝐟⃗', 'mathConvert: vec over bold surrogate-safe')
+    assert(mathConvert('\\frac { a } { b }').text === 'a⁄b', 'mathConvert: fraction')
+    assert(mathConvert('l o g _ { 2 } ( V )').text === 'log₂ ( V )', 'mathConvert: repaired log + subscript')
+    assert(mathConvert('\\left( y _ { 1 } , \\right)').text === '( y₁ , )', 'mathConvert: left/right dropped')
+    assert(mathConvert('\\begin { array } { r } { g } \\end { array }').text.indexOf('\\begin') === -1, 'mathConvert: begin/end env markers dropped')
+    assert(mathConvert('\\smash { \\vec { U } _ { r } }').text === ' U⃗ᵣ ', 'mathConvert: smash renders its content (no info loss)')
+    assert(mathConvert('\\alpha , \\beta , \\gamma').text === 'α , β , γ', 'mathConvert: greek list')
+    assert(mathConvert('\\breve { n }').text === 'n̆', 'mathConvert: breve accent')
+    assert(mathConvert('s = \\| g \\| _ { 2 }').text === 's = ‖ g ‖₂', 'mathConvert: norm ‖·‖')
+    assert(mathConvert('\\foo { bar }').text === '\\foo{bar}', 'mathConvert: unknown command + arg preserved with braces (never dropped)')
+    assert(mathConvert('\\mathfrak { e } ^ { } c').text === 'e c', 'mathConvert: empty script contributes nothing')
+    const mc = mathConvert('\\mathbf { y } = \\left( y _ { 1 } , \\cdot \\cdot \\cdot , y _ { T } \\right) .')
+    assert(mc.text.length === mc.text.length && mc.html.length > 0, 'mathConvert: returns html + text')
+    assert(mathConvert('0 . 0 0 1 ^ { 2 }').text === '0.001²', 'mathConvert: repaired decimal + superscript')
+
+    // ── segLen: plain = length, math = dlen ──
+    assert(segLen({ start: 3, end: 8 }) === 5, 'segLen: plain segment uses start..end')
+    assert(segLen({ start: 3, end: 40, math: true, dlen: 7 }) === 7, 'segLen: math segment uses dlen')
+    assert(segLen(null) === 0, 'segLen: null → 0')
+
+    // ── buildTextPieces / buildBlockSegments: math segments carry dlen ──
+    const mtText = 'H \\times V is size'
+    const mtPieces = buildTextPieces(mtText, [])
+    assert(mtPieces.length === 2 && mtPieces[0].math === true && mtPieces[1].math === false, 'buildTextPieces: math run + plain tail')
+    const mtSegs = buildBlockSegments('a-m', mtText, [])
+    assert(mtSegs.length === 2, 'buildBlockSegments: math + plain segments')
+    assert(mtSegs[0].math === true && mtSegs[0].dlen === mathConvert('H \\times V').text.length && mtSegs[0].dlen === 5, 'buildBlockSegments: math segment dlen = display length (H × V = 5)')
+    assert(mtSegs[1].math === undefined && mtSegs[1].dlen === undefined && mtSegs[1].end - mtSegs[1].start === 8, 'buildBlockSegments: plain segment has no dlen')
+
+    // ── mapSelection: math segment maps to its WHOLE original range ──
+    const msSegments = buildBlockSegments('a-m', mtText, [])
+    const mid = mapSelection(msSegments, { start: { seg: 0, offset: 2 }, end: { seg: 0, offset: 4 } })
+    assert(mid.ok === true && mid.anchor === 'a-m' && mid.char_start === 0 && mid.char_end === 10, 'mapSelection: selection inside a math segment clamps to the whole original range [0,10)')
+    const crossSel = mapSelection(msSegments, { start: { seg: 0, offset: 9 }, end: { seg: 1, offset: 3 } })
+    assert(crossSel.ok === true && crossSel.char_start === 0 && crossSel.char_end === 13, 'mapSelection: math→plain cross selection: math whole + plain linear')
+    const plainSel = mapSelection(msSegments, { start: { seg: 1, offset: 1 }, end: { seg: 1, offset: 5 } })
+    assert(plainSel.ok === true && plainSel.char_start === 11 && plainSel.char_end === 15, 'mapSelection: plain segment stays linear')
+
+    // ── renderText: math node emits .phl-math + data-phl-dlen (G2: never empty) ──
+    const rtOut = renderText('H \\times V is size', [], { withSegments: true, segBase: 3, anchorId: 'a-r' })
+    assert(rtOut.length === 2, 'renderText: math + plain nodes with segments')
+    assert(rtOut[0].props.className === 'phl-math' && rtOut[0].props['data-phl-seg'] === '3' && rtOut[0].props['data-phl-dlen'] === '5', 'renderText: math node carries class + seg + dlen')
+    assert(rtOut[0].props.dangerouslySetInnerHTML && typeof rtOut[0].props.dangerouslySetInnerHTML.__html === 'string' && rtOut[0].props.dangerouslySetInnerHTML.__html.indexOf('×') >= 0, 'renderText: math node innerHTML contains converted symbol')
+    assert(rtOut[1].props['data-phl-seg'] === '4' && rtOut[1].children.join('') === ' is size', 'renderText: plain node follows with next seg')
+    // G2 guard: a math piece whose display folds to empty never emits a grey box
+    const g2Out = renderText('\\mathrm { }', [], {})
+    assert(g2Out.length === 1 && typeof g2Out[0] === 'string' && g2Out[0].indexOf('phl-math') === -1, 'G2: empty-display math folds to plain text (no grey box)')
+    // G3: non-math text renders byte-identical (single plain node)
+    const g3Out = renderText('Plain prose stays plain.', [], { withSegments: true, segBase: 0, anchorId: 'a-3' })
+    assert(g3Out.length === 1 && g3Out[0].children.join('') === 'Plain prose stays plain.', 'G3: non-math layout byte-identical to pre-v0.6.1')
+    // math inside a highlight mark: mark wraps the math span
+    const rtMark = renderText('H \\times V', [{ id: 's-m1', char_start: 0, char_end: 10, color: 'red', status: 'accepted' }], {})
+    assert(rtMark.length === 1 && rtMark[0].type === 'mark' && rtMark[0].children[0].props.className === 'phl-math', 'renderText: math inside a mark wraps the math span')
+
     console.log(JSON.stringify({
       step: 'render-helpers',
       result: 'PASS',
@@ -726,9 +817,10 @@ function main() {
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
       v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape; modifiers ignored incl. Ctrl+Enter — review-shortcut removed; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
-      v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (26 helpers in BODY)',
+      v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (31 helpers in BODY)',
       v053: 'section TOC 反选 (batch revert to 待审) — localRevertSectionSpans (accepted-in-section → proposed; proposed/user_added/rejected/outside untouched; identity preserved; empty set / null safe) — the inverse of approve (undo the one-click approve), NOT batch reject',
       v054: 'callProposeRequest — POST /paper-hl/propose-request?paperId=… {paper_id} body; ok resolve / ok:false reject / no-transport reject (重新提出高亮 transport)',
+      v061: 'math render pipeline — repairMath (A1-A7 + guards) + splitMathPieces (math runs / prose untouched / full coverage) + mathConvert (Unicode/CSS, ℝ/subscripts/accents/fonts/frac/env-drop/unknown-preserved/empty-script) + segLen (dlen-aware) + buildTextPieces/buildBlockSegments (math segments carry dlen) + mapSelection (math whole-range clamp) + renderText (.phl-math + data-phl-dlen, G2 empty-fold, G3 byte-identical plain)',
     }, null, 2))
     return null
   })

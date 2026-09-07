@@ -50,6 +50,16 @@ window.__ModuleLoader__.load({
 		const COLOR_MAP = {"yellow":"#fff3a0","red":"#ff9c94","blue":"#8fd0f7","green":"#b0e3a8","purple":"#d9b8f2"};
 		const COLOR_LABELS = {"yellow":"关键定义/方法","red":"核心洞见/贡献","blue":"局限/风险","green":"可借鉴/启发","purple":"待深挖/存疑"};
 		
+		// v0.6.1 math tables — inlined JSON so the browser bundle is self-contained.
+		const MATH_GREEK = {"alpha":"α","beta":"β","gamma":"γ","delta":"δ","epsilon":"ε","zeta":"ζ","eta":"η","theta":"θ","iota":"ι","kappa":"κ","lambda":"λ","mu":"μ","nu":"ν","xi":"ξ","pi":"π","rho":"ρ","sigma":"σ","tau":"τ","upsilon":"υ","phi":"φ","chi":"χ","psi":"ψ","omega":"ω","Gamma":"Γ","Delta":"Δ","Theta":"Θ","Lambda":"Λ","Xi":"Ξ","Pi":"Π","Sigma":"Σ","Upsilon":"Υ","Phi":"Φ","Psi":"Ψ","Omega":"Ω","vartheta":"ϑ","varphi":"φ","varepsilon":"ε","varrho":"ϱ"};
+		const MATH_SYMB = {"times":"×","cdot":"·","pm":"±","mp":"∓","le":"≤","ge":"≥","ne":"≠","approx":"≈","equiv":"≡","propto":"∝","in":"∈","notin":"∉","mid":"|","parallel":"∥","subset":"⊂","supset":"⊃","subseteq":"⊆","supseteq":"⊇","cup":"∪","cap":"∩","emptyset":"∅","forall":"∀","exists":"∃","neg":"¬","land":"∧","lor":"∨","to":"→","rightarrow":"→","leftarrow":"←","Rightarrow":"⇒","Leftarrow":"⇐","Leftrightarrow":"⇔","mapsto":"↦","cdots":"⋯","ldots":"…","dots":"…","vdots":"⋮","prime":"′","partial":"∂","infty":"∞","nabla":"∇","sum":"∑","prod":"∏","int":"∫","oint":"∮","deg":"°","cdotp":"·","ast":"∗","star":"⋆","circ":"∘","bullet":"∙","div":"÷","sqrt":"√","sim":"∼","simeq":"≃","cong":"≅","doteq":"≐","diamond":"⋄","triangle":"△","angle":"∠","perp":"⊥","top":"⊤","bot":"⊥","lceil":"⌈","rceil":"⌉","lfloor":"⌊","rfloor":"⌋"};
+		const MATH_ACCENTS = {"bar":"̄","hat":"̂","tilde":"̃","vec":"⃗","dot":"̇","acute":"́","grave":"̀","check":"̌","overline":"̅","overrightarrow":"⃗","overleftarrow":"⃖","widehat":"̂","widetilde":"̃","ddot":"̈","breve":"̆"};
+		const MATH_SUB = {"0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉","+":"₊","-":"₋","=":"₌","(":"₍",")":"₎","a":"ₐ","e":"ₑ","o":"ₒ","x":"ₓ","h":"ₕ","k":"ₖ","l":"ₗ","m":"ₘ","n":"ₙ","p":"ₚ","s":"ₛ","t":"ₜ","i":"ᵢ","j":"ⱼ","r":"ᵣ","u":"ᵤ","v":"ᵥ","β":"ᵦ","γ":"ᵧ","ρ":"ᵨ","φ":"ᵩ","χ":"ᵪ"};
+		const MATH_SUP = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾","n":"ⁿ","i":"ⁱ","a":"ᵃ","b":"ᵇ","c":"ᶜ","d":"ᵈ","e":"ᵉ","f":"ᶠ","g":"ᵍ","h":"ʰ","j":"ʲ","k":"ᵏ","l":"ˡ","m":"ᵐ","o":"ᵒ","p":"ᵖ","r":"ʳ","s":"ˢ","t":"ᵗ","u":"ᵘ","v":"ᵛ","w":"ʷ","x":"ˣ","y":"ʸ","z":"ᶻ"};
+		const MATH_BB = {"0":"𝟘","1":"𝟙","2":"𝟚","3":"𝟛","4":"𝟜","5":"𝟝","6":"𝟞","7":"𝟟","8":"𝟠","9":"𝟡","A":"𝔸","B":"𝔹","C":"ℂ","D":"𝔻","E":"𝔼","F":"𝔽","G":"𝔾","H":"ℍ","I":"𝕀","J":"𝕁","K":"𝕂","L":"𝕃","M":"𝕄","N":"ℕ","O":"𝕆","P":"ℙ","Q":"ℚ","R":"ℝ","S":"𝕊","T":"𝕋","U":"𝕌","V":"𝕍","W":"𝕎","X":"𝕏","Y":"𝕐","Z":"ℤ"};
+		const MATH_BOLD = {"0":"𝟎","1":"𝟏","2":"𝟐","3":"𝟑","4":"𝟒","5":"𝟓","6":"𝟔","7":"𝟕","8":"𝟖","9":"𝟗","a":"𝐚","b":"𝐛","c":"𝐜","d":"𝐝","e":"𝐞","f":"𝐟","g":"𝐠","h":"𝐡","i":"𝐢","j":"𝐣","k":"𝐤","l":"𝐥","m":"𝐦","n":"𝐧","o":"𝐨","p":"𝐩","q":"𝐪","r":"𝐫","s":"𝐬","t":"𝐭","u":"𝐮","v":"𝐯","w":"𝐰","x":"𝐱","y":"𝐲","z":"𝐳","A":"𝐀","B":"𝐁","C":"𝐂","D":"𝐃","E":"𝐄","F":"𝐅","G":"𝐆","H":"𝐇","I":"𝐈","J":"𝐉","K":"𝐊","L":"𝐋","M":"𝐌","N":"𝐍","O":"𝐎","P":"𝐏","Q":"𝐐","R":"𝐑","S":"𝐒","T":"𝐓","U":"𝐔","V":"𝐕","W":"𝐖","X":"𝐗","Y":"𝐘","Z":"𝐙"};
+		const MATH_MONO = {"0":"𝟶","1":"𝟷","2":"𝟸","3":"𝟹","4":"𝟺","5":"𝟻","6":"𝟼","7":"𝟽","8":"𝟾","9":"𝟿","a":"𝚊","b":"𝚋","c":"𝚌","d":"𝚍","e":"𝚎","f":"𝚏","g":"𝚐","h":"𝚑","i":"𝚒","j":"𝚓","k":"𝚔","l":"𝚕","m":"𝚖","n":"𝚗","o":"𝚘","p":"𝚙","q":"𝚚","r":"𝚛","s":"𝚜","t":"𝚝","u":"𝚞","v":"𝚟","w":"𝚠","x":"𝚡","y":"𝚢","z":"𝚣","A":"𝙰","B":"𝙱","C":"𝙲","D":"𝙳","E":"𝙴","F":"𝙵","G":"𝙶","H":"𝙷","I":"𝙸","J":"𝙹","K":"𝙺","L":"𝙻","M":"𝙼","N":"𝙽","O":"𝙾","P":"𝙿","Q":"𝚀","R":"𝚁","S":"𝚂","T":"𝚃","U":"𝚄","V":"𝚅","W":"𝚆","X":"𝚇","Y":"𝚈","Z":"𝚉"};
+		
 		function clampRange(start, end, len) {
 		  const s = Math.max(0, Math.min(start, len))
 		  const e = Math.max(s, Math.min(end, len))
@@ -86,27 +96,352 @@ window.__ModuleLoader__.load({
 		  })
 		}
 		
+		function repairMath(tex) {
+		  let s = tex
+		  // A1: single-token brace collapse { x } → {x} (never touch nested braces)
+		  s = s.replace(/\{\s+([^{}\s]+)\s+\}/g, '{$1}')
+		  // A2: \cmd { → \cmd{
+		  s = s.replace(/(\\[A-Za-z]+)\s+(\{)/g, '$1$2')
+		  // A3: base<space>script → base<script  (x _ { → x_{)
+		  s = s.replace(/([^\s])\s+([_\^])/g, '$1$2')
+		  // A3b: script<space>brace → script{  (x_ {1} → x_{1})
+		  s = s.replace(/([_\^])\s+(\{)/g, '$1$2')
+		  // A4: spaced single-letter runs → join when word-like (l o g → log)
+		  s = s.replace(/(?<![A-Za-z])((?:[A-Za-z] )+[A-Za-z])(?![A-Za-z])/g, (m) => {
+		    const j = m.replace(/ /g, '')
+		    if (j === 'log' || j === 'max' || j === 'min' || j === 'arg' || j === 'exp' || j === 'sin' || j === 'cos' || j === 'tan' || j === 'sup' || j === 'inf' || j === 'lim' || j === 'det' || j === 'dim' || j === 'to' || j === 'of' || j === 'in' || j === 'and' || j === 'with' || j === 'perplexity') return j
+		    if (j.length >= 3 && /[aeiou]/.test(j) && j === j.toLowerCase()) return j
+		    if (j.length === 2 && /^[A-Z]/.test(j)) return j
+		    return m
+		  })
+		  // A5: OCR '.'-for-space inside math (i . e . , → i.e.,)
+		  s = s.replace(/\b([a-z]) \. ([a-z])\b/g, '$1.$2')
+		  s = s.replace(/ \. /g, '.')
+		  // A7: spaced digit runs → single number (1 0 → 10, 2 0 1 1 → 2011)
+		  s = s.replace(/(\d)( \d)+(?!\d)/g, (m) => m.replace(/ /g, ''))
+		  // A6: \ : spacing command → space ; literal ~ → space
+		  s = s.replace(/\\[ \t]*:/g, ' ')
+		  s = s.replace(/~/g, ' ')
+		  return s
+		}
+		
+		function splitMathPieces(text) {
+		  const n = text.length
+		  if (!n) return [{ start: 0, end: 0, isMath: false }]
+		  const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		  const isDigit = (c) => c >= '0' && c <= '9'
+		  const PUNCTCH = (c) => '\\_{}[]()=<>+-,.:;!?/|*~\'`&%#@'.indexOf(c) >= 0
+		  const isWordAt = (txt, i) => {
+		    if (!isLetter(txt[i])) return false
+		    if (isLetter(txt[i - 1])) return true
+		    if (isLetter(txt[i + 1])) return true
+		    return false
+		  }
+		  // parse one math run FORWARD from a seed char; returns hi (exclusive)
+		  function parseMathRight(txt, start) {
+		    let i = start, depth = 0
+		    while (i < n) {
+		      const c = txt[i]
+		      if (depth > 0) {
+		        if (c === '{' || c === '(' || c === '[') depth++
+		        else if (c === '}' || c === ')' || c === ']') { depth--; i++; if (depth === 0) continue }
+		        i++; continue
+		      }
+		      if (c === '\\') { i++; while (i < n && isLetter(txt[i])) i++; continue }
+		      if (c === '_' || c === '^') { i++; continue }
+		      if (c === '{' || c === '(' || c === '[') { depth++; i++; continue }
+		      if (c === '}' || c === ')' || c === ']') { i++; continue }
+		      if (isDigit(c) || PUNCTCH(c)) { i++; continue }
+		      if (isLetter(c)) { if (isWordAt(txt, i)) break; i++; continue }
+		      if (c === ' ') {
+		        let k = i
+		        while (k < n && txt[k] === ' ') k++
+		        if (k >= n) break
+		        if (isLetter(txt[k]) && isWordAt(txt, k)) break
+		        i = k; continue
+		      }
+		      break
+		    }
+		    return i
+		  }
+		  // extend one math run LEFTWARD from lo0-1; returns new lo (inclusive)
+		  function parseMathLeft(txt, lo0) {
+		    let i = lo0 - 1, depth = 0
+		    while (i >= 0) {
+		      const c = txt[i]
+		      if (depth > 0) {
+		        if (c === '}' || c === ')' || c === ']') depth++
+		        else if (c === '{' || c === '(' || c === '[') depth--
+		        i--; continue
+		      }
+		      if (c === '}' || c === ')' || c === ']') { depth++; i--; continue }
+		      if (c === ' ') {
+		        let k = i
+		        while (k >= 0 && txt[k] === ' ') k--
+		        if (k < 0) break
+		        if (isLetter(txt[k]) && isLetter(txt[k - 1])) break
+		        i = k; continue
+		      }
+		      if (isLetter(c)) { if (isLetter(txt[i - 1])) break; i--; continue }
+		      if (isDigit(c) || PUNCTCH(c) || c === '{') { i--; continue }
+		      break
+		    }
+		    return i + 1
+		  }
+		  const seeds = []
+		  for (let i = 0; i < n; i++) { const c = text[i]; if (c === '\\' || c === '_' || c === '^') seeds.push(i) }
+		  if (!seeds.length) return [{ start: 0, end: n, isMath: false }]
+		  const regions = []
+		  for (const s of seeds) {
+		    const hi = parseMathRight(text, s)
+		    const lo = parseMathLeft(text, s)
+		    if (hi > lo) regions.push([lo, hi])
+		  }
+		  regions.sort((a, b) => a[0] - b[0])
+		  const merged = []
+		  for (const r of regions) {
+		    const last = merged[merged.length - 1]
+		    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1])
+		    else merged.push([r[0], r[1]])
+		  }
+		  const pieces = []
+		  let pos = 0
+		  for (const r of merged) {
+		    if (r[0] > pos) pieces.push({ start: pos, end: r[0], isMath: false })
+		    pieces.push({ start: r[0], end: r[1], isMath: true })
+		    pos = r[1]
+		  }
+		  if (pos < n) pieces.push({ start: pos, end: n, isMath: false })
+		  return pieces
+		}
+		
+		function mathConvert(tex) {
+		  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+		  function readGroup(t, i) {
+		    let depth = 0
+		    for (let k = i; k < t.length; k++) {
+		      if (t[k] === '{') depth++
+		      else if (t[k] === '}') { depth--; if (depth === 0) return { inner: t.slice(i + 1, k), end: k + 1 } }
+		    }
+		    return { inner: t.slice(i + 1), end: t.length }
+		  }
+		  function scriptText(txt, dir) {
+		    const map = dir === 'sub' ? MATH_SUB : MATH_SUP
+		    let out = ''
+		    for (const c of txt) {
+		      let u = map[c]
+		      if (!u && c >= 'A' && c <= 'Z') u = map[c.toLowerCase()] // T→ₜ, N→ₙ, X→ₓ …
+		      if (!u) return null
+		      out += u
+		    }
+		    return out
+		  }
+		  function scriptSpan(txt, dir) {
+		    const u = scriptText(txt, dir)
+		    if (u !== null) return { html: u, text: u }
+		    const tag = dir === 'sub' ? 'sub' : 'sup'
+		    return { html: '<' + tag + ' class="phl-math-script">' + esc(txt) + '</' + tag + '>', text: txt }
+		  }
+		  function convertSeq(t) {
+		    let i = 0, html = '', text = ''
+		    let mode = null
+		    const applyMode = (ch) => {
+		      if (mode === 'bold') return MATH_BOLD[ch] || ch
+		      if (mode === 'italic') { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D434 + ix) : ch }
+		      if (mode === 'mono') return MATH_MONO[ch] || ch
+		      return ch
+		    }
+		    while (i < t.length) {
+		      const c = t[i]
+		      if (c === '\\') {
+		        let j = i + 1
+		        while (j < t.length && ((t[j] >= 'a' && t[j] <= 'z') || (t[j] >= 'A' && t[j] <= 'Z'))) j++
+		        const cmd = t.slice(i + 1, j)
+		        if (!cmd) {
+		          const escMap = { '|':'‖','{':'{','}':'}','_':'_','%':'%','&':'&','$':'$','#':'#','~':' ',' ':' ','\\':' ' }
+		          const nx = t[i + 1]
+		          const e = escMap[nx] || ('\\' + (nx || ''))
+		          html += e; text += e; i = i + (nx ? 2 : 1); continue
+		        }
+		        let k = j
+		        let opt = null
+		        if (t[k] === '[') { const e2 = t.indexOf(']', k); if (e2 > k) { opt = t.slice(k + 1, e2); k = e2 + 1 } }
+		        let m = k
+		        while (m < t.length && t[m] === ' ') m++
+		        let arg = null, argEnd = k
+		        if (t[m] === '{') { const r = readGroup(t, m); arg = r.inner; argEnd = r.end }
+		        if (MATH_ACCENTS[cmd]) {
+		          const base = convertSeq(arg || '').text.trim()
+		          const acc = base ? Array.from(base).map((ch) => ch + MATH_ACCENTS[cmd]).join('') : ''
+		          html += acc; text += acc; i = argEnd; continue
+		        }
+		        if (cmd === 'smash') { const tc = convertSeq(arg || ''); html += tc.html; text += tc.text; i = argEnd; continue }
+		        if (cmd === 'frac') {
+		          let m2 = argEnd; while (m2 < t.length && t[m2] === ' ') m2++
+		          let r2 = '', end2 = argEnd
+		          if (t[m2] === '{') { const rr = readGroup(t, m2); r2 = rr.inner; end2 = rr.end }
+		          const a = convertSeq(arg || '').text, b = convertSeq(r2).text
+		          const s2 = a + '\u2044' + b
+		          html += s2; text += s2; i = end2; continue
+		        }
+		        if (cmd === 'sqrt') {
+		          const body = convertSeq(arg || '').text
+		          const s2 = '\u221a' + (opt ? esc(opt) : '') + '(' + body + ')'
+		          html += s2; text += s2; i = argEnd; continue
+		        }
+		        if (cmd === 'left' || cmd === 'right') { i = argEnd; continue }
+		        if (cmd === 'begin' || cmd === 'end') { i = (arg !== null) ? argEnd : j; continue }
+		        if (cmd === 'text' || cmd === 'textrm' || cmd === 'mathrm' || cmd === 'operatorname' || cmd === 'mbox') {
+		          const tc = convertSeq(arg || '')
+		          html += tc.html; text += tc.text; i = argEnd; continue
+		        }
+		        if (cmd === 'mathbf' || cmd === 'boldsymbol' || cmd === 'bf' || cmd === 'textbf') {
+		          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => MATH_BOLD[ch] || ch).join(''); html += o; text += o; i = argEnd }
+		          else { mode = 'bold'; i = j }
+		          continue
+		        }
+		        if (cmd === 'mathbb') {
+		          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => MATH_BB[ch] || ch).join('')
+		          html += o; text += o; i = argEnd; continue
+		        }
+		        if (cmd === 'mathcal') {
+		          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D49C + ix) : ch }).join('')
+		          html += o; text += o; i = argEnd; continue
+		        }
+		        if (cmd === 'mathfrak') {
+		          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D504 + ix) : ch }).join('')
+		          html += o; text += o; i = argEnd; continue
+		        }
+		        if (cmd === 'mathit' || cmd === 'it' || cmd === 'emph') {
+		          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D434 + ix) : ch }).join(''); html += o; text += o; i = argEnd }
+		          else { mode = 'italic'; i = j }
+		          continue
+		        }
+		        if (cmd === 'mathtt' || cmd === 'tt') {
+		          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => MATH_MONO[ch] || ch).join(''); html += o; text += o; i = argEnd }
+		          else { mode = 'mono'; i = j }
+		          continue
+		        }
+		        if (cmd === 'rm' || cmd === 'textrm') { mode = 'upright'; i = j; continue }
+		        if (cmd === 'tiny' || cmd === 'scriptsize' || cmd === 'footnotesize' || cmd === 'small' || cmd === 'normalsize' || cmd === 'large' || cmd === 'Large' || cmd === 'LARGE' || cmd === 'huge' || cmd === 'displaystyle' || cmd === 'textstyle') { i = (arg !== null) ? argEnd : j; continue }
+		        if (cmd === 'quad' || cmd === 'qquad') { html += '  '; text += '  '; i = argEnd; continue }
+		        const sym = MATH_SYMB[cmd] || MATH_GREEK[cmd]
+		        if (sym) { html += sym; text += sym; i = argEnd || j; continue }
+		        if (arg !== null) { const tc = convertSeq(arg); html += '\\' + cmd + '{' + tc.html + '}'; text += '\\' + cmd + '{' + tc.text + '}'; i = argEnd }
+		        else { html += '\\' + cmd; text += '\\' + cmd; i = j }
+		        continue
+		      }
+		      if (c === '_' || c === '^') {
+		        const dir = c === '_' ? 'sub' : 'sup'
+		        let k = i + 1
+		        while (k < t.length && t[k] === ' ') k++
+		        let target = null, end = k
+		        if (t[k] === '{') { const r = readGroup(t, k); target = r.inner; end = r.end }
+		        else { let e = k; while (e < t.length && ((t[e] >= 'a' && t[e] <= 'z') || (t[e] >= 'A' && t[e] <= 'Z') || (t[e] >= '0' && t[e] <= '9') || t[e] === '+' || t[e] === '-' || t[e] === '(' || t[e] === ')')) e++; target = t.slice(k, e); end = e }
+		        const sp = scriptSpan(convertSeq(target || '').text.replace(/ /g, ''), dir)
+		        html += sp.html; text += sp.text
+		        i = end; continue
+		      }
+		      if (c === '{') { const r = readGroup(t, i); const tc = convertSeq(r.inner); html += tc.html; text += tc.text; i = r.end; continue }
+		      if (c === '}') { i++; continue }
+		      const tc = applyMode(c)
+		      html += esc(tc); text += tc
+		      i++
+		    }
+		    return { html, text }
+		  }
+		  const repaired = repairMath(tex)
+		  const r = convertSeq(repaired)
+		  return { html: r.html, text: r.text, repaired }
+		}
+		
+		function segLen(seg) {
+		  if (!seg) return 0
+		  if (seg.dlen != null && seg.dlen !== undefined) return seg.dlen
+		  return (seg.end || 0) - (seg.start || 0)
+		}
+		
+		function buildTextPieces(text, spans) {
+		  const n = text.length
+		  const pieces = []
+		  const mathPieces = splitMathPieces(text)
+		  const segs = (spans || []).slice().sort((a, b) => a.char_start - b.char_start).map((s) => {
+		    const [st, en] = clampRange(s.char_start, s.char_end, n)
+		    return { start: st, end: en, span: s }
+		  }).filter((x) => x.end > x.start)
+		  let mi = 0, si = 0, pos = 0
+		  while (pos < n) {
+		    while (mi < mathPieces.length && mathPieces[mi].end <= pos) mi++
+		    while (si < segs.length && segs[si].end <= pos) si++
+		    let end = n
+		    const mCur = (mi < mathPieces.length && mathPieces[mi].start <= pos) ? mathPieces[mi] : null
+		    if (mCur && mCur.end > pos) end = Math.min(end, mCur.end)
+		    else if (mi < mathPieces.length && mathPieces[mi].start > pos) end = Math.min(end, mathPieces[mi].start)
+		    const sCur = (si < segs.length && segs[si].start <= pos) ? segs[si] : null
+		    if (sCur && sCur.end > pos) end = Math.min(end, sCur.end)
+		    else if (si < segs.length && segs[si].start > pos) end = Math.min(end, segs[si].start)
+		    const inMath = !!mCur && mCur.isMath && mCur.end > pos
+		    const inSpan = !!sCur && sCur.end > pos
+		    pieces.push({ start: pos, end, span: inSpan ? sCur.span : null, math: inMath })
+		    pos = end
+		  }
+		  return pieces
+		}
+		
 		function renderText(text, spans, opts) {
 		  const withSeg = !!(opts && opts.withSegments)
 		  const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
 		  const anchorId = (opts && opts.anchorId) || ''
 		  const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-		  if (!spans || spans.length === 0) {
-		    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-		    return [text]
-		  }
-		  const out = []
-		  let pos = 0
-		  let si = segBase
 		  const onMarkClick = opts && opts.onMarkClick
 		  const activeSpanId = opts && opts.activeSpanId
-		  for (const s of spans) {
-		    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-		    if (start > pos) {
-		      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+		  const pieces = buildTextPieces(text, spans)
+		  const out = []
+		  let si = segBase
+		  for (const p of pieces) {
+		    if (p.math) {
+		      // v0.6.1: render the repaired+converted math inside a .phl-math span. The
+		      // G2 guard: a math piece whose display is empty/whitespace folds back to
+		      // a plain text node (never emit an empty grey box — the v0.5.2 regression).
+		      const converted = mathConvert(text.slice(p.start, p.end))
+		      if (converted.text.trim().length === 0) {
+		        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(p.start, p.end)))
+		        else out.push(text.slice(p.start, p.end))
+		        si++
+		        continue
+		      }
+		      const mathEl = React.createElement('span', {
+		        className: 'phl-math',
+		        dangerouslySetInnerHTML: { __html: converted.html }
+		      })
+		      if (p.span) {
+		        const s = p.span
+		        const props = {
+		          key: s.id,
+		          style: markStyle(s, s.id === activeSpanId, !!onMarkClick, opts && opts.colors),
+		          title: (s.rationale || s.color) + (s.status ? ' [' + s.status + ']' : '')
+		        }
+		        if (withSeg) Object.assign(props, segProps(si))
+		        if (onMarkClick) {
+		          props.onClick = (e) => {
+		            if (e && e.stopPropagation) e.stopPropagation()
+		            onMarkClick(s)
+		          }
+		        }
+		        out.push(React.createElement('mark', props, mathEl))
+		      } else {
+		        const props = { key: 'math-' + si, className: 'phl-math', dangerouslySetInnerHTML: { __html: converted.html } }
+		        if (withSeg) {
+		          Object.assign(props, segProps(si))
+		          props['data-phl-dlen'] = String(converted.text.length)
+		        }
+		        out.push(React.createElement('span', props))
+		      }
 		      si++
+		      continue
 		    }
-		    if (end > start) {
+		    if (p.span) {
+		      const s = p.span
 		      const props = {
 		        key: s.id,
 		        style: markStyle(s, s.id === activeSpanId, !!onMarkClick, opts && opts.colors),
@@ -119,13 +454,12 @@ window.__ModuleLoader__.load({
 		          onMarkClick(s)
 		        }
 		      }
-		      out.push(React.createElement('mark', props, text.slice(start, end)))
+		      out.push(React.createElement('mark', props, text.slice(p.start, p.end)))
 		      si++
+		      continue
 		    }
-		    pos = Math.max(pos, end)
-		  }
-		  if (pos < text.length) {
-		    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
+		    if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(p.start, p.end)))
+		    else out.push(text.slice(p.start, p.end))
 		    si++
 		  }
 		  return out
@@ -390,15 +724,19 @@ window.__ModuleLoader__.load({
 		
 		function buildBlockSegments(anchorId, text, spans) {
 		  const segs = []
-		  const sorted = (spans || []).slice().sort((x, y) => x.char_start - y.char_start)
-		  let pos = 0
-		  for (const s of sorted) {
-		    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-		    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
-		    if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
-		    pos = Math.max(pos, end)
+		  for (const p of buildTextPieces(text, spans)) {
+		    if (p.end <= p.start) continue
+		    const seg = { anchorId, start: p.start, end: p.end, spanId: p.span ? p.span.id : null }
+		    if (p.math) {
+		      // v0.6.1: a math segment carries its DISPLAY length (dlen) — the rendered
+		      // content differs from the original raw LaTeX, and selection mapping uses
+		      // dlen to clamp display offsets while mapping a math hit to its whole
+		      // original range.
+		      seg.math = true
+		      seg.dlen = mathConvert(text.slice(p.start, p.end)).text.length
+		    }
+		    segs.push(seg)
 		  }
-		  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
 		  return segs
 		}
 		
@@ -417,7 +755,8 @@ window.__ModuleLoader__.load({
 		    if (!p || typeof p !== 'object') return null
 		    const seg = Number.isInteger(p.seg) && p.seg >= 0 && p.seg < segments.length ? segments[p.seg] : null
 		    if (!seg) return null
-		    const len = seg.end - seg.start
+		    // v0.6.1: offset clamps against the DISPLAY length (dlen) for math segments.
+		    const len = segLen(seg)
 		    const off = Math.max(0, Math.min(Number.isFinite(p.offset) ? p.offset : 0, len))
 		    return { seg: p.seg, segObj: seg, offset: off }
 		  }
@@ -426,8 +765,10 @@ window.__ModuleLoader__.load({
 		  if (!s || !e) return { ok: false, reason: 'out-of-range' }
 		  if (s.seg > e.seg || (s.seg === e.seg && s.offset > e.offset)) { const t = s; s = e; e = t }
 		  if (s.segObj.anchorId !== e.segObj.anchorId) return { ok: false, reason: 'cross-anchor' }
-		  const char_start = s.segObj.start + s.offset
-		  const char_end = e.segObj.start + e.offset
+		  // v0.6.1: a math segment maps to its WHOLE original range (partial selection
+		  // inside a rendered token clamps to the full range — can't select a sub-token).
+		  const char_start = s.segObj.math ? s.segObj.start : s.segObj.start + s.offset
+		  const char_end = e.segObj.math ? e.segObj.end : e.segObj.start + e.offset
 		  if (char_end <= char_start) return { ok: false, reason: 'empty' }
 		  return { ok: true, anchor: s.segObj.anchorId, char_start, char_end }
 		}
@@ -442,7 +783,7 @@ window.__ModuleLoader__.load({
 		    if (attr !== null && attr !== undefined && attr !== '') {
 		      const seg = Number(attr)
 		      if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
-		      const len = segments[seg].end - segments[seg].start
+		      const len = segLen(segments[seg])
 		      const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
 		      return { seg, offset: off }
 		    }
@@ -463,7 +804,7 @@ window.__ModuleLoader__.load({
 		    if (a === null || a === undefined || a === '') return null
 		    const seg = Number(a)
 		    if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
-		    return { seg, offset: end ? segments[seg].end - segments[seg].start : 0 }
+		    return { seg, offset: end ? segLen(segments[seg]) : 0 }
 		  }
 		  if (childIndex <= 0) return at(kids[0], false)
 		  if (childIndex >= kids.length) return at(kids[kids.length - 1], true)
@@ -1589,7 +1930,13 @@ window.__ModuleLoader__.load({
 		      '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
 		      // v0.5.1: the semantic label renders in its own highlight color.
 		      '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
-		      // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
+		      // v0.6.1: math formula rendering — serif-italic glyphs on a faint tint.
+		      // G2 guard: the span is only ever emitted when its display is non-empty
+		      // (see renderText), so there is no empty grey box (the v0.5.2 regression).
+		      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;background:rgba(90,120,220,.08);border-radius:3px;padding:0 1px;letter-spacing:.02em}',
+		      '.phl-math sub,.phl-math sup{font-style:normal;font-size:.72em;line-height:0;position:relative;vertical-align:baseline}',
+		      '.phl-math sub{bottom:-.25em}',
+		      '.phl-math sup{top:-.5em}',
 		      '.phl-count{margin-right:auto;opacity:.8}',
 		      '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
 		      '.phl-heading{margin:14px 0 8px;line-height:1.4}',
@@ -1716,6 +2063,11 @@ window.__ModuleLoader__.load({
 		exports.mapSelection = mapSelection;
 		exports.selectionToNorm = selectionToNorm;
 		exports.nodeOffsetToSeg = nodeOffsetToSeg;
+		exports.repairMath = repairMath;
+		exports.splitMathPieces = splitMathPieces;
+		exports.mathConvert = mathConvert;
+		exports.buildTextPieces = buildTextPieces;
+		exports.segLen = segLen;
 		exports.sectionList = sectionList;
 		exports.currentSectionId = currentSectionId;
 		exports.keyAction = keyAction;

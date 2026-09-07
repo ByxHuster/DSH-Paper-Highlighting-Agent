@@ -1,4 +1,4 @@
-# paper-highlight (v0.6.0 ✅)
+# paper-highlight (v0.6.1 ✅)
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
@@ -12,6 +12,7 @@
 > **v0.5.3（放弃数学渲染 + 一键审批反选 + 画像面板修复）2026-08-31 Phase 0 完成（归档 `v0.5.3`）**：①**移除 v0.5.1 轻量公式渲染**（回滚至 v0.5.0 纯文本渲染：`renderText`/`buildBlockSegments`/`nodeOffsetToSeg`/CSS/嵌入/导出全部还原 v0.5.0，正文按原文逐字节渲染，不再出现公式灰块）——**图例彩色语义保留**；②**一键审批「反选」= 批量恢复待审**：**Shift+点击**章节芯片 = **撤销该节的一键审批** —— 该节已接受（accepted）高亮批量恢复为**待审**（proposed）+ 该节状态恢复为**待审查**（pending）（host 新增原子动作 `revert_section`：`applyRevertSection` 为 `applyApproveSection` 的逆，accepted→proposed 逐条追加用户 decision + `resolvePendingEntry` 清 reviewed_at；`plugin.js` 响应新增 `reverted`/`reverted_count`；client `revertSection(id)` 镜像 `approveSection`，普通点击仍为审批；**不是批量否决**）；③**修复画像面板空白 + 无法返回**（v0.3 遗留潜在 bug：空示例时 `exemplarRows` 为单个元素被 `...exemplarRows` 展开 → 运行时崩溃，格式化后示例=0 才暴露；改为恒返回数组）。验证：`run-render.js`/`run-actions.js`/`run-plugin.js` PASS + profile-blank 探针 PASS（面板渲染 5 色/2 规则/示例空态/返回论文）+ revert-flow 探针 PASS（普通点击→approve_section POST + 芯片 done、Shift+点击→revert_section POST + 已恢复为待审反馈 + 芯片回待审查）+ live client bundle 验证 PASS。⚠️ **host 变更（`revert_section`/`approve_section`）需重启 3081 后落盘生效**（重启前客户端提示「审批/恢复待审失败（已回读校准）」并回读，不损坏数据）。
 > **v0.5.4（格式化后「重新提出高亮」按钮）2026-09-01 验收 PASS（归档 `v0.5.4`）**：用户需求「在用户格式化后，需要给用户一个按钮，使 agent 再次提出高亮」。**架构边界**：GUI 按钮（浏览器插件）无法直接调用 LLM Agent —— 提出高亮必须由 Agent 在会话里通过 `paper-hl-global-read` → `paper-hl-propose` 技能执行（已调研 DSH 无公开的「注入会话消息/自动调度 Agent 轮次」接口）。经确认交互为**记录请求 + 复制指令（推荐）**：①host 新增 `POST/GET /paper-hl/propose-request` 路由（`host/plugin.js` `handleProposeRequest`/`handleProposeRequestGet` + `resolvePaperId`/`paperTitle`）——落盘持久审计标记 `data/<paper_id>/propose-request.json`（`paper_id`/`title`/`requested_at`/`status:'pending'`），paper_id 解析 query→body→首篇回退（与 `/read` 一致）；②client 新增 `callProposeRequest(paperId)` 数据函数（与 `callWrite`/`callProfile`/`callFormat` 同构，transport 注入 + ok 判定 + 无 transport 干净拒绝；`scripts/gen-client.js` 新增 `proposeData` transport + `exports.callProposeRequest`）+ 工具栏「**重新提出高亮**」按钮（`phl-repropose-btn`）+ 0 高亮时正文上方**空态 CTA**（`phl-empty-cta` 横幅）→ 点击 `requestRepropose()`：POST 请求 + `copyInstruction()` 复制「请为《论文》重新提出高亮（paper_id: …）：先执行 global-read 重建逐节计划，再逐节 propose」+ flash「已记录请求（pending）并复制指令。请对 Agent 说/粘贴：『请为《论文》重新提出高亮』」。验证：`run-render.js`（`v054` callProposeRequest 矩阵）/`run-actions.js`/`run-plugin.js`（propose-request 路由矩阵）PASS + **propose-request 探针 PASS**（真实 bundle + 真实 `/read`，0 高亮数据下工具栏 + 空态 CTA 双按钮在、点击 → 恰好一次 POST {paper_id}、flash 含「已记录请求」+「请为《」+「重新提出高亮」）+ bundle 守卫 P2-h PASS + Node 残留检查（`phl-math/MathJax`=0、`reject_section`=false、revert 与 propose-request 全 true）。⚠️ **host 变更（`/propose-request` 路由）需重启 3081 后生效**；重启前按钮提示「请求重新提出高亮失败」，数据不损坏。
 > **v0.5.x 全系列（v0.5.0 / v0.5.1 / v0.5.2 / v0.5.3 / v0.5.4 / v0.5.4.1 / v0.5.4.3）2026-09-01 验收通过，系列开发完毕**：开发进度已**合并为单文档** `D:\aa\docs\paper-highlight-progress-v0.5.md`（原 `progress-v0.5.1/0.5.2/0.5.3/0.5.4.md` 分文档已删除）。
+> **v0.6.1（重新完成行内数学公式渲染）2026-09-01 实现 PASS（待归档 `v0.6.1`）**：在 v0.5.4.3 代码树上**重建行内公式渲染**（v0.5.1 实现 → v0.5.3 回滚后本次重做；数据零改动、零依赖 Unicode + CSS，无 KaTeX/MathJax）。**管线**：`splitMathPieces`（识别裸 LaTeX 片段，散文词边界停止）→ `repairMath`（MinerU OCR 空格污染修复：A1 花括号收拢 / A2 `\cmd {` 紧贴 / A3/A3b 上下标空格 / A4 空格打散命令重建 `l o g`→`log` / A5 `i . e .` 句点修复 / A7 `2 0 1 1`→`2011` / A6 `~`、`\:`→空格）→ `mathConvert`（LaTeX→Unicode/CSS：`ℝⁿ`、`αᵢⱼ` 上下标、`𝐟⃗` 强调符、`‖g‖₂`、`a⁄b`、`\bf` 字体切换、`\begin/\end` 环境标记丢弃、未知命令原样保留）。**渲染集成**：segment 新增 `math`/`dlen`（显示长度）字段，`renderText` 输出 `.phl-math` 衬线斜体 span（CSS `sub/sup` 缩排）；选区经 `data-phl-dlen` 桥接回原文偏移，数学段整段映射；**G2 防复犯**：空/纯空白显示折叠回纯文本（杜绝 v0.5.2 灰块）；**G3**：非数学正文逐字节不变。**验证**：`run-render.js` 数学离线矩阵（repair/split/convert/dlen/选区映射/G2/G3 + G1 嵌入完备性 31 helpers）全绿 + 全回归套件（run-actions/run-plugin/run-export/run-format/run-profile/run-mock/run-real/run-tools）PASS + `simulate-render` 数学静态守卫（P6）绿（E2E 数据断言受演示数据 0 spans 阻塞属 v0.6.0 既有状态）+ **`run-math-g4.js` 真实 bundle × 3 篇全锚点审计 PASS**（293 锚点 / 148 数学段 / 0 崩溃 / 0 空显示 / dlen 一致）。纯 client 改动，**无需重启 3081，刷新页面即生效**。进度见 `D:\aa\docs\paper-highlight-progress-v0.6.md`。
 
 ## 布局
 
@@ -32,7 +33,7 @@ host/
   diff.js       # (Phase 4) 审查差异分析纯函数：classifySpanChange / summarizeDiff（计数+接受率+样例）
 client/
   client.js     # (Step 3) durable client bundle：conversation.view「论文」tab 渲染 + 高亮层 + 画像/提案面板 + 导出对话框 + 格式化对话框 + 快捷键 + 进度条
-  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl/callFormat + v0.5.1 图例彩色语义 + 轻量公式渲染：MATH_SYMBOLS/supScript/subScript/boldMath/mathClean/mathConvert/splitMathPieces 纯函数，renderText/buildBlockSegments/nodeOffsetToSeg 数学片段支持）
+  render-body.js# 渲染逻辑单一来源（gen-client.js 由它生成 bundle 与动态半；keyAction/reviewProgress/buildExportUrl/callFormat + v0.5.1 图例彩色语义 + **v0.6.1 行内数学渲染**：repairMath/splitMathPieces/mathConvert/segLen/buildTextPieces 纯函数，renderText/buildBlockSegments/mapSelection 数学片段 + data-phl-dlen 偏移桥接）
 scripts/
   gen-client.js # 生成 client/client.js 与 dynamic/client-half.js
   seed-demo.js  # 种子演示 spans（幂等，store 同路径）
@@ -54,7 +55,7 @@ test/
   run-mock.js   # 离线 mock 验证（无网络）
   run-tools.js  # 工具定义 + 读写往返 + 非法 span 拒绝 + lossless JSON 回归 + append 模式 + list_sections/read_section + summarize_section_diff + duplicates 契约 + read_profile/confirm_proposal + export_paper + read_field_map + reflect_paper + format_all（v0.3 + v0.4 + v0.5）
   run-plugin.js # host 插件 /paper-hl 路由回归（read/write/profile/init/apply/save/export/format + 负例矩阵）
-  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl + v0.5 callFormat + v0.5.1 数学转换器/splitMathPieces/renderText 数学 span/选区映射/非数学布局回归守卫）
+  run-render.js # 渲染纯函数矩阵（P2-a…e + v0.3 colorLegend/callProfile/面板模型/提案模型 + v0.4 keyAction/reviewProgress/buildExportUrl + v0.5 callFormat + v0.6.1 数学管线矩阵：repairMath/splitMathPieces/mathConvert/segLen/buildTextPieces/选区 dlen 映射/G2 空显示折叠/G3 非数学逐字节回归/G1 嵌入完备性）
   run-profile.js# (v0.3) 画像层单测：冷启动/校验/摘要/applyProposal/applyProfileUpdate/confirm 工具矩阵
   run-export.js # (v0.4 Phase 0) 导出层单测：渲染矩阵 + 自包含断言 + 模板矩阵
   run-reflect-paper.js # (v0.4 Phase 3) 论文级反思模板单测：空/全接受/混合 diff/画像行/逐节表
@@ -103,6 +104,6 @@ node test/run-real.js "D:\aa\<paper>.pdf"
 
 - 槽位：`conversation.view`（list 槽 / session 作用域）——包作为 profile bundle 时自动注册「论文」tab
 - host 路由：`GET /paper-hl/read[?paperId=]` → `{ok, paperId, paperMd, anchors, highlights, papers}`；`POST /paper-hl/format`（v0.5 一键格式化，`{confirm:true, scope?}` → 审计统计；缺 confirm → 400；仅 POST）（`host/plugin.js`）
-- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例（**v0.5.1 语义标签彩色**）+ 刷新/选论文/导出/格式化 + **v0.5.1 轻量公式渲染**（`$…$`/`$$…$$` 等定界符 + 裸 LaTeX 片段 → 衬线斜体；悬停显示原始 LaTeX；导出仍保留原始文本））
+- client bundle：`client/client.js`（`fetch('/paper-hl/read')`，锚点序渲染 + `<mark>` 高亮 + 图例（**v0.5.1 语义标签彩色**）+ 刷新/选论文/导出/格式化 + **v0.6.1 行内数学渲染**（裸 LaTeX 片段 → `.phl-math` 衬线斜体 Unicode/CSS；OCR 修复层；导出仍保留原始文本））
 - 重新生成 bundle：`node scripts/gen-client.js`（改 `client/render-body.js` 后必须重跑）
 - paper profile（3081）：`dsh --profile paper --port 3081 --no-open`；数据根目录解析：组合 config `root`（profile patch 已钉 `D:\aa`）→ `PAPER_HL_ROOT` → `process.cwd()`（兜底）；从任意目录重启均不丢数据

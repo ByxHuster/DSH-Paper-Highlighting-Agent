@@ -99,6 +99,13 @@ function generateBundle() {
   lines.push(`\t\texports.mapSelection = mapSelection;`)
   lines.push(`\t\texports.selectionToNorm = selectionToNorm;`)
   lines.push(`\t\texports.nodeOffsetToSeg = nodeOffsetToSeg;`)
+  // v0.6.1: math render pipeline (repair / segment / convert) + dlen-aware
+  // segment helper for headless tests and bundle static guards.
+  lines.push(`\t\texports.repairMath = repairMath;`)
+  lines.push(`\t\texports.splitMathPieces = splitMathPieces;`)
+  lines.push(`\t\texports.mathConvert = mathConvert;`)
+  lines.push(`\t\texports.buildTextPieces = buildTextPieces;`)
+  lines.push(`\t\texports.segLen = segLen;`)
   // P2-e: section-status + current-section helpers for headless tests.
   lines.push(`\t\texports.sectionList = sectionList;`)
   lines.push(`\t\texports.currentSectionId = currentSectionId;`)

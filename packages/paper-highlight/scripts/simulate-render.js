@@ -475,6 +475,18 @@ for (const needle of p2i) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.4.1 sticky-top plumbing: ${needle}`)
 }
 console.log('bundle sticky-top plumbing (v0.5.4.1):', p2i.join(', '))
+// v0.6.1: math render pipeline — guard that every embedded math helper name is
+// present in the shipped bundle (missing toString() embed → runtime
+// ReferenceError → blank page, the v0.5.1 regression class), plus the .phl-math
+// CSS and the data-phl-dlen selection bridge. G2 static side: the CSS must
+// style .phl-math WITHOUT any fixed min-width (an empty-width span was the
+// v0.5.2 grey-box root cause; the renderText guard folds empty displays, and
+// the CSS must not reintroduce a visible box).
+const p6 = ['repairMath', 'splitMathPieces', 'mathConvert', 'buildTextPieces', 'segLen', 'MATH_GREEK', 'MATH_SYMB', 'MATH_ACCENTS', 'MATH_SUB', 'MATH_SUP', 'MATH_BB', 'MATH_BOLD', 'MATH_MONO', 'phl-math', 'data-phl-dlen', '.phl-math{font-family:Georgia']
+for (const needle of p6) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.6.1 math plumbing: ${needle}`)
+}
+console.log('bundle math plumbing (v0.6.1):', p6.join(', '))
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))

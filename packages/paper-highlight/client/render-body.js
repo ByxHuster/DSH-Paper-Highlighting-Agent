@@ -243,22 +243,55 @@ function renderText(text, spans, opts) {
   const segBase = (opts && Number.isInteger(opts.segBase)) ? opts.segBase : -1
   const anchorId = (opts && opts.anchorId) || ''
   const segProps = (i) => ({ 'data-phl-seg': String(i), 'data-phl-anchor': anchorId })
-  if (!spans || spans.length === 0) {
-    if (withSeg) return [React.createElement('span', Object.assign({ key: 'seg-' + segBase }, segProps(segBase)), text)]
-    return [text]
-  }
-  const out = []
-  let pos = 0
-  let si = segBase
   const onMarkClick = opts && opts.onMarkClick
   const activeSpanId = opts && opts.activeSpanId
-  for (const s of spans) {
-    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) {
-      out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos, start)) : text.slice(pos, start))
+  const pieces = buildTextPieces(text, spans)
+  const out = []
+  let si = segBase
+  for (const p of pieces) {
+    if (p.math) {
+      // v0.6.1: render the repaired+converted math inside a .phl-math span. The
+      // G2 guard: a math piece whose display is empty/whitespace folds back to
+      // a plain text node (never emit an empty grey box — the v0.5.2 regression).
+      const converted = mathConvert(text.slice(p.start, p.end))
+      if (converted.text.trim().length === 0) {
+        if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(p.start, p.end)))
+        else out.push(text.slice(p.start, p.end))
+        si++
+        continue
+      }
+      const mathEl = React.createElement('span', {
+        className: 'phl-math',
+        dangerouslySetInnerHTML: { __html: converted.html }
+      })
+      if (p.span) {
+        const s = p.span
+        const props = {
+          key: s.id,
+          style: markStyle(s, s.id === activeSpanId, !!onMarkClick, opts && opts.colors),
+          title: (s.rationale || s.color) + (s.status ? ' [' + s.status + ']' : '')
+        }
+        if (withSeg) Object.assign(props, segProps(si))
+        if (onMarkClick) {
+          props.onClick = (e) => {
+            if (e && e.stopPropagation) e.stopPropagation()
+            onMarkClick(s)
+          }
+        }
+        out.push(React.createElement('mark', props, mathEl))
+      } else {
+        const props = { key: 'math-' + si, className: 'phl-math', dangerouslySetInnerHTML: { __html: converted.html } }
+        if (withSeg) {
+          Object.assign(props, segProps(si))
+          props['data-phl-dlen'] = String(converted.text.length)
+        }
+        out.push(React.createElement('span', props))
+      }
       si++
+      continue
     }
-    if (end > start) {
+    if (p.span) {
+      const s = p.span
       const props = {
         key: s.id,
         style: markStyle(s, s.id === activeSpanId, !!onMarkClick, opts && opts.colors),
@@ -271,13 +304,12 @@ function renderText(text, spans, opts) {
           onMarkClick(s)
         }
       }
-      out.push(React.createElement('mark', props, text.slice(start, end)))
+      out.push(React.createElement('mark', props, text.slice(p.start, p.end)))
       si++
+      continue
     }
-    pos = Math.max(pos, end)
-  }
-  if (pos < text.length) {
-    out.push(withSeg ? React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(pos)) : text.slice(pos))
+    if (withSeg) out.push(React.createElement('span', Object.assign({ key: 'seg-' + si }, segProps(si)), text.slice(p.start, p.end)))
+    else out.push(text.slice(p.start, p.end))
     si++
   }
   return out
@@ -515,6 +547,336 @@ function reconcileSpan(spans, serverSpan, payload) {
 }
 
 /**
+ * v0.6.1 · math formula rendering (inline) — repair + segment + convert.
+ *
+ * The stored text is raw MinerU output: bare LaTeX fragments with OCR spacing
+ * corruption and NO delimiters. The pipeline below is all pure, browser-free
+ * and embedded verbatim into the shipped bundles (single-source pattern):
+ *   1. splitMathPieces(text) — find contiguous math runs (seed: `\`, `_`, `^`;
+ *      grow over mathy tokens, stop at prose words; brace/paren depth aware)
+ *   2. repairMath(tex)       — collapse OCR spacing noise into clean LaTeX
+ *   3. mathConvert(tex)      — LaTeX → Unicode/CSS display, returns
+ *      { html, text } where text is the plain display string (its length is the
+ *      data-phl-dlen used by selection mapping)
+ *
+ * Non-math text is never touched; unknown commands render literally (never drop
+ * information). Zero dependencies — no KaTeX / MathJax / external resources.
+ * Tables are inlined into the bundle as JSON constants (see BODY), matching the
+ * existing COLOR_MAP pattern.
+ */
+const MATH_GREEK = { alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',zeta:'ζ',eta:'η',theta:'θ',iota:'ι',kappa:'κ',lambda:'λ',mu:'μ',nu:'ν',xi:'ξ',pi:'π',rho:'ρ',sigma:'σ',tau:'τ',upsilon:'υ',phi:'φ',chi:'χ',psi:'ψ',omega:'ω',Gamma:'Γ',Delta:'Δ',Theta:'Θ',Lambda:'Λ',Xi:'Ξ',Pi:'Π',Sigma:'Σ',Upsilon:'Υ',Phi:'Φ',Psi:'Ψ',Omega:'Ω',vartheta:'ϑ',varphi:'φ',varepsilon:'ε',varrho:'ϱ' }
+const MATH_SYMB = { times:'×',cdot:'·',pm:'±',mp:'∓',le:'≤',ge:'≥',ne:'≠',approx:'≈',equiv:'≡',propto:'∝',in:'∈',notin:'∉',mid:'|',parallel:'∥',subset:'⊂',supset:'⊃',subseteq:'⊆',supseteq:'⊇',cup:'∪',cap:'∩',emptyset:'∅',forall:'∀',exists:'∃',neg:'¬',land:'∧',lor:'∨',to:'→',rightarrow:'→',leftarrow:'←',Rightarrow:'⇒',Leftarrow:'⇐',Leftrightarrow:'⇔',mapsto:'↦',cdots:'⋯',ldots:'…',dots:'…',vdots:'⋮',prime:'′',partial:'∂',infty:'∞',nabla:'∇',sum:'∑',prod:'∏',int:'∫',oint:'∮',deg:'°',cdotp:'·',ast:'∗',star:'⋆',circ:'∘',bullet:'∙',div:'÷',sqrt:'√',sim:'∼',simeq:'≃',cong:'≅',doteq:'≐',diamond:'⋄',triangle:'△',angle:'∠',perp:'⊥',top:'⊤',bot:'⊥',ldots:'…',lceil:'⌈',rceil:'⌉',lfloor:'⌊',rfloor:'⌋' }
+const MATH_ACCENTS = { bar:'\u0304', hat:'\u0302', tilde:'\u0303', vec:'\u20D7', dot:'\u0307', acute:'\u0301', grave:'\u0300', check:'\u030C', overline:'\u0305', overrightarrow:'\u20D7', overleftarrow:'\u20D6', widehat:'\u0302', widetilde:'\u0303', ddot:'\u0308', breve:'\u0306' }
+const MATH_SUB = { '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎','a':'ₐ','e':'ₑ','o':'ₒ','x':'ₓ','h':'ₕ','k':'ₖ','l':'ₗ','m':'ₘ','n':'ₙ','p':'ₚ','s':'ₛ','t':'ₜ','i':'ᵢ','j':'ⱼ','r':'ᵣ','u':'ᵤ','v':'ᵥ','β':'ᵦ','γ':'ᵧ','ρ':'ᵨ','φ':'ᵩ','χ':'ᵪ' }
+const MATH_SUP = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾','n':'ⁿ','i':'ⁱ','a':'ᵃ','b':'ᵇ','c':'ᶜ','d':'ᵈ','e':'ᵉ','f':'ᶠ','g':'ᵍ','h':'ʰ','j':'ʲ','k':'ᵏ','l':'ˡ','m':'ᵐ','o':'ᵒ','p':'ᵖ','r':'ʳ','s':'ˢ','t':'ᵗ','u':'ᵘ','v':'ᵛ','w':'ʷ','x':'ˣ','y':'ʸ','z':'ᶻ' }
+// double-struck caps are NOT contiguous in Unicode (C,D,G,H,J,O,P,Q,R,Z live
+// outside the mathematical-alphanumeric block) — map explicitly.
+const MATH_BB = { A:'𝔸',B:'𝔹',C:'ℂ',D:'𝔻',E:'𝔼',F:'𝔽',G:'𝔾',H:'ℍ',I:'𝕀',J:'𝕁',K:'𝕂',L:'𝕃',M:'𝕄',N:'ℕ',O:'𝕆',P:'ℙ',Q:'ℚ',R:'ℝ',S:'𝕊',T:'𝕋',U:'𝕌',V:'𝕍',W:'𝕎',X:'𝕏',Y:'𝕐',Z:'ℤ','0':'𝟘','1':'𝟙','2':'𝟚','3':'𝟛','4':'𝟜','5':'𝟝','6':'𝟞','7':'𝟟','8':'𝟠','9':'𝟡' }
+const MATH_BOLD = (function () { const m = {}; const lo = 'abcdefghijklmnopqrstuvwxyz', up = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', d = '0123456789'; for (let i = 0; i < lo.length; i++) m[lo[i]] = String.fromCodePoint(0x1D41A + i); for (let i = 0; i < up.length; i++) m[up[i]] = String.fromCodePoint(0x1D400 + i); for (let i = 0; i < d.length; i++) m[d[i]] = String.fromCodePoint(0x1D7CE + i); return m })()
+const MATH_MONO = (function () { const m = {}; const lo = 'abcdefghijklmnopqrstuvwxyz', up = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', d = '0123456789'; for (let i = 0; i < lo.length; i++) m[lo[i]] = String.fromCodePoint(0x1D68A + i); for (let i = 0; i < up.length; i++) m[up[i]] = String.fromCodePoint(0x1D670 + i); for (let i = 0; i < d.length; i++) m[d[i]] = String.fromCodePoint(0x1D7F6 + i); return m })()
+
+/** Repair OCR spacing corruption inside one math run (conservative, no data loss). */
+function repairMath(tex) {
+  let s = tex
+  // A1: single-token brace collapse { x } → {x} (never touch nested braces)
+  s = s.replace(/\{\s+([^{}\s]+)\s+\}/g, '{$1}')
+  // A2: \cmd { → \cmd{
+  s = s.replace(/(\\[A-Za-z]+)\s+(\{)/g, '$1$2')
+  // A3: base<space>script → base<script  (x _ { → x_{)
+  s = s.replace(/([^\s])\s+([_\^])/g, '$1$2')
+  // A3b: script<space>brace → script{  (x_ {1} → x_{1})
+  s = s.replace(/([_\^])\s+(\{)/g, '$1$2')
+  // A4: spaced single-letter runs → join when word-like (l o g → log)
+  s = s.replace(/(?<![A-Za-z])((?:[A-Za-z] )+[A-Za-z])(?![A-Za-z])/g, (m) => {
+    const j = m.replace(/ /g, '')
+    if (j === 'log' || j === 'max' || j === 'min' || j === 'arg' || j === 'exp' || j === 'sin' || j === 'cos' || j === 'tan' || j === 'sup' || j === 'inf' || j === 'lim' || j === 'det' || j === 'dim' || j === 'to' || j === 'of' || j === 'in' || j === 'and' || j === 'with' || j === 'perplexity') return j
+    if (j.length >= 3 && /[aeiou]/.test(j) && j === j.toLowerCase()) return j
+    if (j.length === 2 && /^[A-Z]/.test(j)) return j
+    return m
+  })
+  // A5: OCR '.'-for-space inside math (i . e . , → i.e.,)
+  s = s.replace(/\b([a-z]) \. ([a-z])\b/g, '$1.$2')
+  s = s.replace(/ \. /g, '.')
+  // A7: spaced digit runs → single number (1 0 → 10, 2 0 1 1 → 2011)
+  s = s.replace(/(\d)( \d)+(?!\d)/g, (m) => m.replace(/ /g, ''))
+  // A6: \ : spacing command → space ; literal ~ → space
+  s = s.replace(/\\[ \t]*:/g, ' ')
+  s = s.replace(/~/g, ' ')
+  return s
+}
+
+/** Split text into contiguous math / plain pieces covering [0, len). */
+function splitMathPieces(text) {
+  const n = text.length
+  if (!n) return [{ start: 0, end: 0, isMath: false }]
+  const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+  const isDigit = (c) => c >= '0' && c <= '9'
+  const PUNCTCH = (c) => '\\_{}[]()=<>+-,.:;!?/|*~\'`&%#@'.indexOf(c) >= 0
+  const isWordAt = (txt, i) => {
+    if (!isLetter(txt[i])) return false
+    if (isLetter(txt[i - 1])) return true
+    if (isLetter(txt[i + 1])) return true
+    return false
+  }
+  // parse one math run FORWARD from a seed char; returns hi (exclusive)
+  function parseMathRight(txt, start) {
+    let i = start, depth = 0
+    while (i < n) {
+      const c = txt[i]
+      if (depth > 0) {
+        if (c === '{' || c === '(' || c === '[') depth++
+        else if (c === '}' || c === ')' || c === ']') { depth--; i++; if (depth === 0) continue }
+        i++; continue
+      }
+      if (c === '\\') { i++; while (i < n && isLetter(txt[i])) i++; continue }
+      if (c === '_' || c === '^') { i++; continue }
+      if (c === '{' || c === '(' || c === '[') { depth++; i++; continue }
+      if (c === '}' || c === ')' || c === ']') { i++; continue }
+      if (isDigit(c) || PUNCTCH(c)) { i++; continue }
+      if (isLetter(c)) { if (isWordAt(txt, i)) break; i++; continue }
+      if (c === ' ') {
+        let k = i
+        while (k < n && txt[k] === ' ') k++
+        if (k >= n) break
+        if (isLetter(txt[k]) && isWordAt(txt, k)) break
+        i = k; continue
+      }
+      break
+    }
+    return i
+  }
+  // extend one math run LEFTWARD from lo0-1; returns new lo (inclusive)
+  function parseMathLeft(txt, lo0) {
+    let i = lo0 - 1, depth = 0
+    while (i >= 0) {
+      const c = txt[i]
+      if (depth > 0) {
+        if (c === '}' || c === ')' || c === ']') depth++
+        else if (c === '{' || c === '(' || c === '[') depth--
+        i--; continue
+      }
+      if (c === '}' || c === ')' || c === ']') { depth++; i--; continue }
+      if (c === ' ') {
+        let k = i
+        while (k >= 0 && txt[k] === ' ') k--
+        if (k < 0) break
+        if (isLetter(txt[k]) && isLetter(txt[k - 1])) break
+        i = k; continue
+      }
+      if (isLetter(c)) { if (isLetter(txt[i - 1])) break; i--; continue }
+      if (isDigit(c) || PUNCTCH(c) || c === '{') { i--; continue }
+      break
+    }
+    return i + 1
+  }
+  const seeds = []
+  for (let i = 0; i < n; i++) { const c = text[i]; if (c === '\\' || c === '_' || c === '^') seeds.push(i) }
+  if (!seeds.length) return [{ start: 0, end: n, isMath: false }]
+  const regions = []
+  for (const s of seeds) {
+    const hi = parseMathRight(text, s)
+    const lo = parseMathLeft(text, s)
+    if (hi > lo) regions.push([lo, hi])
+  }
+  regions.sort((a, b) => a[0] - b[0])
+  const merged = []
+  for (const r of regions) {
+    const last = merged[merged.length - 1]
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1])
+    else merged.push([r[0], r[1]])
+  }
+  const pieces = []
+  let pos = 0
+  for (const r of merged) {
+    if (r[0] > pos) pieces.push({ start: pos, end: r[0], isMath: false })
+    pieces.push({ start: r[0], end: r[1], isMath: true })
+    pos = r[1]
+  }
+  if (pos < n) pieces.push({ start: pos, end: n, isMath: false })
+  return pieces
+}
+
+/** Convert one math run (already extracted) to { html, text } display. */
+function mathConvert(tex) {
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  function readGroup(t, i) {
+    let depth = 0
+    for (let k = i; k < t.length; k++) {
+      if (t[k] === '{') depth++
+      else if (t[k] === '}') { depth--; if (depth === 0) return { inner: t.slice(i + 1, k), end: k + 1 } }
+    }
+    return { inner: t.slice(i + 1), end: t.length }
+  }
+  function scriptText(txt, dir) {
+    const map = dir === 'sub' ? MATH_SUB : MATH_SUP
+    let out = ''
+    for (const c of txt) {
+      let u = map[c]
+      if (!u && c >= 'A' && c <= 'Z') u = map[c.toLowerCase()] // T→ₜ, N→ₙ, X→ₓ …
+      if (!u) return null
+      out += u
+    }
+    return out
+  }
+  function scriptSpan(txt, dir) {
+    const u = scriptText(txt, dir)
+    if (u !== null) return { html: u, text: u }
+    const tag = dir === 'sub' ? 'sub' : 'sup'
+    return { html: '<' + tag + ' class="phl-math-script">' + esc(txt) + '</' + tag + '>', text: txt }
+  }
+  function convertSeq(t) {
+    let i = 0, html = '', text = ''
+    let mode = null
+    const applyMode = (ch) => {
+      if (mode === 'bold') return MATH_BOLD[ch] || ch
+      if (mode === 'italic') { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D434 + ix) : ch }
+      if (mode === 'mono') return MATH_MONO[ch] || ch
+      return ch
+    }
+    while (i < t.length) {
+      const c = t[i]
+      if (c === '\\') {
+        let j = i + 1
+        while (j < t.length && ((t[j] >= 'a' && t[j] <= 'z') || (t[j] >= 'A' && t[j] <= 'Z'))) j++
+        const cmd = t.slice(i + 1, j)
+        if (!cmd) {
+          const escMap = { '|':'‖','{':'{','}':'}','_':'_','%':'%','&':'&','$':'$','#':'#','~':' ',' ':' ','\\':' ' }
+          const nx = t[i + 1]
+          const e = escMap[nx] || ('\\' + (nx || ''))
+          html += e; text += e; i = i + (nx ? 2 : 1); continue
+        }
+        let k = j
+        let opt = null
+        if (t[k] === '[') { const e2 = t.indexOf(']', k); if (e2 > k) { opt = t.slice(k + 1, e2); k = e2 + 1 } }
+        let m = k
+        while (m < t.length && t[m] === ' ') m++
+        let arg = null, argEnd = k
+        if (t[m] === '{') { const r = readGroup(t, m); arg = r.inner; argEnd = r.end }
+        if (MATH_ACCENTS[cmd]) {
+          const base = convertSeq(arg || '').text.trim()
+          const acc = base ? Array.from(base).map((ch) => ch + MATH_ACCENTS[cmd]).join('') : ''
+          html += acc; text += acc; i = argEnd; continue
+        }
+        if (cmd === 'smash') { const tc = convertSeq(arg || ''); html += tc.html; text += tc.text; i = argEnd; continue }
+        if (cmd === 'frac') {
+          let m2 = argEnd; while (m2 < t.length && t[m2] === ' ') m2++
+          let r2 = '', end2 = argEnd
+          if (t[m2] === '{') { const rr = readGroup(t, m2); r2 = rr.inner; end2 = rr.end }
+          const a = convertSeq(arg || '').text, b = convertSeq(r2).text
+          const s2 = a + '\u2044' + b
+          html += s2; text += s2; i = end2; continue
+        }
+        if (cmd === 'sqrt') {
+          const body = convertSeq(arg || '').text
+          const s2 = '\u221a' + (opt ? esc(opt) : '') + '(' + body + ')'
+          html += s2; text += s2; i = argEnd; continue
+        }
+        if (cmd === 'left' || cmd === 'right') { i = argEnd; continue }
+        if (cmd === 'begin' || cmd === 'end') { i = (arg !== null) ? argEnd : j; continue }
+        if (cmd === 'text' || cmd === 'textrm' || cmd === 'mathrm' || cmd === 'operatorname' || cmd === 'mbox') {
+          const tc = convertSeq(arg || '')
+          html += tc.html; text += tc.text; i = argEnd; continue
+        }
+        if (cmd === 'mathbf' || cmd === 'boldsymbol' || cmd === 'bf' || cmd === 'textbf') {
+          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => MATH_BOLD[ch] || ch).join(''); html += o; text += o; i = argEnd }
+          else { mode = 'bold'; i = j }
+          continue
+        }
+        if (cmd === 'mathbb') {
+          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => MATH_BB[ch] || ch).join('')
+          html += o; text += o; i = argEnd; continue
+        }
+        if (cmd === 'mathcal') {
+          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D49C + ix) : ch }).join('')
+          html += o; text += o; i = argEnd; continue
+        }
+        if (cmd === 'mathfrak') {
+          const tc = convertSeq(arg || ''); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D504 + ix) : ch }).join('')
+          html += o; text += o; i = argEnd; continue
+        }
+        if (cmd === 'mathit' || cmd === 'it' || cmd === 'emph') {
+          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => { const ix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(ch); return ix >= 0 ? String.fromCodePoint(0x1D434 + ix) : ch }).join(''); html += o; text += o; i = argEnd }
+          else { mode = 'italic'; i = j }
+          continue
+        }
+        if (cmd === 'mathtt' || cmd === 'tt') {
+          if (arg !== null) { const tc = convertSeq(arg); const o = Array.from(tc.text).map((ch) => MATH_MONO[ch] || ch).join(''); html += o; text += o; i = argEnd }
+          else { mode = 'mono'; i = j }
+          continue
+        }
+        if (cmd === 'rm' || cmd === 'textrm') { mode = 'upright'; i = j; continue }
+        if (cmd === 'tiny' || cmd === 'scriptsize' || cmd === 'footnotesize' || cmd === 'small' || cmd === 'normalsize' || cmd === 'large' || cmd === 'Large' || cmd === 'LARGE' || cmd === 'huge' || cmd === 'displaystyle' || cmd === 'textstyle') { i = (arg !== null) ? argEnd : j; continue }
+        if (cmd === 'quad' || cmd === 'qquad') { html += '  '; text += '  '; i = argEnd; continue }
+        const sym = MATH_SYMB[cmd] || MATH_GREEK[cmd]
+        if (sym) { html += sym; text += sym; i = argEnd || j; continue }
+        if (arg !== null) { const tc = convertSeq(arg); html += '\\' + cmd + '{' + tc.html + '}'; text += '\\' + cmd + '{' + tc.text + '}'; i = argEnd }
+        else { html += '\\' + cmd; text += '\\' + cmd; i = j }
+        continue
+      }
+      if (c === '_' || c === '^') {
+        const dir = c === '_' ? 'sub' : 'sup'
+        let k = i + 1
+        while (k < t.length && t[k] === ' ') k++
+        let target = null, end = k
+        if (t[k] === '{') { const r = readGroup(t, k); target = r.inner; end = r.end }
+        else { let e = k; while (e < t.length && ((t[e] >= 'a' && t[e] <= 'z') || (t[e] >= 'A' && t[e] <= 'Z') || (t[e] >= '0' && t[e] <= '9') || t[e] === '+' || t[e] === '-' || t[e] === '(' || t[e] === ')')) e++; target = t.slice(k, e); end = e }
+        const sp = scriptSpan(convertSeq(target || '').text.replace(/ /g, ''), dir)
+        html += sp.html; text += sp.text
+        i = end; continue
+      }
+      if (c === '{') { const r = readGroup(t, i); const tc = convertSeq(r.inner); html += tc.html; text += tc.text; i = r.end; continue }
+      if (c === '}') { i++; continue }
+      const tc = applyMode(c)
+      html += esc(tc); text += tc
+      i++
+    }
+    return { html, text }
+  }
+  const repaired = repairMath(tex)
+  const r = convertSeq(repaired)
+  return { html: r.html, text: r.text, repaired }
+}
+
+/** Display length of a segment (dlen-aware; plain segments are start..end). */
+function segLen(seg) {
+  if (!seg) return 0
+  if (seg.dlen != null && seg.dlen !== undefined) return seg.dlen
+  return (seg.end || 0) - (seg.start || 0)
+}
+
+/**
+ * Atomic text partition of one anchor: the intersection of highlight-span
+ * intervals and math runs. buildBlockSegments and renderText both derive from
+ * this, so segment indices stay in lock-step with the emitted nodes.
+ */
+function buildTextPieces(text, spans) {
+  const n = text.length
+  const pieces = []
+  const mathPieces = splitMathPieces(text)
+  const segs = (spans || []).slice().sort((a, b) => a.char_start - b.char_start).map((s) => {
+    const [st, en] = clampRange(s.char_start, s.char_end, n)
+    return { start: st, end: en, span: s }
+  }).filter((x) => x.end > x.start)
+  let mi = 0, si = 0, pos = 0
+  while (pos < n) {
+    while (mi < mathPieces.length && mathPieces[mi].end <= pos) mi++
+    while (si < segs.length && segs[si].end <= pos) si++
+    let end = n
+    const mCur = (mi < mathPieces.length && mathPieces[mi].start <= pos) ? mathPieces[mi] : null
+    if (mCur && mCur.end > pos) end = Math.min(end, mCur.end)
+    else if (mi < mathPieces.length && mathPieces[mi].start > pos) end = Math.min(end, mathPieces[mi].start)
+    const sCur = (si < segs.length && segs[si].start <= pos) ? segs[si] : null
+    if (sCur && sCur.end > pos) end = Math.min(end, sCur.end)
+    else if (si < segs.length && segs[si].start > pos) end = Math.min(end, segs[si].start)
+    const inMath = !!mCur && mCur.isMath && mCur.end > pos
+    const inSpan = !!sCur && sCur.end > pos
+    pieces.push({ start: pos, end, span: inSpan ? sCur.span : null, math: inMath })
+    pos = end
+  }
+  return pieces
+}
+
+/**
  * v0.2 Phase 2 (P2-d) · selection → anchor range mapping.
  *
  * buildSegmentMap turns the render block list into a FLAT list of segments —
@@ -530,15 +892,19 @@ function reconcileSpan(spans, serverSpan, payload) {
 
 function buildBlockSegments(anchorId, text, spans) {
   const segs = []
-  const sorted = (spans || []).slice().sort((x, y) => x.char_start - y.char_start)
-  let pos = 0
-  for (const s of sorted) {
-    const [start, end] = clampRange(s.char_start, s.char_end, text.length)
-    if (start > pos) segs.push({ anchorId, start: pos, end: start, spanId: null })
-    if (end > start) segs.push({ anchorId, start, end, spanId: s.id })
-    pos = Math.max(pos, end)
+  for (const p of buildTextPieces(text, spans)) {
+    if (p.end <= p.start) continue
+    const seg = { anchorId, start: p.start, end: p.end, spanId: p.span ? p.span.id : null }
+    if (p.math) {
+      // v0.6.1: a math segment carries its DISPLAY length (dlen) — the rendered
+      // content differs from the original raw LaTeX, and selection mapping uses
+      // dlen to clamp display offsets while mapping a math hit to its whole
+      // original range.
+      seg.math = true
+      seg.dlen = mathConvert(text.slice(p.start, p.end)).text.length
+    }
+    segs.push(seg)
   }
-  if (pos < text.length) segs.push({ anchorId, start: pos, end: text.length, spanId: null })
   return segs
 }
 
@@ -568,7 +934,8 @@ function mapSelection(segments, sel) {
     if (!p || typeof p !== 'object') return null
     const seg = Number.isInteger(p.seg) && p.seg >= 0 && p.seg < segments.length ? segments[p.seg] : null
     if (!seg) return null
-    const len = seg.end - seg.start
+    // v0.6.1: offset clamps against the DISPLAY length (dlen) for math segments.
+    const len = segLen(seg)
     const off = Math.max(0, Math.min(Number.isFinite(p.offset) ? p.offset : 0, len))
     return { seg: p.seg, segObj: seg, offset: off }
   }
@@ -577,8 +944,10 @@ function mapSelection(segments, sel) {
   if (!s || !e) return { ok: false, reason: 'out-of-range' }
   if (s.seg > e.seg || (s.seg === e.seg && s.offset > e.offset)) { const t = s; s = e; e = t }
   if (s.segObj.anchorId !== e.segObj.anchorId) return { ok: false, reason: 'cross-anchor' }
-  const char_start = s.segObj.start + s.offset
-  const char_end = e.segObj.start + e.offset
+  // v0.6.1: a math segment maps to its WHOLE original range (partial selection
+  // inside a rendered token clamps to the full range — can't select a sub-token).
+  const char_start = s.segObj.math ? s.segObj.start : s.segObj.start + s.offset
+  const char_end = e.segObj.math ? e.segObj.end : e.segObj.start + e.offset
   if (char_end <= char_start) return { ok: false, reason: 'empty' }
   return { ok: true, anchor: s.segObj.anchorId, char_start, char_end }
 }
@@ -602,7 +971,7 @@ function nodeOffsetToSeg(node, offset, segments) {
     if (attr !== null && attr !== undefined && attr !== '') {
       const seg = Number(attr)
       if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
-      const len = segments[seg].end - segments[seg].start
+      const len = segLen(segments[seg])
       const off = isEl ? (offset > 0 ? len : 0) : Math.max(0, Math.min(offset, len))
       return { seg, offset: off }
     }
@@ -624,7 +993,7 @@ function blockChildToSeg(blockEl, childIndex, segments) {
     if (a === null || a === undefined || a === '') return null
     const seg = Number(a)
     if (!(Number.isInteger(seg) && seg >= 0 && seg < segments.length)) return null
-    return { seg, offset: end ? segments[seg].end - segments[seg].start : 0 }
+    return { seg, offset: end ? segLen(segments[seg]) : 0 }
   }
   if (childIndex <= 0) return at(kids[0], false)
   if (childIndex >= kids.length) return at(kids[kids.length - 1], true)
@@ -770,11 +1139,31 @@ const BODY = String.raw`
 const COLOR_MAP = ${JSON.stringify(COLOR_MAP)};
 const COLOR_LABELS = ${JSON.stringify(COLOR_LABELS)};
 
+// v0.6.1 math tables — inlined JSON so the browser bundle is self-contained.
+const MATH_GREEK = ${JSON.stringify(MATH_GREEK)};
+const MATH_SYMB = ${JSON.stringify(MATH_SYMB)};
+const MATH_ACCENTS = ${JSON.stringify(MATH_ACCENTS)};
+const MATH_SUB = ${JSON.stringify(MATH_SUB)};
+const MATH_SUP = ${JSON.stringify(MATH_SUP)};
+const MATH_BB = ${JSON.stringify(MATH_BB)};
+const MATH_BOLD = ${JSON.stringify(MATH_BOLD)};
+const MATH_MONO = ${JSON.stringify(MATH_MONO)};
+
 ${clampRange.toString()}
 
 ${sortAnchorIds.toString()}
 
 ${buildBlocks.toString()}
+
+${repairMath.toString()}
+
+${splitMathPieces.toString()}
+
+${mathConvert.toString()}
+
+${segLen.toString()}
+
+${buildTextPieces.toString()}
 
 ${renderText.toString()}
 
@@ -1898,7 +2287,13 @@ function apply(ctx) {
       '.phl-legend-item{display:inline-flex;align-items:center;gap:4px}',
       // v0.5.1: the semantic label renders in its own highlight color.
       '.phl-legend-label{white-space:nowrap;font-weight:600;opacity:.95}',
-      // v0.5.1: lightweight math — serif-italic glyphs with a faint tint.
+      // v0.6.1: math formula rendering — serif-italic glyphs on a faint tint.
+      // G2 guard: the span is only ever emitted when its display is non-empty
+      // (see renderText), so there is no empty grey box (the v0.5.2 regression).
+      '.phl-math{font-family:Georgia,"Times New Roman",serif;font-style:italic;background:rgba(90,120,220,.08);border-radius:3px;padding:0 1px;letter-spacing:.02em}',
+      '.phl-math sub,.phl-math sup{font-style:normal;font-size:.72em;line-height:0;position:relative;vertical-align:baseline}',
+      '.phl-math sub{bottom:-.25em}',
+      '.phl-math sup{top:-.5em}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',
@@ -2054,4 +2449,11 @@ module.exports = {
   profileSavePayload,
   proposalCardModel,
   buildApplyDecisions,
+  // v0.6.1: math render pipeline (repair / segment / convert) + dlen-aware
+  // segment helper, exported for gen-client headless tests + static guards.
+  repairMath,
+  splitMathPieces,
+  mathConvert,
+  segLen,
+  buildTextPieces,
 }
