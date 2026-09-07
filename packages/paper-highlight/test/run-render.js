@@ -802,6 +802,31 @@ function main() {
     const rtMark = renderText('H \\times V', [{ id: 's-m1', char_start: 0, char_end: 10, color: 'red', status: 'accepted' }], {})
     assert(rtMark.length === 1 && rtMark[0].type === 'mark' && rtMark[0].children[0].props.className === 'phl-math', 'renderText: math inside a mark wraps the math span')
 
+    // v0.6.1.2 regression — parenthetical prose must NOT be swallowed by math:
+    // "s _ { i - 1 } (just before emitting y _ { i } , Eq. (4)) and the j \cdot
+    // -th annotation h _ { j } of the input sentence." splits into math runs
+    // around each seed with the "(just before emitting …)" aside staying prose.
+    // (root cause: i++ double-increment in parseMathRight skipped the second of
+    // a "))" pair → depth leaked to the line end; plus paren-prose detection)
+    {
+      const aside = 's _ { i - 1 } (just before emitting y _ { i } , Eq. (4)) and the j \\cdot -th annotation h _ { j } of the input sentence.'
+      const ap = splitMathPieces(aside)
+      const aMath = ap.filter((p) => p.isMath).map((p) => aside.slice(p.start, p.end))
+      assert(aMath.length === 4 && aMath[0].indexOf('s _ { i - 1 }') >= 0 && aMath[1].indexOf('y _ { i }') >= 0 && aMath[2].indexOf('\\cdot') >= 0 && aMath[3].indexOf('h _ { j }') >= 0, 'v0.6.1.2: parenthetical prose stays prose, math runs split around seeds')
+      const aAside = ap.filter((p) => !p.isMath).map((p) => aside.slice(p.start, p.end))
+      assert(aAside.some((s) => s.indexOf('(just before emitting') >= 0) && aAside.some((s) => s.indexOf('Eq. (4)) and the') >= 0), 'v0.6.1.2: "(just before emitting … Eq. (4))" parenthetical renders as prose')
+      assert(ap.length >= 8, 'v0.6.1.2: aside no longer collapses into a single math run')
+    }
+    // nested "))" pair — the i++ double-increment regression (depth leak): the
+    // second ")" of a "))" pair must still decrement depth (the old code's
+    // i++-then-i++ skipped it), so "then prose" after the pair stays prose.
+    {
+      const nested = 'g _ { 1 } ( x ( y ) ) then prose'
+      const np = splitMathPieces(nested)
+      const nMath = np.filter((p) => p.isMath).map((p) => nested.slice(p.start, p.end))
+      assert(nMath.length === 1 && nMath[0].indexOf('g _ { 1 }') >= 0 && nMath[0].indexOf('then') === -1, 'v0.6.1.2: nested )) pair closes cleanly, no depth leak into prose')
+    }
+
     // ══════════════════ v0.6.1+ · KaTeX render branch ══════════════════
     // katexRender prefers the real KaTeX engine when a global `katex` exists
     // (the shipped bundles inline it); Node module tests lack it by default, so

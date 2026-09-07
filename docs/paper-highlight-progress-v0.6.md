@@ -169,6 +169,7 @@
 |---|---|---|
 | v0.6.1 | 行内公式：修复层 + 分段层 + 转换层 + 渲染集成 + 回归闸门 | ✅ **已实现并 PASS**：`run-render` 离线矩阵全绿（repair/split/convert/dlen/选区映射/G2/G3/G1-32 helpers + KaTeX 分支矩阵）+ 全回归套件绿 + `simulate-render` 数学/KaTeX 静态守卫绿（E2E 数据断言受演示数据 0 spans 阻塞为 v0.6.0 既有状态）+ `run-math-g4` 真实 bundle × 3 篇全锚点审计 PASS（293 锚点 / 148 数学段 / 0 崩溃 / 0 空显示 / **KaTeX 引擎 148/148 接管 / 0 katex-error**） |
 | v0.6.1+ | **KaTeX 渲染升级**（D3 修订：零 CDN + 本地 KaTeX）：`katex.min.js` + 20 个数学字体 base64 内联进 bundle（117KB→759KB，本地加载无网络）；`katexRender` 三态（KaTeX 优先 / 抛错降级近似 / 空显示 G2 折叠）；方框（tofu）因 KaTeX 自带字体根治；client.js 759KB | ✅ **已实现并 PASS**（见 v0.6.1 验收行：g4 证明 148 段全部 KaTeX 渲染、0 错误标记）—— 纯 client，刷新即生效，无需重启 3081 |
+| v0.6.1.2 | **修复数学区误吞散文括注**：`parseMathRight` i++ 双增 bug（`))` 相邻时跳过第二个 `)` → depth 泄漏吞到句尾）+ 括号内散文括注被吞（`(just before emitting …)`）+ 命令参数豁免（`\end{array}` 的 `{array}`） | ✅ **已实现并 PASS**：run-render 新增 aside 分割 / 嵌套 `))` 回归断言；G4 回到 293 锚点 / 151 数学段 / **0 katex-error**（修复前 1）；全回归套件绿；bundle 760KB 纯 client 刷新即生效 |
 | v0.6.2 | 行间公式：检测 + 环境感知修复 + 块级渲染（多行 / matrix grid）+ 合成 fixture 验证 | 合成 fixture 渲染 + 偏移 PASS |
 | v0.6.3 | 文档同步（one-pager / user-guide / README / 本计划转交付记录）+ git 提交 + tag | 全量回归 + 验收 |
 

@@ -95,17 +95,47 @@ function splitMathPieces(text) {
   }
   // parse one math run FORWARD from a seed char; returns hi (exclusive)
   function parseMathRight(txt, start) {
-    let i = start, depth = 0
+    let i = start, depth = 0, cmdParam = 0
     while (i < n) {
       const c = txt[i]
       if (depth > 0) {
+        // inside a bracket: LaTeX commands pass, nested brackets count, but a
+        // bare multi-letter word is PROSE (e.g. "(just before emitting …)") —
+        // end the math run instead of swallowing the parenthetical. EXCEPT
+        // inside a command parameter like \end{array} / \begin{array} — the
+        // {array} is an identifier, not prose (cmdParam tracks those).
+        if (c === '\\') {
+          i++; while (i < n && isLetter(txt[i])) i++
+          let k = i
+          while (k < n && txt[k] === ' ') k++
+          if (k < n && txt[k] === '{') cmdParam++
+          continue
+        }
         if (c === '{' || c === '(' || c === '[') depth++
-        else if (c === '}' || c === ')' || c === ']') { depth--; i++; if (depth === 0) continue }
+        else if (c === '}' || c === ')' || c === ']') {
+          if (cmdParam > 0 && c === '}') cmdParam--
+          depth--; i++; continue
+        }
+        else if (cmdParam === 0 && isLetter(c) && isWordAt(txt, i)) break
         i++; continue
       }
-      if (c === '\\') { i++; while (i < n && isLetter(txt[i])) i++; continue }
+      if (c === '\\') {
+        i++; while (i < n && isLetter(txt[i])) i++
+        let k = i
+        while (k < n && txt[k] === ' ') k++
+        if (k < n && txt[k] === '{') cmdParam++
+        continue
+      }
       if (c === '_' || c === '^') { i++; continue }
-      if (c === '{' || c === '(' || c === '[') { depth++; i++; continue }
+      if (c === '{' || c === '[') { depth++; i++; continue }
+      if (c === '(') {
+        // a paren whose next non-space char is a prose word ("(just …") is a
+        // parenthetical aside, not math — stop before it (closes the run).
+        let k = i + 1
+        while (k < n && txt[k] === ' ') k++
+        if (isLetter(txt[k]) && isWordAt(txt, k)) break
+        depth++; i++; continue
+      }
       if (c === '}' || c === ')' || c === ']') { i++; continue }
       if (isDigit(c) || PUNCTCH(c)) { i++; continue }
       if (isLetter(c)) { if (isWordAt(txt, i)) break; i++; continue }
