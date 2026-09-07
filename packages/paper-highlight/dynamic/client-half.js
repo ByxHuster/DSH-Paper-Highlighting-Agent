@@ -473,13 +473,7 @@ function keyAction(event, state, opts) {
   const st = state || {}
   if (st.panelView && st.panelView !== 'paper') return null
   const key = event.key
-  if (event.ctrlKey || event.metaKey || event.altKey) {
-    if ((event.ctrlKey || event.metaKey) && key === 'Enter') {
-      const id = st.currentSection || (st.sectionItems && st.sectionItems[0] && st.sectionItems[0].id)
-      return id ? { type: 'markSectionReviewed', section: id } : null
-    }
-    return null
-  }
+  if (event.ctrlKey || event.metaKey || event.altKey) return null
   if (key === 'Escape') return { type: 'cancel' }
   if (key === 'e' || key === 'E') return { type: 'toggleExport' }
   const spanId = st.menuOpen && st.activeSpanId ? st.activeSpanId : null
@@ -611,9 +605,7 @@ function PaperView() {
         menuOpen,
         activeSpanId,
         addDraft: !!addDraft,
-        rescueTarget,
-        currentSection,
-        sectionItems: d.sectionItems || []
+        rescueTarget
       }, { palette: d.palette || [] })
       if (!act) return
       if (act.type === 'cancel') {
@@ -622,7 +614,6 @@ function PaperView() {
       else if (act.type === 'reject') d.applyAction({ action: 'reject', span_id: act.span_id })
       else if (act.type === 'rescope') { setRescueTarget(act.span_id); setMenuOpen(false) }
       else if (act.type === 'recolor') d.applyAction({ action: 'recolor', span_id: act.span_id, color: act.color })
-      else if (act.type === 'markSectionReviewed') d.markCurrentReviewed()
       else if (act.type === 'toggleExport') setExportOpen((v) => !v)
     }
     window.addEventListener('keydown', onKey)
@@ -747,28 +738,6 @@ function PaperView() {
     setCurrentSection(currentSectionId(data.sections, tops, top, height))
   }
 
-  // P2-e: mark the current section reviewed — optimistic ✓ first, then the
-  // review_section round trip (reconcile with the server entry / re-read on
-  // failure), mirroring the P2-c applyAction contract.
-  const markCurrentReviewed = () => {
-    const id = currentSection || (sectionItems[0] && sectionItems[0].id)
-    if (!id) return
-    const optimistic = { status: 'reviewed', reviewed_at: new Date().toISOString() }
-    setSectionOverrides((m) => Object.assign({}, m, { [id]: optimistic }))
-    setFlash(null)
-    callWrite({ action: 'review_section', section: id }, state.paperId).then((res) => {
-      if (res && res.section && res.section.id) {
-        setSectionOverrides((m) => Object.assign({}, m, { [res.section.id]: { status: res.section.status || 'reviewed', reviewed_at: res.section.reviewed_at || null } }))
-      }
-    }).catch((err) => {
-      const msg = String(err && err.message ? err.message : err)
-      setFlash({ kind: 'error', text: '标记失败（已回读校准）：' + msg })
-      callData({ paperId: state.paperId }).then((res) => {
-        if (res && res.ok) { setState((s) => ({ ...s, data: res })); setSectionOverrides({}) }
-      }).catch(() => {})
-    })
-  }
-
   // v0.5.1: approve one section from the TOC chip click — optimistic batch
   // accept of every proposed span in the section + mark the section reviewed,
   // then the approve_section round trip (server accepts + marks reviewed; the
@@ -891,7 +860,6 @@ function PaperView() {
   // keydown effect (declared before the early returns) reads them fresh.
   dispatchRef.current = {
     applyAction,
-    markCurrentReviewed,
     approveSection,
     revertSection,
     requestRepropose,
@@ -980,15 +948,7 @@ function PaperView() {
         className: 'phl-prop-btn',
         onClick: () => { setPropSelections({}); setPanelView('proposals') },
         title: profileState.pendingProposals.length > 0 ? ('待确认画像提案 ' + profileState.pendingProposals.length + ' 条') : '没有待确认的画像提案'
-      }, '提案' + (profileState.pendingProposals.length > 0 ? ' (' + profileState.pendingProposals.length + ')' : '')),
-      React.createElement('button', {
-        className: 'phl-review-btn',
-        onClick: markCurrentReviewed,
-        disabled: !currentSection && !(sectionItems[0]),
-        title: currentSection
-          ? ('标记当前节审查完毕：' + ((sectionItems.find((s) => s.id === currentSection) || {}).title || currentSection))
-          : '滚动到要标记的节'
-      }, '标记本节审查完毕')
+      }, '提案' + (profileState.pendingProposals.length > 0 ? ' (' + profileState.pendingProposals.length + ')' : ''))
     )
   )
   const legend = React.createElement('div', { className: 'phl-legend' },
@@ -1541,9 +1501,6 @@ function apply(ctx) {
       '.phl-select{max-width:260px;padding:4px 8px;border-radius:6px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px}',
       '.phl-refresh{padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
       '.phl-refresh:hover{background:rgba(128,128,128,.12)}',
-      '.phl-review-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(120,220,130,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
-      '.phl-review-btn:hover:not(:disabled){background:rgba(120,220,130,.14)}',
-      '.phl-review-btn:disabled{opacity:.45;cursor:not-allowed}',
       '.phl-export-btn{padding:4px 10px;border-radius:6px;border:1px solid rgba(255,190,120,.7);background:transparent;color:inherit;font-size:12px;cursor:pointer}',
       '.phl-export-btn:hover{background:rgba(255,190,120,.14)}',
       '.phl-progress{display:flex;align-items:center;gap:8px;padding:4px 0 8px;border-bottom:1px solid rgba(128,128,128,.25);margin-bottom:10px;font-size:12px;color:rgba(128,128,128,.9)}',

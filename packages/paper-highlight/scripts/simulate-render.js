@@ -408,10 +408,18 @@ const p2d = ['buildSegmentMap', 'buildBlockSegments', 'mapSelection', 'selection
 for (const needle of p2d) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-d selection plumbing: ${needle}`)
 }
-const p2e = ['sectionList', 'currentSectionId', 'review_section', '标记本节审查完毕', 'phl-section', 'onBodyScroll', 'sectionOverrides', 'currentSection']
+const p2e = ['sectionList', 'currentSectionId', 'phl-section', 'onBodyScroll', 'sectionOverrides', 'currentSection']
 for (const needle of p2e) {
-  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-e review-complete plumbing: ${needle}`)
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing P2-e section-state plumbing: ${needle}`)
 }
+// v0.5.4.3: the 标记本节审查完毕 button + Ctrl+Enter review shortcut are REMOVED
+// (the TOC chip click approves-and-marks reviewed, replacing them) — guard that
+// none of the removed wiring leaks back into the bundle.
+const p2eRemoved = ['phl-review-btn', '标记本节审查完毕', 'markCurrentReviewed', 'markSectionReviewed', '标记当前节审查完毕', 'review_section']
+for (const needle of p2eRemoved) {
+  if (bundleSrc.includes(needle)) throw new Error(`bundle must NOT contain removed review-button wiring: ${needle}`)
+}
+console.log('bundle removed review-button wiring guard (v0.5.4.3):', p2eRemoved.join(', '))
 const p2f = ['approve_section', 'approveSection', 'localApproveSectionSpans', 'data-phl-sec', '已审批通过']
 for (const needle of p2f) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.1 approve-section plumbing: ${needle}`)
@@ -890,18 +898,11 @@ console.log('css tags inserted:', styleTags.length, '| css bytes:', styleTags.re
   const currChip = chipAfterScroll.find((c) => c.props['data-phl-sec'] === expectedCurrent)
   assert(currChip !== undefined && (currChip.props.className || '').indexOf('phl-section-curr') >= 0, 'P2-e: current section chip is highlighted')
 
-  // Click 标记本节审查完毕 → POST review_section + optimistic ✓ on the chip.
-  const reviewBtn = collectButtons(tree).find((b) => (b.props.className || '').indexOf('phl-review-btn') === 0)
-  assert(reviewBtn !== undefined, 'P2-e: review-complete button present in the toolbar')
-  writeCapture.length = 0
-  reviewBtn.props.onClick()
-  assert(writeCapture.length === 1 && writeCapture[0].action === 'review_section' && writeCapture[0].section === expectedCurrent,
-    'P2-e: review_section POST payload targets the current section (' + expectedCurrent + ')')
-  await new Promise((r) => setTimeout(r, 200)) // flush mock write + reconcile
-  rerender()
-  const chipsAfterReview = byType.div.filter(isSectionChip)
-  const doneChip = chipsAfterReview.find((c) => c.props['data-phl-sec'] === expectedCurrent)
-  assert(doneChip !== undefined && (doneChip.props.className || '').indexOf('phl-section-done') >= 0, 'P2-e: reviewed section chip shows the done state (✓)')
+  // v0.5.4.3: the 标记本节审查完毕 toolbar button was REMOVED — the TOC chip
+  // click (approve + mark reviewed) fully replaces it. Assert the rendered tree
+  // carries no review-button (belt-and-suspenders over the static bundle guard).
+  const reviewBtns = collectButtons(tree).filter((b) => (b.props.className || '').indexOf('phl-review-btn') === 0)
+  assert(reviewBtns.length === 0, 'v0.5.4.3: review-complete button removed from the toolbar')
 
   // ══════════════ v0.5.1: section TOC click → batch approve ══════════════
   // Clicking a section chip approves ALL its highlights (POST approve_section)

@@ -137,3 +137,20 @@ git add <15 个文件>; git commit -m "v0.5.4: …"; git tag -a v0.5.4 -m "…"
 **验证**：simulate-render 新增 `p2i` 静态守卫（`.phl-top/position:sticky/top:0/z-index:20/overflow:visible`）PASS；propose-request 探针更新断言（空态 CTA 仅 0 高亮时显示、工具栏按钮恒在）PASS；revert-flow 探针 PASS（`.phl-top` 包裹未破坏节芯片/画像按钮点击）；离线三件套 PASS。**纯 client → 刷新页面即生效，无需重启 3081。**
 
 > 说明：simulate-render E2E 仍受 `expectedSpans > 0` 阻塞（simulate 固定测首篇 p-mikolov，该篇仍 0 高亮）；sticky 静态守卫已覆盖。
+
+## 8. v0.5.4.3（移除「标记本节审查完毕」按钮 + Ctrl+Enter 快捷键）
+
+> 版本：v0.5.4.3（**纯 client**：下线与节列表功能重叠且滚动定位不稳的旧按钮）· 状态：**bundle 负向守卫 + 离线三件套 + 探针全 PASS** · 2026-09-01
+
+**需求**：有了章节目录按钮（点=一键审批+标记已审，Shift+点=反选），导航栏里的「标记本节审查完毕」按钮功能完全被取代，应移除；且该按钮依赖 `currentSection` 滚动定位（`getBoundingClientRect` 需真实布局），未滚动/定位失败时回退到 `sectionItems[0]`（会误标记第一节 ABSTRACT）——这就是它「无法正常工作」的根因。
+
+**移除范围**（`client/render-body.js`）：
+1. 工具栏按钮元素（`phl-review-btn`）。
+2. `markCurrentReviewed` 闭包（含 `review_section` 乐观更新 + 失败回读校准）。
+3. `dispatchRef` 中的 `markCurrentReviewed` 出口。
+4. `keyAction` 的 Ctrl+Enter → `markSectionReviewed` 分支 + 键盘 effect 的对应 dispatch（连同 keyAction 调用点里已死的 `currentSection`/`sectionItems` 传参）。
+5. `.phl-review-btn` 三条 CSS。
+
+**保留**：host 侧 `review_section` 动作（`actions.js`/`plugin.js`/`run-actions`/`run-plugin` 契约不动——仅 GUI 不再发送；反选/审批用 `revert_section`/`approve_section`）；`currentSection` 状态（仍驱动节芯片「当前节」高亮）。
+
+**验证**：simulate-render 新增 `p2eRemoved` **负向静态守卫**（`phl-review-btn/标记本节审查完毕/markCurrentReviewed/markSectionReviewed/标记当前节审查完毕/review_section` 均不得出现在 bundle）PASS；P2-e 交互断言改为「树中无该按钮」；run-render keyAction 矩阵改为「Ctrl+Enter 忽略」；离线三件套 PASS；probe PASS。**纯 client → 刷新页面即生效，无需重启 3081。**

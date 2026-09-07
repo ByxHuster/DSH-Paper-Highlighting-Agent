@@ -632,9 +632,10 @@ function main() {
       && keyAction(ev('3'), paperState, { palette: palette5 }).color === 'blue', 'keyAction: 3 → recolor to palette[2]=blue')
     assert(keyAction(ev('e'), paperState, { palette: palette5 }).type === 'toggleExport', 'keyAction: e → toggle export dialog')
     assert(keyAction(ev('Escape'), paperState, { palette: palette5 }).type === 'cancel', 'keyAction: Escape → cancel')
+    // v0.5.4.3: 「标记本节审查完毕」按钮 + Ctrl+Enter 快捷键已下线（由章节标签
+    // 点击一键审批取代）—— 修饰键组合一律忽略，Ctrl+Enter 不再是 action
     const ctrlEnter = ev('Enter', { ctrlKey: true })
-    const kaMark = keyAction(ctrlEnter, paperState, { palette: palette5 })
-    assert(kaMark.type === 'markSectionReviewed' && kaMark.section === 's3', 'keyAction: Ctrl+Enter → mark current section reviewed')
+    assert(keyAction(ctrlEnter, paperState, { palette: palette5 }) === null, 'keyAction: Ctrl+Enter ignored (review-shortcut removed)')
     // no active span (menu closed) → a/d/r/1-5 no-op
     const noSpan = Object.assign({}, paperState, { menuOpen: false })
     assert(keyAction(ev('a'), noSpan, { palette: palette5 }) === null, 'keyAction: no active span → a ignored')
@@ -723,7 +724,7 @@ function main() {
       v03p1: 'callProfile (GET/POST/ok:false/no-transport) + colorLegend (null/custom/partial/empty/unknown fallbacks) + markStyle(colors 4th arg) + renderText(opts.colors) — colors.yml-driven palette',
       v03p3: 'profilePanelModel/profilePanelColors (null fallback + profile mapping) + profileSavePayload (flat rows → {name:{color,label}} map, absent layers omitted)',
       v03p2: 'proposalCardModel (pending entry → card with rule-<i>/exemplar-<i> ids + stats one-liner) + buildApplyDecisions (accept/reject/mixed/empty payloads)',
-      v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape/Ctrl+Enter; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
+      v04p4: 'keyAction matrix (a/d/r/1-5/e/Escape; modifiers ignored incl. Ctrl+Enter — review-shortcut removed; no-span / out-of-range / non-paper view / input focus / modifier / null ignored) + reviewProgress (partial/all/none, plan+skip honored, zero fallback) + buildExportUrl (params + encoding)',
       v05: 'callFormat — POST {confirm:true, scope} body to /paper-hl/format; ok resolve / ok:false reject / no-transport reject (one-click format transport)',
       v051b: 'section TOC batch approve — localApproveSectionSpans (proposed-in-section → accepted; accepted/user_added/rejected/outside untouched; identity preserved; empty set / null safe) + bundle embed completeness (26 helpers in BODY)',
       v053: 'section TOC 反选 (batch revert to 待审) — localRevertSectionSpans (accepted-in-section → proposed; proposed/user_added/rejected/outside untouched; identity preserved; empty set / null safe) — the inverse of approve (undo the one-click approve), NOT batch reject',
