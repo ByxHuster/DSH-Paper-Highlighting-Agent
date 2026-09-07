@@ -116,3 +116,24 @@ git add <15 个文件>; git commit -m "v0.5.4: …"; git tag -a v0.5.4 -m "…"
 ```
 
 > 验证后提醒用户：①刷新 GUI 页面（client bundle 即时生效）②重启 3081（host `propose-request` 路由生效）。
+
+## 7. v0.5.4.1（追加：顶端导航栏固定）
+
+> 版本：v0.5.4.1（**纯 client**：顶端导航栏/控制条组固定，滚动论文时保持在顶端）· 状态：**bundle 守卫 PASS + 探针 PASS + 离线三件套 PASS（归档 `v0.5.4.1`）** · 2026-09-01
+
+**需求**：滚动鼠标时论文内容滑动、顶端导航栏保持在顶端。
+
+**难度评估**：低，纯 CSS（不动 host、不碰数据）。
+
+**根因**：`.phl-wrap{height:100%;overflow:hidden}` 的设计意图是「顶部固定 + `.phl-body` 内部滚动」，但 `height:100%` 依赖挂载槽位给受限高度；当 DSH 会话视图为自动高度时整块随页面滚动、顶栏被带走。
+
+**实现**（`client/render-body.js` + `scripts/gen-client.js`）：
+1. **结构**：主 return 中 `header + legend + progressBar + sectionBar`（正文上方全部控制区）包进 `<div className="phl-top">`；`body`/`emptyCta`/对话框/提示在条外、随滚动。
+2. **CSS**：
+   - `.phl-wrap` `overflow:hidden` → **`overflow:visible`**（关键：`overflow:hidden` 祖先会成为不可滚动的滚动容器，**静默禁用 `position:sticky`**）。
+   - `.phl-top{position:sticky;top:0;z-index:20;margin:-16px -20px 8px;padding:16px 20px 0;background:rgba(18,18,22,.97);box-shadow:0 2px 8px rgba(0,0,0,.25)}` —— 负 margin 抵消 wrap 内边距做通栏；不透明底 + 阴影盖住滚过的正文；`z-index:20` 在正文 `<mark>` 之上、对话框(23)/flash(30) 之下。
+3. **两种场景都稳**：槽位受限（内部滚动）时条本来就不动；槽位自动高度（页面滚动）时 sticky 钉到最近滚动祖先（会话视图）顶端。
+
+**验证**：simulate-render 新增 `p2i` 静态守卫（`.phl-top/position:sticky/top:0/z-index:20/overflow:visible`）PASS；propose-request 探针更新断言（空态 CTA 仅 0 高亮时显示、工具栏按钮恒在）PASS；revert-flow 探针 PASS（`.phl-top` 包裹未破坏节芯片/画像按钮点击）；离线三件套 PASS。**纯 client → 刷新页面即生效，无需重启 3081。**
+
+> 说明：simulate-render E2E 仍受 `expectedSpans > 0` 阻塞（simulate 固定测首篇 p-mikolov，该篇仍 0 高亮）；sticky 静态守卫已覆盖。

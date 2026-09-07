@@ -1555,7 +1555,12 @@ window.__ModuleLoader__.load({
 		  if (panelView === 'proposals') {
 		    return React.createElement('div', { className: 'phl-wrap' }, flashEl, renderProposalsPanel())
 		  }
-		  return React.createElement('div', { className: 'phl-wrap' }, header, legend, progressBar, sectionBar, flashEl, rescueHint, addPopup, exportDialog, formatDialog, actionBar, emptyCta, body)
+		  // v0.5.4.1 · sticky top control strip: title/tools + legend + progress +
+		  // section TOC are grouped in .phl-top (position:sticky) so they stay pinned
+		  // at the top while the paper body scrolls. The body, dialogs, hints and the
+		  // empty-state CTA live below the strip and scroll under it.
+		  const topStrip = React.createElement('div', { className: 'phl-top' }, header, legend, progressBar, sectionBar)
+		  return React.createElement('div', { className: 'phl-wrap' }, topStrip, flashEl, rescueHint, addPopup, exportDialog, formatDialog, actionBar, emptyCta, body)
 		}
 		
 		const inject = ['slots']
@@ -1563,7 +1568,20 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 		  ctx.effect(() => {
 		    styles.insert([
-		      '.phl-wrap{display:flex;flex-direction:column;height:100%;min-height:0;padding:16px 20px;overflow:hidden;font-size:14px;line-height:1.65}',
+		      '.phl-wrap{display:flex;flex-direction:column;height:100%;min-height:0;padding:16px 20px;overflow:visible;font-size:14px;line-height:1.65}',
+		      // v0.5.4.1 · sticky top control strip. position:sticky pins the whole
+		      // top block (title/tools + legend + progress + section TOC) to the top of
+		      // the nearest scrolling ancestor (the DSH conversation view) while the
+		      // paper body scrolls. The wrap must NOT be overflow:hidden — that would
+		      // create a non-scrolling scroll container and silently disable sticky.
+		      // Negative margins compensate the wrap padding for a full-bleed band.
+		      // Light frosted (translucent white + backdrop blur + hairline shadow) so
+		      // it blends with the DSH light theme instead of a hard dark bar; the
+		      // scrolled-under text softly blurs through instead of being hidden.
+		      // v0.5.4.2: previous rgba(18,18,22,.97) made the bar look black — DSH is a
+		      // light theme (boot --dsh-boot-bg:#fff), so the strip now uses a light
+		      // canvas-derived color (color-scheme:light locks canvas to the light theme).
+		      '.phl-top{position:sticky;top:0;z-index:20;margin:-16px -20px 8px;padding:16px 20px 0;color-scheme:light;background-color:canvas;background:color-mix(in srgb, canvas 86%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 1px 0 rgba(0,0,0,.06),0 2px 10px rgba(0,0,0,.05)}',
 		      '.phl-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;flex-wrap:wrap}',
 		      '.phl-title{font-size:17px;font-weight:600;margin:0}',
 		      '.phl-tools{display:flex;align-items:center;gap:8px}',

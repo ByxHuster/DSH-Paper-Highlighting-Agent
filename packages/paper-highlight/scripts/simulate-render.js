@@ -458,6 +458,15 @@ const p2h = ['callProposeRequest', 'proposeData', '/paper-hl/propose-request', '
 for (const needle of p2h) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.4 propose-request plumbing: ${needle}`)
 }
+// v0.5.4.1: sticky top nav — the header/tools + legend + progress + section TOC
+// are grouped in .phl-top (position:sticky; top:0; z-index:20), and the wrap's
+// overflow:hidden was removed (an overflow:hidden ancestor silently disables
+// position:sticky by becoming a non-scrolling scroll container).
+const p2i = ['.phl-top', 'position:sticky', 'top:0', 'z-index:20', 'overflow:visible']
+for (const needle of p2i) {
+  if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.5.4.1 sticky-top plumbing: ${needle}`)
+}
+console.log('bundle sticky-top plumbing (v0.5.4.1):', p2i.join(', '))
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))
