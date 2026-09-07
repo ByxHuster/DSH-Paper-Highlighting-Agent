@@ -1,4 +1,4 @@
-# Paper Highlight Agent —— 用户指南（v0.5.4）
+# Paper Highlight Agent —— 用户指南（v0.6.0）
 
 ## 🗺️ 路线图
 

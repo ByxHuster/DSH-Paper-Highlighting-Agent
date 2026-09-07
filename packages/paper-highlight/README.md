@@ -1,4 +1,4 @@
-# paper-highlight (v0.5.4 ✅)
+# paper-highlight (v0.6.0 ✅)
 
 论文多色高亮 Agent 的宿主插件包（host 逻辑 + client bundle + agent 工具 + 技能）。
 
