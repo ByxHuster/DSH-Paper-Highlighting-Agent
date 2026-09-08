@@ -15,14 +15,18 @@ const { writePaper, readAnchors } = require('../host/store')
 const { assert, verifyNormalized, verifyHighlightsRoundTrip } = require('./verify')
 
 // v0.6.2: display-formula blocks are KEPT — the mock zip's `formula` block
-// (previously skipped) is now a 5th anchor.
-// v0.6.3: the mock zip's flat `table` block is KEPT too (6th anchor); nested
-// container expansion is exercised by the real-data re-normalize instead.
-const EXPECTED_ANCHORS = ['a-0001-01-01', 'a-0001-02-01', 'a-0001-04-01', 'a-0001-05-01', 'a-0002-02-01', 'a-0002-04-01']
+// (previously skipped) is now an anchor.
+// v0.6.3: the mock zip's flat `table` block is KEPT too.
+// v0.6.4: the image block is now a NESTED container — its body (raster ref)
+// and caption expand into two anchors; the raster is extracted to
+// images/mock-fig.jpg.
+const EXPECTED_ANCHORS = ['a-0001-01-01', 'a-0001-02-01', 'a-0001-03-01', 'a-0001-04-01', 'a-0001-05-01', 'a-0001-06-01', 'a-0002-02-01', 'a-0002-04-01']
 
 const EXPECTED_MD = [
   '# Distributed Representations of Words and Phrases and their Compositionality',
   'We present several improvements over the Skip-gram model including subsampling of frequent words and negative sampling.',
+  '[figure]',
+  'Figure 1: mock figure',
   'table row one table row two',
   'E = argmax log p(w|context)',
   'The main contribution of this paper is a method that learns high-quality vector representations of words from large amounts of text.',
@@ -38,7 +42,7 @@ async function main() {
   const paperId = 'p-mock'
 
   // ---- normalize ----
-  const { paperMd, anchors, meta } = await normalizeMineruZip({
+  const { paperMd, anchors, meta, images } = await normalizeMineruZip({
     zipPath,
     paperId,
     title: 'Mock Paper Title',
@@ -52,18 +56,27 @@ async function main() {
   }
   assert(paperMd === EXPECTED_MD, `paper.md mismatch:\n--- got ---\n${paperMd}\n--- want ---\n${EXPECTED_MD}`)
 
-  assert(meta.stats.skipped.by_type.image === 1, 'image block should be skipped')
+  assert(meta.stats.skipped.by_type.image === undefined, 'v0.6.4: image container is expanded (not skipped)')
+  assert(meta.stats.skipped.by_type.image_body === undefined, 'v0.6.4: image_body is KEPT')
   assert(meta.stats.skipped.by_type.table === undefined, 'v0.6.3: table block is KEPT (no longer skipped)')
   assert(meta.stats.skipped.by_type.formula === undefined, 'v0.6.2: formula block is KEPT (no longer skipped)')
   assert(meta.stats.skipped.header_footer === 2, 'header/footer blocks should be skipped')
-  assert(meta.stats.kept_blocks === 6, `kept_blocks should be 6, got ${meta.stats.kept_blocks}`)
+  assert(meta.stats.kept_blocks === 8, `kept_blocks should be 8, got ${meta.stats.kept_blocks}`)
   assert(meta.stats.pages === 2, `pages should be 2, got ${meta.stats.pages}`)
+
+  // v0.6.4: image_body anchor carries the relative img path + placeholder text,
+  // and the raster bytes are extracted for writePaper.
+  const imgAnchor = anchors['a-0001-03-01']
+  assert(imgAnchor.type === 'image_body' && imgAnchor.img === 'images/mock-fig.jpg' && imgAnchor.text === '[figure]', 'image_body anchor img/placeholder contract')
+  assert(Array.isArray(images) && images.length === 1 && images[0].name === 'mock-fig.jpg' && Buffer.isBuffer(images[0].data) && images[0].data.length > 0, 'image raster extraction')
 
   const { anchorCount } = verifyNormalized({ paperMd, anchors, meta })
   assert(anchorCount === EXPECTED_ANCHORS.length, 'anchor count after core verification')
 
   // ---- store + highlights round-trip ----
-  await writePaper(root, paperId, { paperMd, anchors, meta })
+  await writePaper(root, paperId, { paperMd, anchors, meta, images })
+  const raster = await fsp.readFile(path.join(root, 'data', paperId, 'images', 'mock-fig.jpg'))
+  assert(raster.toString() === 'FAKEJPEG-DATA', 'raster persisted to data/<paper_id>/images/')
   const rt = verifyHighlightsRoundTrip({
     root,
     paperId,

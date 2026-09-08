@@ -29,16 +29,22 @@ const { anchorId, validateAnchors } = require('./schema')
 
 // v0.6.3: keep display formulas (v0.6.2) AND tables + figure/table captions.
 // Tables arrive as full HTML (MinerU table recognition); captions are plain
-// text. Image/chart *bodies* stay skipped (binary — a separate milestone).
+// text.
+// v0.6.4: image/chart *bodies* are kept too — the raster lives in the zip
+// (`images/*.jpg`, referenced by `spans[].image_path`); normalize extracts the
+// bytes and ships them via `images[]` so writePaper can persist them under
+// data/<paper_id>/images/. The anchor carries a relative `img` path and a
+// short placeholder text (`[figure]`/`[chart]`) to satisfy the md_offset
+// contract; the client renders <img> through the host route.
 const KEEP_TYPES = new Set([
   'text', 'title', 'content',
   'interline_equation', 'formula',
   'table', 'table_body', 'table_caption',
-  'image_caption', 'chart_caption',
+  'image_body', 'chart_body', 'image_caption', 'chart_caption',
 ])
 const SKIP_TYPES = new Set([
   'image', 'figure', 'figure_caption', 'chart',
-  'image_body', 'chart_body', 'table_footnote', 'formula_caption',
+  'table_footnote', 'formula_caption',
   'page_header', 'page_footer', 'page_margin', 'abandon',
   'footnote', 'reference', 'algorithm',
   // observed in real MinerU v4 output (layout.json):
@@ -70,6 +76,16 @@ function collectHtml(lines) {
   for (const line of Array.isArray(lines) ? lines : []) {
     for (const span of Array.isArray(line.spans) ? line.spans : []) {
       if (typeof span.html === 'string' && span.html.trim().length > 0) return span.html.trim()
+    }
+  }
+  return null
+}
+
+/** First span-level `image_path` found (v0.6.4 image/chart bodies). */
+function collectImagePath(lines) {
+  for (const line of Array.isArray(lines) ? lines : []) {
+    for (const span of Array.isArray(line.spans) ? line.spans : []) {
+      if (typeof span.image_path === 'string' && span.image_path.trim().length > 0) return span.image_path.trim()
     }
   }
   return null
@@ -185,6 +201,7 @@ async function normalizeMineruZip(opts) {
   const blocks = walkPages(middle)
 
   const paragraphs = [] // { page, block, par, type, text, mdOffset }
+  const images = [] // v0.6.4: { name, data } extracted image/chart rasters
   const skippedByType = {}
   let skippedHeaderFooter = 0
   let md = ''
@@ -196,7 +213,8 @@ async function normalizeMineruZip(opts) {
     if (KEEP_TYPES.has(type)) {
       // v0.6.2: display formulas are never header/footer noise — keep them
       // regardless of bbox; the heuristic applies only to text-ish blocks.
-      if (type !== 'interline_equation' && type !== 'formula') {
+      // v0.6.4: image/chart bodies are content too (bbox spans the raster).
+      if (type !== 'interline_equation' && type !== 'formula' && type !== 'image_body' && type !== 'chart_body') {
         const top = bbox.y0 / pageH
         const bottom = 1 - bbox.y1 / pageH
         if (top < marginRatio || bottom < marginRatio) reason = 'header_footer'
@@ -225,6 +243,24 @@ async function normalizeMineruZip(opts) {
         if (plain.length > 0) text = plain
       }
     }
+    // v0.6.4: image/chart bodies — the raster ships inside the zip
+    // (`images/<name>`, referenced by spans[].image_path). Pull the bytes out
+    // (collected into `images[]` for writePaper), record the relative path on
+    // the anchor, and use a short placeholder text so the md_offset contract
+    // and propose readability hold.
+    let img = null
+    if (type === 'image_body' || type === 'chart_body') {
+      const ref = collectImagePath(lines)
+      if (ref) {
+        const base = path.posix.basename(ref)
+        const entry = entries[`images/${base}`] ?? entries[base]
+        if (entry) {
+          img = `images/${base}`
+          images.push({ name: base, data: Buffer.from(entry) })
+        }
+      }
+      if (!text) text = type === 'chart_body' ? '[chart]' : '[figure]'
+    }
     if (!text) {
       skippedByType['empty'] = (skippedByType['empty'] ?? 0) + 1
       continue
@@ -251,6 +287,7 @@ async function normalizeMineruZip(opts) {
       mdOffset,
       rendered,
       ...(html ? { html } : {}),
+      ...(img ? { img } : {}),
     })
     md += rendered + '\n\n'
   }
@@ -265,6 +302,7 @@ async function normalizeMineruZip(opts) {
       text: p.text,
       md_offset: p.mdOffset,
       ...(p.html ? { html: p.html } : {}),
+      ...(p.img ? { img: p.img } : {}),
     }
   }
   validateAnchors(anchors)
@@ -284,7 +322,7 @@ async function normalizeMineruZip(opts) {
       skipped: { by_type: skippedByType, header_footer: skippedHeaderFooter },
     },
   }
-  return { paperMd, anchors, meta }
+  return { paperMd, anchors, meta, images }
 }
 
 module.exports = {
@@ -293,6 +331,7 @@ module.exports = {
   cleanText,
   lineText,
   collectHtml,
+  collectImagePath,
   htmlToPlain,
   walkPages,
   normalizeMineruZip,

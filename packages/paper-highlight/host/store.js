@@ -44,14 +44,26 @@ async function atomicWriteText(file, text) {
  * Persist the full normalized output of one paper.
  * @param root workspace root
  * @param paperId stable paper id
- * @param files { paperMd, anchors, meta }
+ * @param files { paperMd, anchors, meta, images? }
  */
-async function writePaper(root, paperId, { paperMd, anchors, meta }) {
+async function writePaper(root, paperId, { paperMd, anchors, meta, images }) {
   validateAnchors(anchors)
   const dir = await ensurePaperDir(root, paperId)
   await atomicWriteText(paperFile(root, paperId, 'paper.md'), paperMd)
   await atomicWriteJson(paperFile(root, paperId, 'anchors.json'), anchors)
   await atomicWriteJson(paperFile(root, paperId, 'meta.json'), meta)
+
+  // v0.6.4: extracted image/chart rasters → data/<paper_id>/images/<name>.
+  if (Array.isArray(images) && images.length > 0) {
+    const imgDir = path.join(dir, 'images')
+    await fsp.mkdir(imgDir, { recursive: true })
+    for (const im of images) {
+      if (!/^[a-zA-Z0-9._-]+$/.test(im.name) || im.name.includes('..')) continue
+      const tmp = path.join(imgDir, `.${im.name}.tmp`)
+      await fsp.writeFile(tmp, im.data)
+      await fsp.rename(tmp, path.join(imgDir, im.name))
+    }
+  }
 
   // Self-contained highlights document per design §4.2: skeleton + embedded anchors.
   const skeleton = newHighlightsSkeleton({

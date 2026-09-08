@@ -486,6 +486,32 @@ function apply(ctx, config) {
           await handleProposeRequestGet(root, url, res, sendJson)
           return
         }
+        // v0.6.4: static image/chart rasters — GET /paper-hl/images/<paperId>/<name>
+        // served from data/<paper_id>/images/ (written by writePaper). Strict
+        // id/name validation guards the filesystem.
+        if (url.pathname.startsWith('/paper-hl/images/')) {
+          const rest = decodeURIComponent(url.pathname.slice('/paper-hl/images/'.length))
+          const slash = rest.indexOf('/')
+          if (slash <= 0) { sendJson(res, 400, { ok: false, error: 'bad image path' }); return }
+          const pid = rest.slice(0, slash)
+          const name = rest.slice(slash + 1)
+          if (!/^[a-z0-9][a-z0-9-]*$/i.test(pid) || !/^[a-zA-Z0-9._-]+$/.test(name) || name.includes('..')) {
+            sendJson(res, 400, { ok: false, error: 'bad image path' })
+            return
+          }
+          try {
+            const buf = await fsp.readFile(path.join(root, 'data', pid, 'images', name))
+            res.writeHead(200, {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'public, max-age=3600',
+              'Content-Length': buf.length,
+            })
+            res.end(buf)
+          } catch (e) {
+            sendJson(res, 404, { ok: false, error: 'image not found' })
+          }
+          return
+        }
         sendJson(res, 404, { ok: false, error: 'not found' })
       } catch (err) {
         sendJson(res, 500, { ok: false, error: String(err && err.message ? err.message : err) })

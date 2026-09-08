@@ -1488,6 +1488,18 @@ function PaperView() {
       if ((b.anchor.type === 'table' || b.anchor.type === 'table_body') && b.anchor.html) {
         return React.createElement('div', Object.assign(blockProps, { className: 'phl-table', dangerouslySetInnerHTML: { __html: b.anchor.html } }))
       }
+      // v0.6.4: image/chart bodies render the raster through the host route
+      // /paper-hl/images/<paperId>/<name> — no highlight support by design.
+      if (b.anchor.type === 'image_body' || b.anchor.type === 'chart_body') {
+        const name = b.anchor.img ? String(b.anchor.img).split('/').pop() : null
+        if (name) {
+          const src = '/paper-hl/images/' + encodeURIComponent(state.paperId || '') + '/' + encodeURIComponent(name)
+          return React.createElement('div', Object.assign(blockProps, { className: 'phl-figure' }),
+            React.createElement('img', { src, alt: b.anchor.text, className: 'phl-figure-img', loading: 'lazy' })
+          )
+        }
+        return React.createElement('p', Object.assign(blockProps, { className: 'phl-para' }), ...kids)
+      }
       // v0.6.3: figure/table captions render as small italic notes.
       if (b.anchor.type === 'image_caption' || b.anchor.type === 'table_caption' || b.anchor.type === 'chart_caption') {
         return React.createElement('p', Object.assign(blockProps, { className: 'phl-caption' }), ...kids)
@@ -1968,6 +1980,9 @@ function apply(ctx) {
       '.phl-table table{border-collapse:collapse;width:100%}',
       '.phl-table td,.phl-table th{border:1px solid rgba(90,120,220,.2);padding:3px 8px;text-align:left}',
       '.phl-caption{margin:4px 0 10px;font-size:.88em;font-style:italic;color:rgba(0,0,0,.55)}',
+      // v0.6.4: image/chart bodies — framed, centered raster, max-width fit.
+      '.phl-figure{margin:8px 0;padding:6px;border:1px solid rgba(90,120,220,.2);border-radius:6px;background:#fafcff;text-align:center}',
+      '.phl-figure img{max-width:100%;height:auto;border-radius:4px}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',

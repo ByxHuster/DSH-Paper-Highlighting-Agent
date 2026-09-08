@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.6.x 项目计划（数学公式渲染重建）
 
-> 版本：v0.6.x（计划文档）· 状态：**v0.6.1 行内公式已实现并验收 PASS（2026-09-01）；v0.6.1.1 KaTeX 渲染升级（方框根治）；v0.6.1.2 修复数学区误吞散文括注；v0.6.2 行间公式已实现（normalize 保留公式块 + 块级 KaTeX 渲染，sutskever 重解析验收）；v0.6.3 保留表格 + 图/表标题（MinerU 表格 HTML + 嵌套容器展开 + 真实表格渲染）** · 创建：2026-09-01
+> 版本：v0.6.x（计划文档）· 状态：**v0.6.1 行内公式已实现并验收 PASS（2026-09-01）；v0.6.1.1 KaTeX 渲染升级（方框根治）；v0.6.1.2 修复数学区误吞散文括注；v0.6.2 行间公式已实现（normalize 保留公式块 + 块级 KaTeX 渲染，sutskever 重解析验收）；v0.6.3 保留表格 + 图/表标题（MinerU 表格 HTML + 嵌套容器展开 + 真实表格渲染）；v0.6.4 保留图片/图表主体（host 静态路由 + 真实 `<img>` 渲染）** · 创建：2026-09-01
 > **v0.6.x 系列唯一目标：重新完成数学公式渲染（行内 + 行间）**。其余功能不新增、不修改。
 
 ---
@@ -121,6 +121,17 @@
 > - **真实数据验收**：复用 v0.6.2 的 MinerU zip 重归一化 sutskever → **79 anchors**（+9 = 3 表格 [BLEU 对比 ×2 + 长句翻译示例] + 3 表格标题 + 1 图标题 + 2 图表标题）；`image_body`/`chart_body` 仍跳过。G4：306 锚点 / 155 数学段 / 0 katex-error（表格文本全走 plain segs）。
 > - **遗留**：propose/plan 流程未显式跳过表格 anchor（不要求高亮；若 agent 对表格文本提 spans，渲染不显示——可接受，后续技能迭代再定）。
 
+## 5.6 图片/图表主体（v0.6.4 已实现，A1 host 静态路由）
+
+> **动机**：论文架构图/损失曲线是核心内容，v0.6.3 仅保留标题。图片是**二进制**（zip 内 `images/*.jpg`），v0.6.4 走 A1 路线（host 静态路由，非 base64 内联——避免 JSON 膨胀 + 按需加载）。
+> **v0.6.4 实现**：
+> - `normalize.js`：`KEEP_TYPES` 加 `image_body`/`chart_body`；从 `spans[].image_path` 定位 zip 内栅格并提取字节（`images[]` 随产物返回）；anchor 记相对路径 `img: 'images/<name>'` + 占位 `text: '[figure]'/'[chart]'`（保 md_offset 契约/propose 可读性）。
+> - `store.js` `writePaper`：栅格落盘 `data/<paper_id>/images/`（临时文件 + rename）。
+> - `plugin.js`：**`GET /paper-hl/images/<paperId>/<name>` 静态路由**（严格 id/name 字符集校验 + `..` 拒绝防目录穿越；404；`image/jpeg` + 缓存）。
+> - client：`image_body`/`chart_body` → `<img src="/paper-hl/images/...">`（`.phl-figure` 居中/圆角/懒加载，无高亮 by design）。
+> - **真实数据验收**：sutskever 重归一化 → **84 anchors**（+5 = 1 图 Figure 1 架构图 998×212 + 4 图表曲线），**5 张 JPEG 落盘 85KB**（magic bytes + SOF 宽高验证真实可解码）。G4：311 锚点 / 155 数学段 / 0 katex-error；run-mock 嵌套 image 容器单测（展开 + 栅格提取 + 落盘）；run-plugin 图片路由矩阵（200 / 400 穿越 / 400 非法名 / 404）；simulate 加 `.phl-figure` 守卫。
+> - **注意**：首个涉及 **host 改动**的版本——需**重启 3081** 使路由生效（重启后 parse_pdf 亦直接用新 normalize）。
+
 ### 5.1 检测（优先级）
 
 1. **MinerU 公式块**（v0.6.2 采用）：`interline_equation`/`formula` 块类型即行间公式，normalize 保留 → 检测 100% 确定。
@@ -185,6 +196,7 @@
 | v0.6.1.2 | **修复数学区误吞散文括注**：`parseMathRight` i++ 双增 bug（`))` 相邻时跳过第二个 `)` → depth 泄漏吞到句尾）+ 括号内散文括注被吞（`(just before emitting …)`）+ 命令参数豁免（`\end{array}` 的 `{array}`） | ✅ **已实现并 PASS**：run-render 新增 aside 分割 / 嵌套 `))` 回归断言；G4 回到 293 锚点 / 151 数学段 / **0 katex-error**（修复前 1）；全回归套件绿；bundle 760KB 纯 client 刷新即生效 |
 | v0.6.2 | 行间公式：检测 + 环境感知修复 + 块级渲染（多行 / matrix grid）+ 合成 fixture 验证 | ✅ **已实现并 PASS**：normalize 保留公式块（KEEP_TYPES + 跳过 header/footer 启发式）→ client 块级 KaTeX 渲染（displayMode、`.phl-math-display`、G2 折叠）→ **sutskever 重解析真实数据验收**（4 个 `interline_equation` 块：矩阵 `\begin{array}`、`\prod`、`\tag{2}`，KaTeX 0 error）；G4 全量 297 锚点 / 155 数学段 / 0 katex-error；run-mock 适配（formula 保留为第 5 锚点）；全回归绿；纯 client（+数据重解析） |
 | v0.6.3 | 保留**表格 + 图/表标题**（图片主体留 v0.6.4）：MinerU 表格 HTML（`table_body.spans[].html`）→ anchor.text 文本化 + `anchor.html` 真实表格渲染（`.phl-table`）；嵌套容器块展开（image/table/chart → body/caption）；caption → `.phl-caption` | ✅ **已实现并 PASS**：sutskever 复用 v0.6.2 zip 重归一化 → 79 anchors（+9：3 表格 + 3 表格标题 + 1 图标题 + 2 图表标题），图片主体跳过；G4 306 锚点 / 155 数学段 / 0 katex-error；run-mock 适配（mock 扁平 table 保留）；simulate 加 `.phl-table`/`.phl-caption` 守卫；全回归绿 |
+| v0.6.4 | 保留**图片/图表主体**（A1 host 静态路由）：normalize 提取 zip 栅格字节（`images[]`）+ anchor.img 相对路径 + 占位 text；writePaper 落盘 `data/<id>/images/`；plugin 加 `GET /paper-hl/images/<id>/<name>` 路由（防穿越）；client `<img>` 渲染（`.phl-figure`） | ✅ **已实现并 PASS**：sutskever 重归一化 → 84 anchors（+5：1 图 Figure 1 998×212 + 4 图表），5 张 JPEG 落盘 85KB（真实可解码）；G4 311 锚点 / 155 数学段 / 0 katex-error；run-mock 嵌套 image 容器单测；run-plugin 图片路由矩阵（200/400/404）；simulate 加 `.phl-figure` 守卫；**需重启 3081 生效** |
 | v0.6.3 | 文档同步（one-pager / user-guide / README / 本计划转交付记录）+ git 提交 + tag | 全量回归 + 验收 |
 
 > 版本粒度可按用户验收节奏合并；**只做数学渲染一件事**贯穿始终。
@@ -216,4 +228,4 @@ node scripts/simulate-render.js       # bundle 静态守卫（E2E 受演示数�
 
 ---
 
-*v0.6.x 规划：只完成「重新完成数学公式渲染（行内 + 行间）」一件事。v0.6.1（行内）+ v0.6.1.1（KaTeX）+ v0.6.1.2（括注修复）+ v0.6.2（行间）+ v0.6.3（表格 + 图/表标题）已全部实现交付。*
+*v0.6.x 规划：只完成「重新完成数学公式渲染（行内 + 行间）」一件事。v0.6.1（行内）+ v0.6.1.1（KaTeX）+ v0.6.1.2（括注修复）+ v0.6.2（行间）+ v0.6.3（表格 + 图/表标题）+ v0.6.4（图片/图表主体）已全部实现交付。*

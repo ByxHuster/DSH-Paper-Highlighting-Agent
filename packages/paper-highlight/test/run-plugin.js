@@ -456,6 +456,26 @@ async function main() {
   const exUnknown = await invoke(wroute.handler, { url: '/paper-hl/export?paperId=ghost&format=html' })
   assert(exUnknown.status === 404 && /unknown paperId/.test(JSON.parse(exUnknown.body).error), 'export unknown paperId -> 404')
 
+  // ══════════════════ v0.6.4: GET /paper-hl/images/<paperId>/<name> ══════════════════
+  // Static raster route: serves data/<paper_id>/images/<name> with strict
+  // validation (id/name charset, no traversal).
+  const imgDir = path.join(fx.root, 'data', fx.paperId, 'images')
+  await fsp.mkdir(imgDir, { recursive: true })
+  await fsp.writeFile(path.join(imgDir, 'fig-a.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]))
+  const imgOk = await invoke(wroute.handler, { url: `/paper-hl/images/${fx.paperId}/fig-a.jpg` })
+  assert(imgOk.status === 200 && Buffer.isBuffer(imgOk.body) && imgOk.body.length === 7 && imgOk.headers['Content-Type'] === 'image/jpeg',
+    'GET /paper-hl/images: serves the raster with image/jpeg')
+  const imgTraversal = await invoke(wroute.handler, { url: `/paper-hl/images/${fx.paperId}/..%2Fmeta.json` })
+  assert(imgTraversal.status === 400, 'GET /paper-hl/images: traversal rejected')
+  const imgBadName = await invoke(wroute.handler, { url: `/paper-hl/images/${fx.paperId}/evil..jpg` })
+  assert(imgBadName.status === 400, 'GET /paper-hl/images: `..` in name rejected')
+  const imgBadId = await invoke(wroute.handler, { url: '/paper-hl/images/UP%24ER/fig-a.jpg' })
+  assert(imgBadId.status === 400, 'GET /paper-hl/images: bad paper id rejected')
+  const imgMissing = await invoke(wroute.handler, { url: `/paper-hl/images/${fx.paperId}/nope.jpg` })
+  assert(imgMissing.status === 404, 'GET /paper-hl/images: missing file -> 404')
+  const imgBadRoute = await invoke(wroute.handler, { url: '/paper-hl/images/' })
+  assert(imgBadRoute.status === 400, 'GET /paper-hl/images/: bare path -> 400')
+
   // ══════════════════ v0.5: POST /paper-hl/format (一键格式化) ══════════════════
   // One-click factory reset: confirm-guarded destructive route. Fixture state
   // at this point: p-test spans = [s-001 accepted green, s-002 user_added

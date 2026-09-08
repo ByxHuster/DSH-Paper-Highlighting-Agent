@@ -34,6 +34,16 @@ function line(spans) {
   return { bbox: [0, 0, 0, 0], spans: spans.map((t) => ({ type: 'text', bbox: [0, 0, 0, 0], text: t })) }
 }
 
+/** v0.6.4: image span carrying a zip-relative raster reference. */
+function lineImg(imagePath) {
+  return { bbox: [0, 0, 0, 0], spans: [{ type: 'image', bbox: [0, 0, 0, 0], image_path: imagePath }] }
+}
+
+/** v0.6.4: nested container (image/table/chart → body/caption sub-blocks). */
+function container(type, bbox, blocks) {
+  return { type, bbox, blocks }
+}
+
 function middleJson() {
   return {
     pdf_info: [
@@ -46,7 +56,11 @@ function middleJson() {
           line(['We present several improvements over the Skip-gram model']),
           line(['including subsampling of frequent words and negative sampling.']),
         ]),
-        block('image', [72, 220, 300, 340], []),
+        // v0.6.4: nested image container — body (raster ref) + caption.
+        container('image', [72, 220, 300, 340], [
+          block('image_body', [72, 220, 300, 340], [lineImg('mock-fig.jpg')]),
+          block('image_caption', [72, 350, 540, 370], [line(['Figure 1: mock figure'])]),
+        ]),
         block('table', [320, 220, 540, 300], [line(['table row one']), line(['table row two'])]),
         block('formula', [72, 360, 300, 380], [line(['E = argmax log p(w|context)'])]),
       ]),
@@ -72,6 +86,8 @@ async function buildMockZip(zipPath) {
     'mock-paper.middle.json': [strToU8(JSON.stringify(middle, null, 1)), { mtime: FIXED_MTIME }],
     'mock-paper.md': [strToU8('# Mock paper markdown (not used by normalize)\n\nBody.\n'), { mtime: FIXED_MTIME }],
     'images/': [strToU8(''), { mtime: FIXED_MTIME }],
+    // v0.6.4: a fake JPEG raster referenced by the nested image_body above.
+    'images/mock-fig.jpg': [strToU8('FAKEJPEG-DATA'), { mtime: FIXED_MTIME }],
   }
   const zipped = zipSync(files, { level: 6 })
   await fsp.mkdir(path.dirname(zipPath), { recursive: true })

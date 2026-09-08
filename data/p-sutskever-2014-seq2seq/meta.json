@@ -4,16 +4,14 @@
   "source_pdf": "D:/aa/Sutskever 等 - 2014 - 2014.9 Seq2Seq.pdf",
   "mineru_task": "931ae094-4b21-41ea-9f34-a083df6061df",
   "middle_json": "layout.json",
-  "created_at": "2026-09-08T15:18:06.151Z",
+  "created_at": "2026-09-08T15:48:07.619Z",
   "stats": {
     "pages": 9,
-    "kept_blocks": 79,
-    "kept_chars": 29735,
+    "kept_blocks": 84,
+    "kept_chars": 29771,
     "skipped": {
       "by_type": {
         "empty": 5,
-        "image_body": 1,
-        "chart_body": 4,
         "ref_text": 31
       },
       "header_footer": 0
