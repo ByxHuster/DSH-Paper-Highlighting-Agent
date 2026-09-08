@@ -488,12 +488,15 @@ const p6 = ['repairMath', 'splitMathPieces', 'mathConvert', 'katexRender', 'buil
 const p6k = ['// KaTeX (local, inlined)', 'const KATEX_CSS', 'data:font/woff2;base64', 'katex']
 // v0.6.2: display-formula anchors render as block-level KaTeX (displayMode).
 const p6d = ['phl-math-display', "type === 'interline_equation' ||", 'displayMode: true']
-for (const needle of [...p6, ...p6k, ...p6d]) {
+// v0.6.3: table + figure/table caption anchors render as real tables / notes.
+const p6t = ['phl-table', 'phl-caption', 'b.anchor.html', "type === 'table' || b.anchor.type === 'table_body'"]
+for (const needle of [...p6, ...p6k, ...p6d, ...p6t]) {
   if (!bundleSrc.includes(needle)) throw new Error(`bundle missing v0.6.1+ math/KaTeX plumbing: ${needle}`)
 }
 console.log('bundle math plumbing (v0.6.1):', p6.join(', '))
 console.log('bundle KaTeX plumbing (v0.6.1+):', p6k.join(', '))
 console.log('bundle display-formula plumbing (v0.6.2):', p6d.join(', '))
+console.log('bundle table/caption plumbing (v0.6.3):', p6t.join(', '))
 console.log('bundle write-path plumbing (P2-a):', p2a.join(', '))
 console.log('bundle interaction state (P2-b):', p2b.join(', '))
 console.log('bundle action bar (P2-c):', p2c.join(', '))

@@ -27,10 +27,18 @@ const { unzipSync } = require('fflate')
 
 const { anchorId, validateAnchors } = require('./schema')
 
-const KEEP_TYPES = new Set(['text', 'title', 'content', 'interline_equation', 'formula'])
+// v0.6.3: keep display formulas (v0.6.2) AND tables + figure/table captions.
+// Tables arrive as full HTML (MinerU table recognition); captions are plain
+// text. Image/chart *bodies* stay skipped (binary — a separate milestone).
+const KEEP_TYPES = new Set([
+  'text', 'title', 'content',
+  'interline_equation', 'formula',
+  'table', 'table_body', 'table_caption',
+  'image_caption', 'chart_caption',
+])
 const SKIP_TYPES = new Set([
-  'image', 'image_caption', 'figure', 'figure_caption', 'chart', 'chart_caption',
-  'table', 'table_caption', 'table_footnote', 'formula_caption',
+  'image', 'figure', 'figure_caption', 'chart',
+  'image_body', 'chart_body', 'table_footnote', 'formula_caption',
   'page_header', 'page_footer', 'page_margin', 'abandon',
   'footnote', 'reference', 'algorithm',
   // observed in real MinerU v4 output (layout.json):
@@ -55,6 +63,43 @@ function lineText(line) {
   if (parts.length > 0) return parts.join(' ').replace(/\s+/g, ' ').trim()
   const direct = line.text ?? line.content ?? ''
   return cleanText(direct)
+}
+
+/** First span-level `html` found (MinerU table recognition output). */
+function collectHtml(lines) {
+  for (const line of Array.isArray(lines) ? lines : []) {
+    for (const span of Array.isArray(line.spans) ? line.spans : []) {
+      if (typeof span.html === 'string' && span.html.trim().length > 0) return span.html.trim()
+    }
+  }
+  return null
+}
+
+/**
+ * v0.6.3: degrade a MinerU table HTML to a readable one-line-per-row plain
+ * text (cells joined with " | ") — this is what lands in paper.md / anchors
+ * (md_offset contract, propose readability); the raw HTML is kept on the
+ * anchor as `html` for the client's real-table rendering.
+ */
+function htmlToPlain(html) {
+  return String(html || '')
+    .replace(/<table[^>]*>/gi, '')
+    .replace(/<tr[^>]*>/gi, '\n')
+    .replace(/<\/tr>/gi, '')
+    .replace(/<t[dh][^>]*>/gi, '')
+    .replace(/<\/t[dh]>/gi, ' | ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#x27;|&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/[ \t]*\|[ \t]*/g, ' | ')
+    .split('\n')
+    .map((l) => l.replace(/(^[ \t]*\|[ \t]*|[ \t]*\|[ \t]*$)/g, '').replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** Tolerant block bbox. */
@@ -101,12 +146,26 @@ function walkPages(middle) {
       : Array.isArray(page.preproc_blocks) ? page.preproc_blocks
       : Array.isArray(page.blocks) ? page.blocks
       : []
+    // v0.6.3: MinerU wraps image/table/chart content in container blocks whose
+    // payload lives in `blocks[]` (image_body/table_body/captions). Expand the
+    // containers into their sub-blocks (reading order), flattening with a
+    // per-page counter so every kept item gets a unique block number.
+    let flat = 0
     for (let bi = 0; bi < blocks.length; bi++) {
       const block = blocks[bi]
       const bbox = blockBbox(block)
       if (bbox === null) continue
       const type = typeof block.type === 'string' ? block.type.toLowerCase() : 'text'
-      out.push({ pageIdx, pageH, bi, type, bbox, lines: Array.isArray(block.lines) ? block.lines : [] })
+      if (Array.isArray(block.blocks) && block.blocks.length > 0) {
+        for (const sub of block.blocks) {
+          const subBbox = blockBbox(sub)
+          if (subBbox === null) continue
+          const subType = typeof sub.type === 'string' ? sub.type.toLowerCase() : 'text'
+          out.push({ pageIdx, pageH, bi: flat++, type: subType, bbox: subBbox, lines: Array.isArray(sub.lines) ? sub.lines : [] })
+        }
+        continue
+      }
+      out.push({ pageIdx, pageH, bi: flat++, type, bbox, lines: Array.isArray(block.lines) ? block.lines : [] })
     }
   }
   return out
@@ -153,7 +212,19 @@ async function normalizeMineruZip(opts) {
       continue
     }
 
-    const text = lines.map(lineText).filter(Boolean).join(' ')
+    let text = lines.map(lineText).filter(Boolean).join(' ')
+    // v0.6.3: table blocks — MinerU emits full HTML (table recognition); the
+    // anchor text is the readable plain-text degradation (md_offset contract /
+    // propose readability), the raw HTML rides along as `html` for the
+    // client's real-table rendering.
+    let html = null
+    if (type === 'table' || type === 'table_body') {
+      html = collectHtml(lines)
+      if (html) {
+        const plain = htmlToPlain(html)
+        if (plain.length > 0) text = plain
+      }
+    }
     if (!text) {
       skippedByType['empty'] = (skippedByType['empty'] ?? 0) + 1
       continue
@@ -179,6 +250,7 @@ async function normalizeMineruZip(opts) {
       text,
       mdOffset,
       rendered,
+      ...(html ? { html } : {}),
     })
     md += rendered + '\n\n'
   }
@@ -192,6 +264,7 @@ async function normalizeMineruZip(opts) {
       type: p.type,
       text: p.text,
       md_offset: p.mdOffset,
+      ...(p.html ? { html: p.html } : {}),
     }
   }
   validateAnchors(anchors)
@@ -219,6 +292,8 @@ module.exports = {
   SKIP_TYPES,
   cleanText,
   lineText,
+  collectHtml,
+  htmlToPlain,
   walkPages,
   normalizeMineruZip,
 }

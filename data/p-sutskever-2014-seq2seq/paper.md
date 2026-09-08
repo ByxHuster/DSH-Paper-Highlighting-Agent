@@ -20,6 +20,8 @@ Sequences pose a challenge for DNNs because they require that the dimensionality
 
 There have been a number of related attempts to address the general sequence to sequence learning problem with neural networks. Our approach is closely related to Kalchbrenner and Blunsom [18] who were the first to map the entire input sentence to vector, and is related to Cho et al. [5] although the latter was used only for rescoring hypotheses produced by a phrase-based system. Graves [10] introduced a novel differentiable attention mechanism that allows neural networks to focus on dif- ferent parts of their input, and an elegant variant of this idea was successfully applied to machine translation by Bahdanau et al. [2]. The Connectionist Sequence Classification is another popular technique for mapping sequences to sequences with neural networks, but it assumes a monotonic alignment between the inputs and the outputs [11].
 
+Figure 1: Our model reads an input sentence “ABC” and produces “WXYZ” as the output sentence. The model stops making predictions after outputting the end-of-sentence token. Note that the LSTM reads the input sentence in reverse, because doing so introduces many short term dependencies in the data that make the optimization problem much easier.
+
 The main result of this work is the following. On the WMT’14 English to French translation task, we obtained a BLEU score of 34.81 by directly extracting translations from an ensemble of 5 deep LSTMs (with 384M parameters and 8,000 dimensional state each) using a simple left-to-right beam- search decoder. This is by far the best result achieved by direct translation with large neural net- works. For comparison, the BLEU score of an SMT baseline on this dataset is 33.30 [29]. The 34.81 BLEU score was achieved by an LSTM with a vocabulary of 80k words, so the score was penalized whenever the reference translation contained a word not covered by these 80k. This result shows that a relatively unoptimized small-vocabulary neural network architecture which has much room for improvement outperforms a phrase-based SMT system.
 
 Finally, we used the LSTM to rescore the publicly available 1000-best lists of the SMT baseline on the same task [29]. By doing so, we obtained a BLEU score of 36.5, which improves the baseline by 3.2 BLEU points and is close to the previous best published result on this task (which is 37.0 [9]).
@@ -102,13 +104,50 @@ We used the cased BLEU score [24] to evaluate the quality of our translations. W
 
 The results are presented in tables 1 and 2. Our best results are obtained with an ensemble of LSTMs that differ in their random initializations and in the random order of minibatches. While the decoded translations of the LSTM ensemble do not outperform the best WMT’14 system, it is the first time that a pure neural translation system outperforms a phrase-based SMT baseline on a large scale MT task by a sizeable margin, despite its inability to handle out-of-vocabulary words. The LSTM is within 0.5 BLEU points of the best WMT’14 result if it is used to rescore the 1000-best list of the baseline system.
 
+Method | test BLEU score (ntst14)
+Bahdanau et al. [2] | 28.45
+Baseline System [29] | 33.30
+Single forward LSTM, beam size 12 | 26.17
+Single reversed LSTM, beam size 12 | 30.59
+Ensemble of 5 reversed LSTMs, beam size 1 | 33.00
+Ensemble of 2 reversed LSTMs, beam size 12 | 33.27
+Ensemble of 5 reversed LSTMs, beam size 2 | 34.50
+Ensemble of 5 reversed LSTMs, beam size 12 | 34.81
+
+Table 1: The performance of the LSTM on WMT’14 English to French test set (ntst14). Note that an ensemble of 5 LSTMs with a beam of size 2 is cheaper than of a single LSTM with a beam of size 12.
+
+Method | test BLEU score (ntst14)
+Baseline System [29] | 33.30
+Cho et al. [5] | 34.54
+Best WMT'14 result [9] | 37.0
+Rescoring the baseline 1000-best with a single forward LSTM | 35.61
+Rescoring the baseline 1000-best with a single reversed LSTM | 35.85
+Rescoring the baseline 1000-best with an ensemble of 5 reversed LSTMs | 36.5
+Oracle Rescoring of the Baseline 1000-best lists | ~45
+
+Table 2: Methods that use neural networks together with an SMT system on the WMT’14 English to French test set (ntst14).
+
 ## 3.7 Performance on long sentences
 
 We were surprised to discover that the LSTM did well on long sentences, which is shown quantita- tively in figure 3. Table 3 presents several examples of long sentences and their translations.
 
 ## 3.8 Model Analysis
 
+Figure 2: The figure shows a 2-dimensional PCA projection of the LSTM hidden states that are obtained after processing the phrases in the figures. The phrases are clustered by meaning, which in these examples is primarily a function of word order, which would be difficult to capture with a bag-of-words model. Notice that both clusters have similar internal structure.
+
 One of the attractive features of our model is its ability to turn a sequence of words into a vector of fixed dimensionality. Figure 2 visualizes some of the learned representations. The figure clearly shows that the representations are sensitive to the order of words, while being fairly insensitive to the replacement of an active voice with a passive voice. The two-dimensional projections are obtained using PCA.
+
+Type | Sentence
+Our model | Ulrich UNK, membre du conseil d’administration du constructeur automobile Audi, affirme qu’il s’agit d’une pratique courante depuis des années pour que les téléphones portables puissent être collectés avant les réunions du conseil d’administration afin qu’ils ne soient pas utilisés comme appareils d’écoute à distance.
+Truth | Ulrich Hackenberg, membre du conseil d’administration du constructeur automobile Audi, déclare que la collecte des téléphones portables avant les réunions du conseil, afin qu’ils ne puissent pas être utilisés comme appareils d’écoute à distance, est une pratique courante depuis des années.
+Our model | “Les téléphones cellulaires, qui sont vraiment une question, non seulement parce qu’ils pourraient potentiellement causer des interférences avec les appareils de navigation, mais nous savons, selon la FCC, qu’ils pourraient interférer avec les tours de téléphone cellulaire lorsqu’ils sont dans l’air”, dit UNK.
+Truth | “Les téléphones portables sont véritablement un problème, non seulement parce qu’ils pourraient éventuellement créer des interférences avec les instruments de navigation, mais parce que nous savons, d’après la FCC, qu’ils pourraient perturber les antennes-relais de téléphonie mobile s’ils sont utilisés à bord”, a déclaré Rosenker.
+Our model | Avec la crémation, il y a un “sentiment de violence contre le corps d’un être cher”, qui sera “réduit à une pile de cendres” en très peu de temps au lieu d’un processus de décomposition “qui accompagnera les étapes du deuil”.
+Truth | Il y a, avec la crémation, “une violence faite au corps aimé”, qui va être “réduit à un tas de cendres” en très peu de temps, et non après un processus de décomposition, qui “accompagnerait les phases du deuil”.
+
+Table 3: A few examples of long translations produced by the LSTM alongside the ground truth translations. The reader can verify that the translations are sensible using Google translate.
+
+Figure 3: The left plot shows the performance of our system as a function of sentence length, where the x-axis corresponds to the test sentences sorted by their length and is marked by the actual sequence lengths. There is no degradation on sentences with less than 35 words, there is only a minor degradation on the longest sentences. The right plot shows the LSTM’s performance on sentences with progressively more rare words, where the x-axis corresponds to the test sentences sorted by their “average word frequency rank”.
 
 ## 4 Related work
 

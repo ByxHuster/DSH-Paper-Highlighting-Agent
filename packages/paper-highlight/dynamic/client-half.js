@@ -1482,6 +1482,16 @@ function PaperView() {
         }
         return React.createElement('div', Object.assign(blockProps, { className: 'phl-math-display', dangerouslySetInnerHTML: { __html: f.html } }))
       }
+      // v0.6.3: table blocks render as a real HTML table (MinerU recognition,
+      // anchor.html) — no highlight support by design; fall back to plain text
+      // when the anchor carries no html (e.g. flat mock tables).
+      if ((b.anchor.type === 'table' || b.anchor.type === 'table_body') && b.anchor.html) {
+        return React.createElement('div', Object.assign(blockProps, { className: 'phl-table', dangerouslySetInnerHTML: { __html: b.anchor.html } }))
+      }
+      // v0.6.3: figure/table captions render as small italic notes.
+      if (b.anchor.type === 'image_caption' || b.anchor.type === 'table_caption' || b.anchor.type === 'chart_caption') {
+        return React.createElement('p', Object.assign(blockProps, { className: 'phl-caption' }), ...kids)
+      }
       return React.createElement('p', Object.assign(blockProps, { className: 'phl-para' }), ...kids)
     })
   )
@@ -1953,6 +1963,11 @@ function apply(ctx) {
       // level, centered, own line, faint tint to mark "this is a formula".
       '.phl-math-display{margin:8px 0;padding:6px 10px;border-radius:6px;background:rgba(90,120,220,.06);text-align:center;overflow-x:auto}',
       '.phl-math-display .katex-display{margin:0}',
+      // v0.6.3: real HTML tables (MinerU recognition) + figure/table captions.
+      '.phl-table{margin:8px 0;border:1px solid rgba(90,120,220,.25);border-radius:6px;overflow-x:auto;font-size:.92em}',
+      '.phl-table table{border-collapse:collapse;width:100%}',
+      '.phl-table td,.phl-table th{border:1px solid rgba(90,120,220,.2);padding:3px 8px;text-align:left}',
+      '.phl-caption{margin:4px 0 10px;font-size:.88em;font-style:italic;color:rgba(0,0,0,.55)}',
       '.phl-count{margin-right:auto;opacity:.8}',
       '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
       '.phl-heading{margin:14px 0 8px;line-height:1.4}',
