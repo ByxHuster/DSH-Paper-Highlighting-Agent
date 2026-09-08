@@ -14,11 +14,14 @@ const { normalizeMineruZip } = require('../host/normalize')
 const { writePaper, readAnchors } = require('../host/store')
 const { assert, verifyNormalized, verifyHighlightsRoundTrip } = require('./verify')
 
-const EXPECTED_ANCHORS = ['a-0001-01-01', 'a-0001-02-01', 'a-0002-02-01', 'a-0002-04-01']
+// v0.6.2: display-formula blocks are KEPT — the mock zip's `formula` block
+// (previously skipped) is now a 5th anchor.
+const EXPECTED_ANCHORS = ['a-0001-01-01', 'a-0001-02-01', 'a-0001-05-01', 'a-0002-02-01', 'a-0002-04-01']
 
 const EXPECTED_MD = [
   '# Distributed Representations of Words and Phrases and their Compositionality',
   'We present several improvements over the Skip-gram model including subsampling of frequent words and negative sampling.',
+  'E = argmax log p(w|context)',
   'The main contribution of this paper is a method that learns high-quality vector representations of words from large amounts of text.',
   'Future work includes training on even larger corpora.',
 ].join('\n\n') + '\n'
@@ -48,9 +51,9 @@ async function main() {
 
   assert(meta.stats.skipped.by_type.image === 1, 'image block should be skipped')
   assert(meta.stats.skipped.by_type.table === 1, 'table block should be skipped')
-  assert(meta.stats.skipped.by_type.formula === 1, 'formula block should be skipped')
+  assert(meta.stats.skipped.by_type.formula === undefined, 'v0.6.2: formula block is KEPT (no longer skipped)')
   assert(meta.stats.skipped.header_footer === 2, 'header/footer blocks should be skipped')
-  assert(meta.stats.kept_blocks === 4, `kept_blocks should be 4, got ${meta.stats.kept_blocks}`)
+  assert(meta.stats.kept_blocks === 5, `kept_blocks should be 5, got ${meta.stats.kept_blocks}`)
   assert(meta.stats.pages === 2, `pages should be 2, got ${meta.stats.pages}`)
 
   const { anchorCount } = verifyNormalized({ paperMd, anchors, meta })

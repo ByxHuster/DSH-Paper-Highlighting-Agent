@@ -117,7 +117,10 @@ function main() {
           // (post-repair) with no error markers. err-count is surfaced, not
           // asserted to 0 (unknown commands degrade to red text by design), but
           // the KaTeX engine must be the dominant path — tofu/approx is gone.
-          const kr = katexRender(text.slice(s.start, s.end))
+          // v0.6.2: display-formula anchors render in displayMode (like the
+          // client's block branch); inline math uses inline mode.
+          const isDisplay = anchor.type === 'interline_equation' || anchor.type === 'formula'
+          const kr = katexRender(text.slice(s.start, s.end), { displayMode: isDisplay })
           assert(typeof kr.html === 'string' && kr.text.length === conv.text.length, `katexRender contract on ${paperId}/${id} seg ${s.start}`)
           if (kr.engine === 'katex') { katexRendered++; if (kr.html.indexOf('katex-error') >= 0) katexErrors++ }
           else approxRendered++

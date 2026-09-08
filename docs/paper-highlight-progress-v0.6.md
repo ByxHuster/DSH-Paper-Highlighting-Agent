@@ -1,6 +1,6 @@
 # Paper Highlight Agent — v0.6.x 项目计划（数学公式渲染重建）
 
-> 版本：v0.6.x（计划文档）· 状态：**v0.6.1 行内公式已实现并验收 PASS（2026-09-01）；KaTeX 渲染升级已实现（v0.6.1+，方框根治）—— v0.6.2 行间公式待实现** · 创建：2026-09-01
+> 版本：v0.6.x（计划文档）· 状态：**v0.6.1 行内公式已实现并验收 PASS（2026-09-01）；v0.6.1.1 KaTeX 渲染升级（方框根治）；v0.6.1.2 修复数学区误吞散文括注；v0.6.2 行间公式已实现（normalize 保留公式块 + 块级 KaTeX 渲染，sutskever 重解析验收）** · 创建：2026-09-01
 > **v0.6.x 系列唯一目标：重新完成数学公式渲染（行内 + 行间）**。其余功能不新增、不修改。
 
 ---
@@ -105,15 +105,18 @@
 
 ---
 
-## 5. 行间公式处理（思考结论）
+## 5. 行间公式处理（思考结论 → v0.6.2 已实现）
 
-> 当前三篇论文**没有**行间公式（无 `$$` / 无环境块）。此节为**前向设计**：未来 MinerU 解析含显示公式的 PDF 时直接可用；v0.6.x 内用**合成 fixture** 验证，真实数据通路为未来论文预留。
+> **v0.6.2 实现方式（2026-09-01）**：与本节原前向设计不同——不靠文本内检测（`$$`/环境块），而是**保留 MinerU 的显示公式块**：`normalize.js` 的 `KEEP_TYPES` 加入 `interline_equation`/`formula`（公式块作为普通 anchor，type 保留），client 对公式类型 anchor 走**块级 KaTeX 渲染分支**（`katexRender(tex, {displayMode:true})` → `.phl-math-display`，居中、浅蓝标记、G2 空折叠）。检测 100% 确定（块类型即公式，无启发式）；选区/高亮偏移机制 type-agnostic 零改动；propose 的 read_section 文本流自动包含公式原文。**真实数据验收**：sutskever 重解析（MinerU 云 API，`enable_formula` 已默认开）→ 4 个 `interline_equation` 块全部保留（70 anchors，含 `\begin{array}{r c l}` 矩阵、`\prod`、`\tag{2}`），KaTeX displayMode 渲染 **0 katex-error**。
+>
+> 已解析论文需**重解析**才获得公式块（锚点漂移为固有代价）；已解析论文数据零改动原则下，v0.6.2 仅重解析 sutskever（0 spans 无高亮损失），mikolov/bahdanau 维持现状。
 
 ### 5.1 检测（优先级）
 
-1. **显式定界符**：`$$…$$`（可多行）、`\[…\]` → 块。
-2. **环境块**：`\begin{env}…\end{env}`（`equation` / `align` / `gather` / `cases` / `matrix` / `bmatrix` / `pmatrix` / `array`）→ 块，`env` 类型决定结构解析。
-3. **启发式段落**（整段数学密度高、无散文、空行分隔）：**默认关闭** —— 当前数据无行间公式，避免对散文段误触发；留作未来可选项。
+1. **MinerU 公式块**（v0.6.2 采用）：`interline_equation`/`formula` 块类型即行间公式，normalize 保留 → 检测 100% 确定。
+2. **显式定界符**：`$$…$$`（可多行）、`\[…\]` → 块（预留，当前数据无）。
+3. **环境块**：`\begin{env}…\end{env}` → 块（预留）。
+4. **启发式段落**（整段数学密度高、无散文、空行分隔）：**默认关闭**，留作未来可选项。
 
 > 说明：`splitMathPieces` 对行内识别不受影响；行间检测仅在「显式标记或环境块」命中时启动，与行内路径正交。
 
@@ -170,7 +173,7 @@
 | v0.6.1 | 行内公式：修复层 + 分段层 + 转换层 + 渲染集成 + 回归闸门 | ✅ **已实现并 PASS**：`run-render` 离线矩阵全绿（repair/split/convert/dlen/选区映射/G2/G3/G1-32 helpers + KaTeX 分支矩阵）+ 全回归套件绿 + `simulate-render` 数学/KaTeX 静态守卫绿（E2E 数据断言受演示数据 0 spans 阻塞为 v0.6.0 既有状态）+ `run-math-g4` 真实 bundle × 3 篇全锚点审计 PASS（293 锚点 / 148 数学段 / 0 崩溃 / 0 空显示 / **KaTeX 引擎 148/148 接管 / 0 katex-error**） |
 | v0.6.1+ | **KaTeX 渲染升级**（D3 修订：零 CDN + 本地 KaTeX）：`katex.min.js` + 20 个数学字体 base64 内联进 bundle（117KB→759KB，本地加载无网络）；`katexRender` 三态（KaTeX 优先 / 抛错降级近似 / 空显示 G2 折叠）；方框（tofu）因 KaTeX 自带字体根治；client.js 759KB | ✅ **已实现并 PASS**（见 v0.6.1 验收行：g4 证明 148 段全部 KaTeX 渲染、0 错误标记）—— 纯 client，刷新即生效，无需重启 3081 |
 | v0.6.1.2 | **修复数学区误吞散文括注**：`parseMathRight` i++ 双增 bug（`))` 相邻时跳过第二个 `)` → depth 泄漏吞到句尾）+ 括号内散文括注被吞（`(just before emitting …)`）+ 命令参数豁免（`\end{array}` 的 `{array}`） | ✅ **已实现并 PASS**：run-render 新增 aside 分割 / 嵌套 `))` 回归断言；G4 回到 293 锚点 / 151 数学段 / **0 katex-error**（修复前 1）；全回归套件绿；bundle 760KB 纯 client 刷新即生效 |
-| v0.6.2 | 行间公式：检测 + 环境感知修复 + 块级渲染（多行 / matrix grid）+ 合成 fixture 验证 | 合成 fixture 渲染 + 偏移 PASS |
+| v0.6.2 | 行间公式：检测 + 环境感知修复 + 块级渲染（多行 / matrix grid）+ 合成 fixture 验证 | ✅ **已实现并 PASS**：normalize 保留公式块（KEEP_TYPES + 跳过 header/footer 启发式）→ client 块级 KaTeX 渲染（displayMode、`.phl-math-display`、G2 折叠）→ **sutskever 重解析真实数据验收**（4 个 `interline_equation` 块：矩阵 `\begin{array}`、`\prod`、`\tag{2}`，KaTeX 0 error）；G4 全量 297 锚点 / 155 数学段 / 0 katex-error；run-mock 适配（formula 保留为第 5 锚点）；全回归绿；纯 client（+数据重解析） |
 | v0.6.3 | 文档同步（one-pager / user-guide / README / 本计划转交付记录）+ git 提交 + tag | 全量回归 + 验收 |
 
 > 版本粒度可按用户验收节奏合并；**只做数学渲染一件事**贯穿始终。
@@ -202,4 +205,4 @@ node scripts/simulate-render.js       # bundle 静态守卫（E2E 受演示数�
 
 ---
 
-*v0.6.x 规划：只完成「重新完成数学公式渲染（行内 + 行间）」一件事。v0.6.1（行内）已实现交付；v0.6.2（行间）待实现。*
+*v0.6.x 规划：只完成「重新完成数学公式渲染（行内 + 行间）」一件事。v0.6.1（行内）+ v0.6.1.1（KaTeX）+ v0.6.1.2（括注修复）+ v0.6.2（行间）已全部实现交付。*

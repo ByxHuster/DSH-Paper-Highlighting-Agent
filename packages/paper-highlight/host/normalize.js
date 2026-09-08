@@ -9,8 +9,12 @@
  * holds by construction (design §3.2: anchors never point at the DOM).
  *
  * v0.1 rules (documented simplifications, refined in v0.2+):
- *   - keep block types: text / title / content; skip image, table, formula,
+ *   - keep block types: text / title / content / formula; skip image, table,
  *     captions, headers/footers, and anything unrecognized
+ *   - v0.6.2: display-formula blocks (interline_equation / formula) are KEPT
+ *     as ordinary anchors (type preserved) — their LaTeX source renders through
+ *     the client's KaTeX engine (design §4.1, D3); MinerU emits these with
+ *     enable_formula on (MINERU_FORMULA !== '0'), previously discarded
  *   - header/footer heuristic: text blocks whose bbox lies within the top or
  *     bottom `marginRatio` of the page are skipped (counted for sampling)
  *   - one paragraph (= one anchor) per kept block
@@ -23,11 +27,11 @@ const { unzipSync } = require('fflate')
 
 const { anchorId, validateAnchors } = require('./schema')
 
-const KEEP_TYPES = new Set(['text', 'title', 'content'])
+const KEEP_TYPES = new Set(['text', 'title', 'content', 'interline_equation', 'formula'])
 const SKIP_TYPES = new Set([
   'image', 'image_caption', 'figure', 'figure_caption', 'chart', 'chart_caption',
-  'table', 'table_caption', 'table_footnote', 'formula', 'formula_caption',
-  'interline_equation', 'page_header', 'page_footer', 'page_margin', 'abandon',
+  'table', 'table_caption', 'table_footnote', 'formula_caption',
+  'page_header', 'page_footer', 'page_margin', 'abandon',
   'footnote', 'reference', 'algorithm',
   // observed in real MinerU v4 output (layout.json):
   'ref_text', 'aside_text', 'page_number', 'page_footnote',
@@ -131,10 +135,13 @@ async function normalizeMineruZip(opts) {
     const { pageIdx, pageH, bi, type, bbox, lines } = b
     let reason = null
     if (KEEP_TYPES.has(type)) {
-      // header/footer heuristic on text-ish blocks
-      const top = bbox.y0 / pageH
-      const bottom = 1 - bbox.y1 / pageH
-      if (top < marginRatio || bottom < marginRatio) reason = 'header_footer'
+      // v0.6.2: display formulas are never header/footer noise — keep them
+      // regardless of bbox; the heuristic applies only to text-ish blocks.
+      if (type !== 'interline_equation' && type !== 'formula') {
+        const top = bbox.y0 / pageH
+        const bottom = 1 - bbox.y1 / pageH
+        if (top < marginRatio || bottom < marginRatio) reason = 'header_footer'
+      }
     } else if (SKIP_TYPES.has(type)) {
       reason = type
     } else {

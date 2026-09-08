@@ -388,11 +388,12 @@ window.__ModuleLoader__.load({
 		  return { html: r.html, text: r.text, repaired }
 		}
 		
-		function katexRender(tex) {
+		function katexRender(tex, opts) {
 		  const approx = mathConvert(tex)
+		  const displayMode = !!(opts && opts.displayMode)
 		  if (typeof katex !== 'undefined' && katex && typeof katex.renderToString === 'function') {
 		    try {
-		      const html = katex.renderToString(repairMath(tex), { throwOnError: false, displayMode: false, strict: false })
+		      const html = katex.renderToString(repairMath(tex), { throwOnError: false, displayMode, strict: false })
 		      return { html, text: approx.text, engine: 'katex' }
 		    } catch (e) {
 		      // KaTeX threw (shouldn't happen with throwOnError:false) — fall through
@@ -1518,6 +1519,16 @@ window.__ModuleLoader__.load({
 		      if (b.anchor.type === 'title') {
 		        return React.createElement(b.isFirstTitle ? 'h1' : 'h2', Object.assign(blockProps, { className: 'phl-heading' }), ...kids)
 		      }
+		      // v0.6.2: display-formula blocks (interline_equation/formula) render as a
+		      // block-level KaTeX expression (displayMode) — the whole anchor text is
+		      // LaTeX source; the G2 guard folds empty display back to a plain para.
+		      if (b.anchor.type === 'interline_equation' || b.anchor.type === 'formula') {
+		        const f = katexRender(b.anchor.text, { displayMode: true })
+		        if (f.text.trim().length === 0) {
+		          return React.createElement('p', Object.assign(blockProps, { className: 'phl-para' }))
+		        }
+		        return React.createElement('div', Object.assign(blockProps, { className: 'phl-math-display', dangerouslySetInnerHTML: { __html: f.html } }))
+		      }
 		      return React.createElement('p', Object.assign(blockProps, { className: 'phl-para' }), ...kids)
 		    })
 		  )
@@ -1985,6 +1996,10 @@ window.__ModuleLoader__.load({
 		      // below (injected by gen-client; absent in Node tests → guarded).
 		      '.phl-math{background:rgba(90,120,220,.08);border-radius:3px;padding:0 2px;display:inline-block;vertical-align:baseline}',
 		      '.phl-math .katex{font-size:1.04em;font-style:normal}',
+		      // v0.6.2: display formulas (interline_equation/formula anchors) — block
+		      // level, centered, own line, faint tint to mark "this is a formula".
+		      '.phl-math-display{margin:8px 0;padding:6px 10px;border-radius:6px;background:rgba(90,120,220,.06);text-align:center;overflow-x:auto}',
+		      '.phl-math-display .katex-display{margin:0}',
 		      '.phl-count{margin-right:auto;opacity:.8}',
 		      '.phl-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}',
 		      '.phl-heading{margin:14px 0 8px;line-height:1.4}',

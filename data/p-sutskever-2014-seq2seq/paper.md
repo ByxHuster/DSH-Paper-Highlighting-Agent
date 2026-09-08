@@ -32,11 +32,15 @@ A useful property of the LSTM is that it learns to map an input sentence of vari
 
 The Recurrent Neural Network (RNN) [31, 28] is a natural generalization of feedforward neural networks to sequences. Given a sequence of inputs ( x _ { 1 } , \dots , x _ { T } ) , a standard RNN computes a sequence of outputs ( y _ { 1 } , \dots , y _ { T } ) by iterating the following equation:
 
+\begin{array}{r c l} {h _ {t}} & = & {\mathrm{sigm} \left(W ^ {\mathrm{hx}} x _ {t} + W ^ {\mathrm{hh}} h _ {t - 1}\right)} \\ {y _ {t}} & = & {W ^ {\mathrm{yh}} h _ {t}} \end{array}
+
 The RNN can easily map sequences to sequences whenever the alignment between the inputs the outputs is known ahead of time. However, it is not clear how to apply an RNN to problems whose input and the output sequences have different lengths with complicated and non-monotonic relation- ships.
 
 The simplest strategy for general sequence learning is to map the input sequence to a fixed-sized vector using one RNN, and then to map the vector to the target sequence with another RNN (this approach has also been taken by Cho et al. [5]). While it could work in principle since the RNN is provided with all the relevant information, it would be difficult to train the RNNs due to the resulting long term dependencies (figure 1) [14, 4, 16, 15]. However, the Long Short-Term Memory (LSTM) [16] is known to learn problems with long range temporal dependencies, so an LSTM may succeed in this setting.
 
 The goal of the LSTM is to estimate the conditional probability p ( y _ { 1 } , . . . , y _ { T ^ { \prime } } | x _ { 1 } , . . . , x _ { T } ) where ( x _ { 1 } , \dots , x _ { T } ) is an input sequence and y _ { 1 } , \ldots , y _ { T ^ { \prime } } is its corresponding output sequence whose length \dot { T } ^ { \prime } may differ from \dot { T } . The LSTM computes this conditional probability by first obtaining the fixed- dimensional representation v of the input sequence ( x _ { 1 } , \ldots , x _ { T } ) given by the last hidden state of the LSTM, and then computing the probability of y _ { 1 } , \ldots , y _ { T ^ { \prime } } with a standard LSTM-LM formulation whose initial hidden state is set to the representation v of x _ { 1 } , \ldots , x _ { T }
+
+p (y _ {1}, \dots , y _ {T ^ {\prime}} | x _ {1}, \dots , x _ {T}) = \prod_ {t = 1} ^ {T ^ {\prime}} p (y _ {t} | v, y _ {1}, \dots , y _ {t - 1})\tag{1}
 
 In this equation, each p ( y _ { t } | v , y _ { 1 } , \dots , y _ { t - 1 } ) distribution is represented with a softmax over all the words in the vocabulary. We use the LSTM formulation from Graves [10]. Note that we require that each sentence ends with a special end-of-sentence symbol { \mathrm { ~ ~ \omega ~ } } ^ { \mathrm { \tiny ~ 6 6 } } < \mathrm { E O S } > ^ { \mathrm { \tiny ~ , } } , which enables the model to define a distribution over sequences of all possible lengths. The overall scheme is outlined in figure 1, where the shown LSTM computes the representation of ^ { \mathrm { \tiny ~ 4 \cdot 5 } } \mathrm { \bf A } ^ { \mathrm { \tiny ~ 5 } } , ~ ^ { \mathrm { \tiny ~ 4 \cdot } } \mathrm { \bf B } ^ { \mathrm { \tiny ~ 5 } } , ~ ^ { \mathrm { \tiny ~ 4 \cdot } } \mathrm { \bf C } ^ { \mathrm { \tiny ~ 5 } } , ~ ^ { \mathrm { \tiny ~ 4 \cdot } } \mathrm { \bf < E 0 S > } ^ { \mathrm { \tiny ~ 5 } } and then uses this representation to compute the probability of ^ { \mathrm { \tiny ~ * } } \mathrm { W } ^ { \mathrm { \tiny , ~ * } } \mathrm { X } ^ { \mathrm { \tiny , ~ * } } , ^ { \mathrm { \tiny ~ * } } \mathrm { Y } ^ { \mathrm { \tiny , ~ * } } , ^ { \mathrm { \tiny ~ * } } \mathrm { Z } ^ { \mathrm { \tiny , ~ * } } \mathrm { < E O S > } ^ { \mathrm { \tiny ~ , ~ } }
 
@@ -56,7 +60,11 @@ As typical neural language models rely on a vector representation for each word,
 
 The core of our experiments involved training a large deep LSTM on many sentence pairs. We trained it by maximizing the log probability of a correct translation T given the source sentence S, so the training objective is
 
+1 / | \mathcal {S} | \sum_ {(T, S) \in \mathcal {S}} \log p (T | S)
+
 where s is the training set. Once training is complete, we produce translations by finding the most likely translation according to the LSTM:
+
+\hat {T} = \arg \max _ {T} p (T | S)\tag{2}
 
 We search for the most likely translation using a simple left-to-right beam search decoder which maintains a small number B of partial hypotheses, where a partial hypothesis is a prefix of some translation. At each timestep we extend each partial hypothesis in the beam with every possible word in the vocabulary. This greatly increases the number of the hypotheses so we discard all but the B most likely hypotheses according to the model’s log probability. As soon as the “<EOS>” symbol is appended to a hypothesis, it is removed from the beam and is added to the set of complete hypotheses. While this decoder is approximate, it is simple to implement. Interestingly, our system performs well even with a beam size of 1, and a beam of size 2 provides most of the benefits of beam search (Table 1).
 
