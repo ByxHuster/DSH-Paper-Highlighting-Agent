@@ -32,6 +32,7 @@ description: 论文全局通读（两遍阅读第一遍）——构建「论文�
      - **不存在**（`ok:false`）：基于常识做简要定位，并在论文级反思收尾时**提议初建/增补 `field-map.md`**（Phase 3，Agent 用文件工具创建，用户可编辑）；
      - 记录该论文的「定位增量」（候选增补点，供论文级反思落盘）。领域地图不常驻 system prompt，这里按需注入。
    - 去重登记（Phase 4 硬规则）：记录明显重复出现的主张（如方法在多处复述）—— 若该主张已在「核心主张清单」中（即会被高亮），把重复出现的位置记入 `duplicates`（append-only，`{claim, highlighted_at?, repeats_at?}`，`repeats_at` 为重复锚点 id 数组）。propose 时对这些重复位置**默认跳过**（除非画像规则声明「重复也标」）。
+   - **展示性内容排除（v0.7.0 硬规则）**：表格/图片**主体**锚点（type ∈ `{table, table_body, image_body, chart_body, image, chart}`）**不计入核心主张清单、不参与去重登记、不规划高亮**（真实表格/图片是展示性内容，schema 禁止在其上产生 spans）；其文本仅作上下文阅读。图/表**标题**（`*_caption`）是普通文本锚点，正常纳入。
 4. **写出逐节计划 plan**：
    - 对每个可审查节写一条 `plan.sections[]`：
      - `id`：该节 id（与 `list_sections` 一致，如 `s3`）

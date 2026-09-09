@@ -74,6 +74,12 @@ function validateAnchors(anchors) {
 }
 
 /** Validate a highlights document. Throws on the first problem. */
+// v0.7.0: display-only anchor types — real tables and image/chart bodies are
+// rendered as-is (dangerouslySetInnerHTML / <img>), they carry no selectable
+// text, so spans may never attach to them. Propose must skip them explicitly;
+// this is the hard backstop (a stray span is rejected, never silently dropped).
+const NON_HIGHLIGHTABLE_TYPES = new Set(['table', 'table_body', 'image_body', 'chart_body', 'image', 'chart'])
+
 function validateHighlights(h) {  if (typeof h !== 'object' || h === null) throw new Error('highlights must be an object')
   if (typeof h.paper !== 'object' || h.paper === null) throw new Error('highlights.paper must be an object')
   if (typeof h.paper.id !== 'string' || h.paper.id.length === 0) throw new Error('highlights.paper.id must be a non-empty string')
@@ -124,6 +130,9 @@ function validateHighlights(h) {  if (typeof h !== 'object' || h === null) throw
     seenSpanIds.add(s.id)
     const anchor = h.anchors[s.anchor]
     if (!anchor) throw new Error(`span ${s.id}: unknown anchor ${JSON.stringify(s.anchor)}`)
+    if (NON_HIGHLIGHTABLE_TYPES.has(anchor.type)) {
+      throw new Error(`span ${s.id}: anchor ${s.anchor} has non-highlightable type ${anchor.type} (table/image/chart bodies are display-only)`)
+    }
     if (!Number.isInteger(s.char_start) || !Number.isInteger(s.char_end)) {
       throw new Error(`span ${s.id}: char_start/char_end must be integers`)
     }
@@ -166,6 +175,7 @@ function validateReflections(r) {
 module.exports = {
   ANCHOR_ID_RE,
   SPAN_STATUSES,
+  NON_HIGHLIGHTABLE_TYPES,
   parseAnchorId,
   anchorId,
   newHighlightsSkeleton,

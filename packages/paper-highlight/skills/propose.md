@@ -31,6 +31,7 @@ description: 论文逐节 propose——输入 = 论文地图/plan + read_section
    - **R2** 主张已在 `duplicates[]` 登记（claim 主题匹配）→ **默认跳过**。
    - **R3** 例外唯一来源：画像规则显式声明「重复也标」时才提出；否则一律不破 R1/R2。
    - **R4** 新发现的重复主张 → **登记进 `duplicates`**（append-only）：`{ "claim": "<主张一句话>", "highlighted_at": "<已高亮 span id 或 's-000' 占位>", "repeats_at": ["<锚点 id>", ...] }`；**只追加、不删除/修改既有条目**（schema 已校验：claim 非空字符串、repeats_at 为字符串数组）。
+4.5. **跳过不可高亮锚点（v0.7.0 硬规则）**：表格/图片**主体**锚点（type ∈ `{table, table_body, image_body, chart_body, image, chart}`）**绝不产生 spans**——它们是展示性内容（真实表格/图片渲染，无可选区文本），不参与高亮；其文本仅作阅读上下文。图/表**标题**（`image_caption`/`table_caption`/`chart_caption`）是普通文本锚点，可正常按画像提候选。schema 已硬校验（`NON_HIGHLIGHTABLE_TYPES`，违规写回会被拒绝）——本步骤是主动规避，不是依赖兜底。
 5. **提候选**：按画像摘要的 L1 颜色语义 + 密度基线（`summary.density`，缺省回退该节 `density_hint`）+ 粒度基线（`summary.granularity`）从正文中选出值得高亮的片段。每条候选 span 需满足：
    - `anchor`：片段所在锚点 id（来自 `read_section` 返回的锚点信息或 anchors.json；span 必须落在该锚点文本内）。
    - `char_start` / `char_end`：0 起始、半开区间，指向 `anchor.text`。

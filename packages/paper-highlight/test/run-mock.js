@@ -12,6 +12,7 @@ const path = require('node:path')
 const { buildMockZip } = require('./fixtures/make-mock-zip')
 const { normalizeMineruZip } = require('../host/normalize')
 const { writePaper, readAnchors } = require('../host/store')
+const { newHighlightsSkeleton, validateHighlights } = require('../host/schema')
 const { assert, verifyNormalized, verifyHighlightsRoundTrip } = require('./verify')
 
 // v0.6.2: display-formula blocks are KEPT — the mock zip's `formula` block
@@ -96,6 +97,23 @@ async function main() {
 
   const anchorsOnDisk = await readAnchors(root, paperId)
   assert(anchorsOnDisk['a-0001-02-01'].text.includes('Skip-gram'), 'anchor text sanity on disk')
+
+  // v0.7.0: spans may never attach to display-only anchors (table/image bodies).
+  // Both the image_body (a-0001-03-01) and the flat table (a-0001-05-01) must
+  // be rejected by validateHighlights — the hard backstop behind the propose
+  // skill's explicit-skip rule.
+  for (const badAnchor of ['a-0001-03-01', 'a-0001-05-01']) {
+    const doc = newHighlightsSkeleton({ id: paperId, title: 'Mock', sourcePdf: 'mock.pdf', mineruTask: 't' })
+    doc.anchors = anchors
+    doc.spans = [{
+      id: 's-bad', anchor: badAnchor, char_start: 0, char_end: 3, color: 'red',
+      rationale: 'x', status: 'proposed',
+      decisions: [{ action: 'proposed', by: 'agent', at: new Date().toISOString() }],
+    }]
+    let rejected = false
+    try { validateHighlights(doc) } catch (e) { rejected = /non-highlightable/.test(String(e && e.message ? e.message : e)) }
+    assert(rejected, `v0.7.0: span on ${badAnchor} (display-only) must be rejected by schema`)
+  }
 
   const report = {
     step: 'mock',
